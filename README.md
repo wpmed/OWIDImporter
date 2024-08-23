@@ -40,6 +40,12 @@ The API Docs will be available at <http://127.0.0.1:8000/docs>
 
 Note: The app does not work with multiple threads as of right now.
 
+## Running in production on toolforge
+
+To configure, use `toolforge envvars create <environmental variable>`
+
+To update, run: `toolforge build start https://github.com/bawolff/OWIDImporter && toolforge webservice restart`
+
 For info on how to build for production, see https://wikitech.wikimedia.org/wiki/Help:Toolforge/Build_Service
 
 ## Config
