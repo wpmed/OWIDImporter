@@ -82,7 +82,7 @@ htmlHome = """
 		<div class="user">Hello, <em>$USERNAME</em>.<br>(<a href="/logout">logout</a>)</div>
 		<h1>Import OWID chart</h1>
 		<p>You can use $NAME (filename without extension), $YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders</p>
-		<p>This only works for graphs that are maps with data over multiple years</p>
+		<p>This only works for graphs that are maps with data over multiple years. Be sure to keep the tab visible the entire time or the upload might fail.</p>
 		<form action="" onsubmit="start(event)">
 			<label for="url">URL: </label><input type="url" name="url" id="url" size="80" placeholder="https://ourworldindata.org/grapher/<NAME OF GRAPH>"><br>
 			<label for="filename">Filename: </label>
@@ -117,6 +117,7 @@ htmlHome = """
 			<h2>OWID slider gallery source page syntax</h2>
 			<p>If using this with {{owidslider}}, you can use the following wikicode for the gallery list page:
 			<pre id="owidsrc"></pre>
+		</div>
 		<br>
 		<small><a href="https://github.com/bawolff/OWIDImporter">source code</a></small>
 		<script>
