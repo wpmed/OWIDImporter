@@ -319,7 +319,7 @@ async def browse(ws, data, sessionId):
 		validateParameters( data )
 		pagename = data['url']
 		await sendMsg( ws, "msg", "Starting" )
-		browser = await launch({"headless": True, args: ['--no-sandbox', '--disable-setuid-sandbox'] })
+		browser = await launch({"headless": True, 'args': ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] })
 		page = await browser.newPage()
 		# downloadPathParent = os.path.dirname(os.path.abspath( __file__ )) + '/downloads'
 		downloadPathParent = tempfile.gettempdir()
