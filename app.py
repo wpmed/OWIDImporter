@@ -115,6 +115,8 @@ htmlHome = """
 			<h2>OWID slider gallery source page syntax</h2>
 			<p>If using this with {{owidslider}}, you can use the following wikicode for the gallery list page:
 			<pre id="owidsrc"></pre>
+		<br>
+		<small><a href="https://github.com/bawolff/OWIDImporter">source code</a></small>
 		<script>
 			var ws = null;
 			var onmessage = function(info) {
