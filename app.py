@@ -103,6 +103,8 @@ htmlHome = """
 =={{int:license-header}}==
 {{cc-by-4.0}}
 [[Category:Our_World_in_Data_maps]]
+[[Category:$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}]]
+[[Category:SVG maps by Our World in Data]]
 			</textarea>
 			<br>
 			<input type="submit" value="Start" id="startbutton">
