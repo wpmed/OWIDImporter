@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Import OWID chart</title>
+    <style>
+      .log-log {
+        color: grey;
+      }
+      .log-success, .log-done {
+        font-weight: bold;
+        color: darkgreen;
+      }
+      .log-error, .log-failed {
+        color: red;
+        font-weight: bold;
+      }
+      .user {
+        float: right;
+      }
+      .hidden {
+        display: none;
+      }
+      #owidsrc {
+        border: 1px dashed blue;
+        padding: 1em;
+        margin-left: 4em;
+        margin-right: 4em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="user">
+      Hello, <em>{{.Username}}</em>.<br />(<a href="/logout">logout</a>)
+    </div>
+    <h1>Import OWID map</h1>
+    <p>
+      You can use $NAME (filename without extension), $YEAR, $REGION, $TITLE
+      (Title of graph), and $URL as placeholders
+    </p>
+    <p>
+      This only works for graphs that are maps with data over multiple years. Be
+      sure to keep the tab visible the entire time or the upload might fail.
+    </p>
+    <form action="" onsubmit="start(event)">
+      <label for="url">URL: </label
+      ><input
+        type="url"
+        name="url"
+        id="url"
+        size="80"
+        placeholder="https://ourworldindata.org/grapher/<NAME OF GRAPH>"
+      /><br />
+      <label for="filename">Filename: </label>
+      <input
+        type="text"
+        id="filename"
+        autocomplete="off"
+        value="$NAME,$REGION,$YEAR.svg"
+        size="75"
+      />
+      <br />
+      <label for="description">File description</label>
+      <textarea id="description" cols="80" rows="20">
+{{`=={{int:filedesc}}==
+{{Information
+|description={{en|1=$TITLE, $REGION}}
+|author = Our World In Data
+|date= $YEAR
+|source = $URL
+|permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
+|other versions =
+}}
+{{Map showing old data|year=$YEAR}}
+=={{int:license-header}}==
+{{cc-by-4.0}}
+[[Category:Our_World_in_Data_maps]]
+[[Category:$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}]]
+[[Category:SVG maps by Our World in Data]]`}}
+			</textarea
+      >
+      <br />
+      <input type="submit" value="Start" id="startbutton" />
+      <button onclick="doCancel()" type="button" id="cancel" disabled>
+        Cancel
+      </button>
+    </form>
+    <ul id="messages"></ul>
+    <div id="restart" class="hidden">
+      <a href="/">Upload another chart or try again?</a>
+    </div>
+    <div class="hidden" id="owidsrcdiv">
+      <h2>OWID slider gallery source page syntax</h2>
+      <p>
+        If using this with {{`{{owidslider}}`}}, you can use the following
+        wikicode for the gallery list page:
+      </p>
+      <pre id="owidsrc"></pre>
+    </div>
+    <br />
+    <small
+      ><a href="https://github.com/bawolff/OWIDImporter">source code</a></small
+    >
+    <h1>Import OWID Country Chart</h1>
+    <p>
+      You can use $NAME (filename without extension), $START_YEAR, $END_YEAR,
+      $REGION, $TITLE (Title of graph), and $URL as placeholders
+    </p>
+    <form action="" onsubmit="startMap(event)">
+      <label for="map_url">URL: </label
+      ><input
+        type="url"
+        name="map_url"
+        id="map_url"
+        size="80"
+        placeholder="https://ourworldindata.org/grapher/<NAME OF GRAPH>"
+      /><br />
+      <label for="map_filename">Filename: </label>
+      <input
+        type="text"
+        id="map_filename"
+        autocomplete="off"
+        value="$NAME, $START_YEAR to $END_YEAR, $REGION.svg"
+        size="75"
+      />
+      <br />
+      <label for="map_description">File description</label>
+      <textarea id="map_description" cols="80" rows="20">
+{{`=={{int:filedesc}}==
+{{Information
+|description={{en|1=$TITLE, $REGION}}
+|author = Our World In Data
+|date= $YEAR
+|source = $URL
+|permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
+|other versions =
+}}
+{{Map showing old data|year=$YEAR}}
+=={{int:license-header}}==
+{{cc-by-4.0}}
+[[Category:Our_World_in_Data_maps]]
+[[Category:$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}]]
+[[Category:SVG maps by Our World in Data]]`}}
+			</textarea
+      >
+      <br />
+      <input type="submit" value="Start" id="startbuttonMap" />
+      <button onclick="doCancelMap()" type="button" id="cancelMap" disabled>
+        Cancel
+      </button>
+    </form>
+    <ul id="messagesMap"></ul>
+
+    <script>
+      var ws = null;
+      var onmessage = function (info) {
+        if (info.type === "wikitext") {
+          document.getElementById("owidsrc").innerText = info.msg;
+          document.getElementById("owidsrcdiv").className = "";
+        } else {
+          var messages = document.getElementById("messages");
+          var message = document.createElement("li");
+          message.className = "log-" + info.type;
+          var content = document.createTextNode(info.msg);
+          message.appendChild(content);
+          messages.appendChild(message);
+        }
+      };
+      function start(event) {
+        var l = window.location;
+        ws = new WebSocket(
+          (l.protocol === "https:" ? "wss://" : "ws://") + l.host + "/ws"
+        );
+        ws.addEventListener("open", (e) => {
+          var url = document.getElementById("url").value;
+          var filename = document.getElementById("filename").value;
+          var desc = document.getElementById("description").value;
+          ws.send(
+            JSON.stringify({
+              action: "start",
+              url: url,
+              filename: filename,
+              desc: desc,
+            })
+          );
+        });
+        ws.addEventListener("close", (e) => {
+          if (e.code == "1000" && e.wasClean) {
+            onmessage({ msg: "Connection closed", type: "msg" });
+          } else {
+            onmessage({
+              msg: "Connection error (" + e.code + e.reason + ")",
+              type: "error",
+            });
+          }
+          document.getElementById("restart").className = "restart";
+        });
+        ws.addEventListener("message", (event) => {
+          var info = JSON.parse(event.data);
+          onmessage(info);
+        });
+        document.getElementById("cancel").disabled = false;
+        for (const i of ["startbutton", "filename", "description", "url"]) {
+          document.getElementById(i).disabled = true;
+        }
+        event.preventDefault();
+      }
+      function doCancel(e) {
+        ws.send(JSON.stringify({ action: "cancel" }));
+        setTimeout(() => ws.close(), 2000);
+      }
+
+      // Import OWID Country Chart
+      var onmessageMap = function (info) {
+        if (info.type === "wikitext") {
+          //   document.getElementById("owidsrcMap").innerText = info.msg;
+          //   document.getElementById("owidsrcdivMap").className = "";
+        } else {
+          var messages = document.getElementById("messagesMap");
+          if (info.type === "progress") {
+            var countryCode = info.msg.split(":")[0];
+            var msg = info.msg.split(":")[1];
+            var status = info.msg.split(":")[2];
+            if (countryCode) {
+              var el = document.getElementById("country-progress-" + countryCode);
+              if (!el) {
+                el = document.createElement("li");
+                el.id = "country-progress-" + countryCode;
+                messages.prepend(el);
+              }
+              el.className = "log-" + (msg || "").toLowerCase();
+              el.innerText = countryCode + ": " + msg + (status ? " (" + status + ")" : "");
+              return;
+            }
+          }
+          var messages = document.getElementById("messagesMap");
+          var message = document.createElement("li");
+          message.className = "log-" + info.type;
+          var content = document.createTextNode(info.msg);
+          message.appendChild(content);
+          messages.prepend(message);
+        }
+      };
+      function startMap(event) {
+        var l = window.location;
+        ws = new WebSocket(
+          (l.protocol === "https:" ? "wss://" : "ws://") + l.host + "/ws"
+        );
+        ws.addEventListener("open", (e) => {
+          var url = document.getElementById("map_url").value;
+          var filename = document.getElementById("map_filename").value;
+          var desc = document.getElementById("map_description").value;
+          ws.send(
+            JSON.stringify({
+              action: "startMap",
+              url: url,
+              filename: filename,
+              desc: desc,
+            })
+          );
+        });
+        ws.addEventListener("close", (e) => {
+          if (e.code == "1000" && e.wasClean) {
+            onmessageMap({ msg: "Connection closed", type: "msg" });
+          } else {
+            onmessageMap({
+              msg: "Connection error (" + e.code + e.reason + ")",
+              type: "error",
+            });
+          }
+          document.getElementById("restart").className = "restart";
+        });
+        ws.addEventListener("message", (event) => {
+          var info = JSON.parse(event.data);
+          onmessageMap(info);
+        });
+        document.getElementById("cancelMap").disabled = false;
+        for (const i of [
+          "startbuttonMap",
+          "map_filename",
+          "map_description",
+          "map_url",
+        ]) {
+          document.getElementById(i).disabled = true;
+        }
+        event.preventDefault();
+      }
+
+      function doCancelMap(e) {
+        ws.send(JSON.stringify({ action: "cancelMap" }));
+        setTimeout(() => ws.close(), 2000);
+      }
+    </script>
+  </body>
+</html>
