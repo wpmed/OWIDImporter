@@ -161,11 +161,21 @@ func Websocket(c *gin.Context) {
 					continue
 				}
 				switch actionMessage.Action {
-				// case "start":
-				// 	fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
+				case "start":
+					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
+					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
+					err := services.StartMap(session, services.StartData{
+						Url:         actionMessage.Url,
+						FileName:    actionMessage.FileName,
+						Description: actionMessage.Description,
+					})
+					if err != nil {
+						log.Println("Error starting map", err)
+					}
+					ws.Close()
 				case "startMap":
 					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
-					err := services.StartMap(session, services.StartMapData{
+					err := services.StartChart(session, services.StartData{
 						Url:         actionMessage.Url,
 						FileName:    actionMessage.FileName,
 						Description: actionMessage.Description,

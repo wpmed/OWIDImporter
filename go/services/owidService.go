@@ -39,8 +39,6 @@ func GetChartNameFromUrl(url string) (string, error) {
 	return matches[1], nil
 }
 
-var getBrowserMutex = sync.Mutex{}
-
 func ValidateParameters(data StartData) error {
 	if data.Url == "" || data.FileName == "" || data.Description == "" {
 		return fmt.Errorf("missing information")
@@ -114,6 +112,7 @@ func StartMap(session *sessions.Session, data StartData) error {
 				Data:   result,
 			})
 		}
+
 	}
 
 	utils.SendWSMessage(session, "debug", fmt.Sprintf("Finished in %s", time.Since(startTime).String()))
@@ -128,14 +127,10 @@ type FileNameAcc struct {
 	Region   string
 }
 
-func getRegionStartEndYears(session *sessions.Session, chartName, region string) (string, string) {
-	l := launcher.New()
-	control := l.Set("--no-sandbox").Headless(false).MustLaunch()
-	browser := rod.New().ControlURL(control).MustConnect()
-
-	defer l.Cleanup()
-	defer browser.Close()
-
+func processRegion(session *sessions.Session, token, chartName, region, downloadPath string, data StartData) ([]FileNameAcc, error) {
+	// Get start and end years
+	// get chart title
+	// Process each year
 	utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:processing", region))
 	url := ""
 	if region == "World" {
@@ -144,44 +139,36 @@ func getRegionStartEndYears(session *sessions.Session, chartName, region string)
 	} else {
 		url = fmt.Sprintf("%s%s?region=%s", constants.OWID_BASE_URL, chartName, region)
 	}
-	fmt.Println("Getting region start/end years", region, chartName, url)
 
+	l := launcher.New()
+	defer l.Cleanup()
+
+	control := l.Set("--no-sandbox").HeadlessNew(true).MustLaunch()
+	browser := rod.New().ControlURL(control).MustConnect()
+	defer browser.Close()
 	page := browser.MustPage("")
-	page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
 
 	startYear := ""
 	endYear := ""
 
 	for i := 0; i < constants.RETRY_COUNT; i++ {
 		err := rod.Try(func() {
+			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 			page.MustNavigate(url)
-			fmt.Println("Navigated to ", url)
+			page.MustWaitIdle()
 			marker := page.MustElement(".handle.startMarker")
-			fmt.Println("Got marker")
 			startYear = *marker.MustAttribute("aria-valuemin")
 			endYear = *marker.MustAttribute("aria-valuemax")
-			fmt.Println("Got start/end years", startYear, endYear)
 		})
-		page.Close()
 		if err != nil {
 			utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
+			page.Close()
 			page = browser.MustPage("")
-			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
 		} else {
 			break
 		}
 	}
-	fmt.Println("Finished getting start/end year for region", region)
-	return startYear, endYear
-}
-func processRegion(session *sessions.Session, token, chartName, region, downloadPath string, data StartData) ([]FileNameAcc, error) {
-	// Get start and end years
-	// get chart title
-	// Process each year
-	fmt.Println("Processing region", region)
-	startYear, endYear := getRegionStartEndYears(session, chartName, region)
-	fmt.Println("Got start and end years", startYear, endYear)
 
 	if startYear == "" || endYear == "" {
 		utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
@@ -206,25 +193,11 @@ func processRegion(session *sessions.Session, token, chartName, region, download
 	accMutex := sync.Mutex{}
 
 	var filename string
-	browsers, l := createBrowserGroups()
-	fmt.Println("Created Browser group", len(browsers))
-	defer func() {
-		l.Cleanup()
-		for _, b := range browsers {
-			b.Browser.Close()
-		}
-	}()
 	for year := startYearInt; year <= endYearInt; year++ {
 		year := year
 		g.Go(func(region string, year int64, downloadPath string) func() error {
 			return func() error {
-				browser := getBrowser(browsers)
-				fmt.Println("Got Browser")
-				filename, err = processRegionYear(session, browser.Browser, token, chartName, region, downloadPath, strconv.FormatInt(year, 10), data)
-				fmt.Println("Done region year", region, year)
-				markBrowserAvailable(browser)
-				fmt.Println("Marked browser as available")
-
+				filename, err = processRegionYear(session, token, chartName, region, downloadPath, strconv.FormatInt(year, 10), data)
 				accMutex.Lock()
 				filenameAccumilator = append(filenameAccumilator, FileNameAcc{Year: year, FileName: filename, Region: region})
 				accMutex.Unlock()
@@ -240,9 +213,15 @@ func processRegion(session *sessions.Session, token, chartName, region, download
 	return filenameAccumilator, nil
 }
 
-func processRegionYear(session *sessions.Session, browser *rod.Browser, token, chartName, region, downloadPath, year string, data StartData) (string, error) {
+func processRegionYear(session *sessions.Session, token, chartName, region, downloadPath, year string, data StartData) (string, error) {
 	utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing:%s", region, year))
+	l := launcher.New()
+	defer l.Cleanup()
 
+	//control := l.Set("--no-sandbox").Headless(false).MustLaunch()
+	control := l.Set("--no-sandbox").Headless(false).MustLaunch()
+	browser := rod.New().ControlURL(control).MustConnect()
+	defer browser.Close()
 	url := ""
 	if region == "World" {
 		// World chart has no region parameter
@@ -258,11 +237,10 @@ func processRegionYear(session *sessions.Session, browser *rod.Browser, token, c
 	for i := 1; i <= constants.RETRY_COUNT; i++ {
 		timeoutDuration := time.Duration(constants.CHART_WAIT_TIME_SECONDS*i) * time.Second
 		page = browser.MustPage("")
-		page = page.Timeout(timeoutDuration)
-		page.MustNavigate(url)
 
 		err = rod.Try(func() {
 			page = page.Timeout(timeoutDuration)
+			page.MustNavigate(url)
 
 			title := page.MustElement("h1.header__title").MustText()
 			err = page.MustElement(`figure button[data-track-note="chart_click_download"]`).Click(proto.InputMouseButtonLeft, 1)
@@ -271,6 +249,8 @@ func processRegionYear(session *sessions.Session, browser *rod.Browser, token, c
 				utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed:%s", region, year))
 				return
 			}
+			// TODO:  Check if need to remove
+			time.Sleep(time.Second * 1)
 			wait := page.Browser().WaitDownload(downloadPath)
 			err = page.MustElement(`figure button[data-track-note="chart_download_svg"]`).Click(proto.InputMouseButtonLeft, 1)
 			if err != nil {
@@ -314,11 +294,11 @@ func processRegionYear(session *sessions.Session, browser *rod.Browser, token, c
 			}
 		})
 
-		page.Close()
 		if err != nil {
 			utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed:%s", region, year))
 			fmt.Println(year, "timeout waiting for start marker", err)
 			utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:retrying:%s", region, year))
+			page.Close()
 		} else {
 			err = nil
 			break
@@ -332,49 +312,6 @@ func processRegionYear(session *sessions.Session, browser *rod.Browser, token, c
 	utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:done:%s:%s", region, year, status))
 
 	return filename, nil
-}
-
-type BrowserGroup struct {
-	Browser   *rod.Browser
-	Available bool
-}
-
-func getBrowser(browsers []*BrowserGroup) *BrowserGroup {
-	for {
-		getBrowserMutex.Lock()
-		for _, bg := range browsers {
-			if bg.Available {
-				bg.Available = false
-				getBrowserMutex.Unlock()
-				return bg
-			}
-		}
-		getBrowserMutex.Unlock()
-		time.Sleep(time.Second * 500)
-	}
-}
-
-func markBrowserAvailable(browser *BrowserGroup) {
-	getBrowserMutex.Lock()
-	browser.Available = true
-	getBrowserMutex.Unlock()
-}
-
-func createBrowserGroups() ([]*BrowserGroup, *launcher.Launcher) {
-	browsers := make([]*BrowserGroup, 0)
-	l := launcher.New()
-	control := l.Set("--no-sandbox").Headless(false).MustLaunch()
-	//control := l.Set("--no-sandbox").HeadlessNew(true).MustLaunch()
-
-	for i := 0; i < constants.CONCURRENT_REQUESTS; i++ {
-		browser := rod.New().ControlURL(control).MustConnect()
-		browsers = append(browsers, &BrowserGroup{
-			Browser:   browser,
-			Available: true,
-		})
-	}
-
-	return browsers, l
 }
 
 func StartChart(session *sessions.Session, data StartData) error {
@@ -424,23 +361,12 @@ func StartChart(session *sessions.Session, data StartData) error {
 	}
 	fmt.Println("Countries:====================== ", countriesList)
 
-	browsers, l := createBrowserGroups()
-	defer func() {
-		l.Cleanup()
-		for _, b := range browsers {
-			b.Browser.Close()
-		}
-
-	}()
 	startTime := time.Now()
-
 	for _, country := range countriesList {
 		country := country
 		g.Go(func(country, downloadPath string) func() error {
 			return func() error {
-				bg := getBrowser(browsers)
-				processCountry(session, bg.Browser, token, chartName, country, downloadPath, data)
-				markBrowserAvailable(bg)
+				processCountry(session, token, chartName, country, downloadPath, data)
 				return nil
 			}
 		}(country, filepath.Join(tmpDir, country)))
@@ -457,10 +383,15 @@ func StartChart(session *sessions.Session, data StartData) error {
 	return nil
 }
 
-func processCountry(session *sessions.Session, browser *rod.Browser, token, chartName, country, downloadPath string, data StartData) error {
+func processCountry(session *sessions.Session, token, chartName, country, downloadPath string, data StartData) error {
 	url := fmt.Sprintf("%s%s?tab=chart&country=~%s", constants.OWID_BASE_URL, chartName, country)
 	utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
+	l := launcher.New()
+	defer l.Cleanup()
 
+	control := l.Set("--no-sandbox").HeadlessNew(true).MustLaunch()
+	browser := rod.New().ControlURL(control).MustConnect()
+	defer browser.Close()
 	fmt.Println("Processing", url)
 
 	var page *rod.Page
@@ -481,6 +412,8 @@ func processCountry(session *sessions.Session, browser *rod.Browser, token, char
 			startYear := page.MustElement(".slider.clickable .handle.startMarker").MustAttribute("aria-valuenow")
 			endYear := page.MustElement(".slider.clickable .handle.endMarker").MustAttribute("aria-valuenow")
 
+			// TODO: Check if need to remove
+			time.Sleep(time.Second * 1)
 			wait := page.Browser().WaitDownload(downloadPath)
 			err = page.MustElement(`button[data-track-note="chart_click_download"]`).Click(proto.InputMouseButtonLeft, 1)
 			if err != nil {
@@ -518,11 +451,11 @@ func processCountry(session *sessions.Session, browser *rod.Browser, token, char
 			utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:done:%s", country, status))
 		})
 
-		page.Close()
 		if err != nil {
 			utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 			fmt.Println(country, "timeout waiting for start marker", err)
 			utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:retrying", country))
+			page.Close()
 		} else {
 			err = nil
 			break
@@ -770,12 +703,12 @@ func GetCountryList(chartName string) ([]string, error) {
 	browser := rod.New().ControlURL(control).MustConnect()
 	defer browser.MustClose()
 	page := browser.MustPage("")
-	page.MustNavigate(url)
 	fmt.Println("Getting  c ountry list")
 
-	page = page.Timeout(time.Duration(constants.CHART_WAIT_TIME_SECONDS))
 	countries := []string{}
 	err := rod.Try(func() {
+		page = page.Timeout(time.Duration(constants.CHART_WAIT_TIME_SECONDS))
+		page.MustNavigate(url)
 		fmt.Println("waiting for entity selector")
 		page.MustElement(".entity-selector__content")
 		fmt.Println("found entity selector")

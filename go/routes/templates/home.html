@@ -6,11 +6,13 @@
       .log-log {
         color: grey;
       }
-      .log-success, .log-done {
+      .log-success,
+      .log-done {
         font-weight: bold;
         color: darkgreen;
       }
-      .log-error, .log-failed {
+      .log-error,
+      .log-failed {
         color: red;
         font-weight: bold;
       }
@@ -134,7 +136,7 @@
 |permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
 |other versions =
 }}
-{{Map showing old data|year=$YEAR}}
+{{Map showing old data|year=$START_YEAR-$END_YEAR}}
 =={{int:license-header}}==
 {{cc-by-4.0}}
 [[Category:Our_World_in_Data_maps]]
@@ -158,11 +160,35 @@
           document.getElementById("owidsrcdiv").className = "";
         } else {
           var messages = document.getElementById("messages");
-          var message = document.createElement("li");
-          message.className = "log-" + info.type;
-          var content = document.createTextNode(info.msg);
-          message.appendChild(content);
-          messages.appendChild(message);
+          if (info.type === "progress") {
+            var countryCode = info.msg.split(":")[0];
+            var msg = info.msg.split(":")[1];
+            var year = info.msg.split(":")[2];
+            var status = info.msg.split(":")[3];
+            if (countryCode) {
+              var el = document.getElementById(
+                "region-progress-" + countryCode + "-" + year
+              );
+              if (!el) {
+                el = document.createElement("li");
+                el.id = "region-progress-" + countryCode + "-" + year;
+                messages.prepend(el);
+              }
+              el.className = "log-" + (msg || "").toLowerCase();
+              el.innerText =
+                countryCode + " " + year + ": " + msg + (status ? " (" + status + ")" : "");
+              return;
+            }
+          } else if (info.type == "wikitext") {
+            document.getElementById("owidsrc").innerText = info.msg;
+            document.getElementById("owidsrcdiv").className = "";
+          } else {
+            var message = document.createElement("li");
+            message.className = "log-" + info.type;
+            var content = document.createTextNode(info.msg);
+            message.appendChild(content);
+            messages.prepend(message);
+          }
         }
       };
       function start(event) {
@@ -221,14 +247,17 @@
             var msg = info.msg.split(":")[1];
             var status = info.msg.split(":")[2];
             if (countryCode) {
-              var el = document.getElementById("country-progress-" + countryCode);
+              var el = document.getElementById(
+                "country-progress-" + countryCode
+              );
               if (!el) {
                 el = document.createElement("li");
                 el.id = "country-progress-" + countryCode;
                 messages.prepend(el);
               }
               el.className = "log-" + (msg || "").toLowerCase();
-              el.innerText = countryCode + ": " + msg + (status ? " (" + status + ")" : "");
+              el.innerText =
+                countryCode + ": " + msg + (status ? " (" + status + ")" : "");
               return;
             }
           }
