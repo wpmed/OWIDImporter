@@ -86,10 +86,6 @@
         Cancel
       </button>
     </form>
-    <ul id="messages"></ul>
-    <div id="restart" class="hidden">
-      <a href="/">Upload another chart or try again?</a>
-    </div>
     <div class="hidden" id="owidsrcdiv">
       <h2>OWID slider gallery source page syntax</h2>
       <p>
@@ -97,6 +93,10 @@
         wikicode for the gallery list page:
       </p>
       <pre id="owidsrc"></pre>
+    </div>
+    <ul id="messages"></ul>
+    <div id="restart" class="hidden">
+      <a href="/">Upload another chart or try again?</a>
     </div>
     <br />
     <small
@@ -131,7 +131,7 @@
 {{Information
 |description={{en|1=$TITLE, $REGION}}
 |author = Our World In Data
-|date= $YEAR
+|date= $END_YEAR
 |source = $URL
 |permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
 |other versions =
@@ -140,7 +140,7 @@
 =={{int:license-header}}==
 {{cc-by-4.0}}
 [[Category:Our_World_in_Data_maps]]
-[[Category:$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}]]
+[[Category:$START_YEAR - $END_YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}]]
 [[Category:SVG maps by Our World in Data]]`}}
 			</textarea
       >

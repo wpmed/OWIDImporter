@@ -219,7 +219,7 @@ func processRegionYear(session *sessions.Session, token, chartName, region, down
 	defer l.Cleanup()
 
 	//control := l.Set("--no-sandbox").Headless(false).MustLaunch()
-	control := l.Set("--no-sandbox").Headless(false).MustLaunch()
+	control := l.Set("--no-sandbox").HeadlessNew(true).MustLaunch()
 	browser := rod.New().ControlURL(control).MustConnect()
 	defer browser.Close()
 	url := ""
@@ -707,7 +707,7 @@ func GetCountryList(chartName string) ([]string, error) {
 
 	countries := []string{}
 	err := rod.Try(func() {
-		page = page.Timeout(time.Duration(constants.CHART_WAIT_TIME_SECONDS))
+		page = page.Timeout(time.Second * constants.CHART_WAIT_TIME_SECONDS)
 		page.MustNavigate(url)
 		fmt.Println("waiting for entity selector")
 		page.MustElement(".entity-selector__content")
@@ -737,7 +737,7 @@ type TemplateElement struct {
 
 func SendTemplate(session *sessions.Session, data []TemplateElement) {
 	wikiText := strings.Builder{}
-	wikiText.WriteString(`{{owidslidersrcs|id=gallery|widths=640|heights=640\n`)
+	wikiText.WriteString("{{owidslidersrcs|id=gallery|widths=640|heights=640\n")
 	for _, el := range data {
 		sort.SliceStable(el.Data, func(i, j int) bool {
 			return el.Data[i].Year < el.Data[j].Year
@@ -749,7 +749,7 @@ func SendTemplate(session *sessions.Session, data []TemplateElement) {
 		}
 	}
 
-	wikiText.WriteString(`}}\n`)
+	wikiText.WriteString("}}\n")
 	utils.SendWSMessage(session, "wikitext", wikiText.String())
 	fmt.Println("Sent template", wikiText.String())
 }
