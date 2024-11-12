@@ -6,8 +6,8 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/wpmed-videowiki/OWIDImporter-go/env"
-	"github.com/wpmed-videowiki/OWIDImporter-go/routes"
+	"github.com/wpmed-videowiki/OWIDImporter/env"
+	"github.com/wpmed-videowiki/OWIDImporter/routes"
 )
 
 func main() {

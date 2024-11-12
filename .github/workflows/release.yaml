@@ -20,7 +20,6 @@ jobs:
 
       - name: Build the Go binary
         run: |
-          cd go
           go mod tidy
           go build -o app
 
@@ -30,6 +29,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: go/app
+          asset_path: app
           asset_name: app
           asset_content_type: application/octet-stream

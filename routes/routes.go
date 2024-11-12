@@ -10,10 +10,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/wpmed-videowiki/OWIDImporter-go/env"
-	"github.com/wpmed-videowiki/OWIDImporter-go/services"
-	"github.com/wpmed-videowiki/OWIDImporter-go/sessions"
-	"github.com/wpmed-videowiki/OWIDImporter-go/utils"
+	"github.com/wpmed-videowiki/OWIDImporter/env"
+	"github.com/wpmed-videowiki/OWIDImporter/services"
+	"github.com/wpmed-videowiki/OWIDImporter/sessions"
+	"github.com/wpmed-videowiki/OWIDImporter/utils"
 )
 
 type WebsocketActionMessage struct {

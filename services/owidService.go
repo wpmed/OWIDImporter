@@ -17,10 +17,10 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
-	"github.com/wpmed-videowiki/OWIDImporter-go/constants"
-	"github.com/wpmed-videowiki/OWIDImporter-go/env"
-	"github.com/wpmed-videowiki/OWIDImporter-go/sessions"
-	"github.com/wpmed-videowiki/OWIDImporter-go/utils"
+	"github.com/wpmed-videowiki/OWIDImporter/constants"
+	"github.com/wpmed-videowiki/OWIDImporter/env"
+	"github.com/wpmed-videowiki/OWIDImporter/sessions"
+	"github.com/wpmed-videowiki/OWIDImporter/utils"
 	"golang.org/x/sync/errgroup"
 )
 

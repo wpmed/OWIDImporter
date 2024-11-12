@@ -12,8 +12,8 @@ import (
 	"net/url"
 
 	"github.com/dghubble/oauth1"
-	"github.com/wpmed-videowiki/OWIDImporter-go/env"
-	"github.com/wpmed-videowiki/OWIDImporter-go/sessions"
+	"github.com/wpmed-videowiki/OWIDImporter/env"
+	"github.com/wpmed-videowiki/OWIDImporter/sessions"
 )
 
 func GetOAuthConfig() *oauth1.Config {
