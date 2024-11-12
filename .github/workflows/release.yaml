@@ -20,8 +20,8 @@ jobs:
 
       - name: Build the Go binary
         run: |
-          go mod tidy
-          go build -o app
+          go mod download
+          go build -o app main.go
 
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
