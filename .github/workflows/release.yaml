@@ -19,9 +19,7 @@ jobs:
           go-version: "1.23" # Use the appropriate Go version
 
       - name: Build the Go binary
-        run: |
-          go mod download
-          go build -o app main.go
+        run: go build -o app main.go
 
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
