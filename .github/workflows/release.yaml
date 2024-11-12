@@ -1,9 +1,6 @@
 name: Build and Release Go Project
 
-on:
-  push:
-    tags:
-      - "v*" # Triggers on version tags like v1.0, v2.0.1, etc.
+on: [push] 
 
 jobs:
   build:
@@ -21,12 +18,8 @@ jobs:
       - name: Build the Go binary
         run: go build -o app main.go
 
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: app
-          asset_name: app
-          asset_content_type: application/octet-stream
+          name: app
+          path: app
