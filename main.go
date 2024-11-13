@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/joho/godotenv"
@@ -16,8 +15,7 @@ func main() {
 		log.Println("Failed to load environment variables: ", err)
 	}
 	// Verify environment variables
-	env := env.GetEnv()
-	fmt.Println(env)
+	env.GetEnv()
 	router := routes.BuildRoutes()
 
 	err = router.Run(":8000")
