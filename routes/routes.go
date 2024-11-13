@@ -106,8 +106,6 @@ func Callback(c *gin.Context) {
 	oauth1Config := utils.GetOAuthConfig()
 
 	accessToken, accessSecret, err := oauth1Config.AccessToken(oauthToken, session.ResourceOwnerSecretTemp, oauthVerifier)
-	fmt.Println("accessToken", accessToken)
-	fmt.Println("accessSecret", accessSecret)
 	if err != nil {
 		log.Fatal(err)
 		c.String(http.StatusInternalServerError, "Failed to get access token")
@@ -162,7 +160,6 @@ func Websocket(c *gin.Context) {
 				}
 				switch actionMessage.Action {
 				case "start":
-					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
 					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
 					err := services.StartMap(session, services.StartData{
 						Url:         actionMessage.Url,
