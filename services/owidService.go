@@ -87,9 +87,9 @@ func StartMap(session *sessions.Session, data StartData) error {
 		return err
 	}
 	token := tokenResponse.Query.Tokens.CsrfToken
-	fmt.Println("Edit token:", token)
+	fmt.Println("Got edit token")
 
-	tmpDir, err := os.MkdirTemp("./tmp", "owid-exporter")
+	tmpDir, err := os.MkdirTemp("", "owid-exporter")
 	if err != nil {
 		fmt.Println("Error creating temp directory", err)
 		return err
@@ -218,7 +218,7 @@ func processRegionYear(session *sessions.Session, token, chartName, region, down
 	l := launcher.New()
 	defer l.Cleanup()
 
-	//control := l.Set("--no-sandbox").Headless(false).MustLaunch()
+	// control := l.Set("--no-sandbox").Headless(false).MustLaunch()
 	control := l.Set("--no-sandbox").HeadlessNew(true).MustLaunch()
 	browser := rod.New().ControlURL(control).MustConnect()
 	defer browser.Close()
