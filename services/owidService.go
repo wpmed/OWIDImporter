@@ -296,8 +296,8 @@ func processRegionYear(session *sessions.Session, token, chartName, region, down
 
 			filename, status, err = uploadMapFile(session, token, replaceData, downloadPath, data)
 			if err != nil {
-				utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed:%s", region, year))
-				return
+				fmt.Println("Error processing", region, year)
+				panic(err)
 			}
 		})
 
@@ -621,7 +621,7 @@ func uploadMapFile(session *sessions.Session, token string, replaceData ReplaceV
 		if res.Upload.Result == "Success" {
 			return filename, "overwritten", nil
 		}
-		return filename, "", fmt.Errorf("upload failed: %s", res.Upload.Result)
+		return filename, "", fmt.Errorf("%s", res.Upload.Result)
 	}
 }
 
