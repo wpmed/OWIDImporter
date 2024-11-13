@@ -142,6 +142,7 @@ func GetUsername(session *sessions.Session) (string, error) {
 func SendWSMessage(session *sessions.Session, messageType string, message string) error {
 	session.WsMutex.Lock()
 	defer session.WsMutex.Unlock()
+	fmt.Println("Sending msg", messageType, "-", message)
 	return session.Ws.WriteJSON(map[string]string{
 		"type": messageType,
 		"msg":  message,

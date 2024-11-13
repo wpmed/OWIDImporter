@@ -53,7 +53,7 @@ func Home(c *gin.Context) {
 
 	username, err := utils.GetUsername(session)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		c.String(http.StatusInternalServerError, "Failed to get username")
 		return
 	}
@@ -67,7 +67,7 @@ func Login(c *gin.Context) {
 
 	requestToken, requestSecret, err := config.RequestToken()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		c.String(http.StatusInternalServerError, "Failed to get request token")
 		return
 	}
@@ -79,7 +79,7 @@ func Login(c *gin.Context) {
 
 	authorizationURL, err := config.AuthorizationURL(requestToken)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		c.String(http.StatusInternalServerError, "Failed to get authorization URL")
 		return
 	}
@@ -107,7 +107,7 @@ func Callback(c *gin.Context) {
 
 	accessToken, accessSecret, err := oauth1Config.AccessToken(oauthToken, session.ResourceOwnerSecretTemp, oauthVerifier)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		c.String(http.StatusInternalServerError, "Failed to get access token")
 		return
 	}
@@ -138,7 +138,7 @@ func Websocket(c *gin.Context) {
 	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	session.Ws = ws
 	session.WsMutex = &sync.Mutex{}
@@ -182,6 +182,7 @@ func Websocket(c *gin.Context) {
 					}
 					ws.Close()
 				}
+				break
 			}
 		}
 	}()
