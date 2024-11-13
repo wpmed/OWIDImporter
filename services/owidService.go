@@ -230,6 +230,13 @@ func processRegionYear(session *sessions.Session, token, chartName, region, down
 		url = fmt.Sprintf("%s%s?region=%s&time=%s", constants.OWID_BASE_URL, chartName, region, year)
 	}
 	fmt.Println(url)
+	regionStr := region
+	if regionStr == "NorthAmerica" {
+		regionStr = "North America"
+	}
+	if regionStr == "SouthAmerica" {
+		regionStr = "South America"
+	}
 	var page *rod.Page
 	var err error
 	var status string
@@ -271,7 +278,7 @@ func processRegionYear(session *sessions.Session, token, chartName, region, down
 			replaceData := ReplaceVarsData{
 				Url:      data.Url,
 				Title:    title,
-				Region:   region,
+				Region:   regionStr,
 				Year:     year,
 				FileName: chartName,
 			}
