@@ -99,9 +99,35 @@ func StartMap(session *sessions.Session, data StartData) error {
 	startTime := time.Now()
 	items := make([]TemplateElement, 0)
 
+	done := false
+	defer func() {
+		done = true
+	}()
+
+	go func() {
+		for {
+			time.Sleep(time.Minute)
+			if done {
+				break
+			}
+			fmt.Println("Gettng new token")
+			tokenResponse, err := utils.DoApiReq[TokenResponse](session, map[string]string{
+				"action": "query",
+				"meta":   "tokens",
+				"format": "json",
+			}, nil)
+			if err != nil {
+				fmt.Println("Error fetching edit token", err)
+			} else if tokenResponse.Query.Tokens.CsrfToken != "" {
+				token = tokenResponse.Query.Tokens.CsrfToken
+				fmt.Println("Got new token")
+			}
+		}
+	}()
+
 	for _, region := range constants.REGIONS {
 		region := region
-		result, err := processRegion(session, token, chartName, region, filepath.Join(tmpDir, region), data)
+		result, err := processRegion(session, &token, chartName, region, filepath.Join(tmpDir, region), data)
 		if err != nil {
 			fmt.Println("Error in processing some of the region", region)
 			fmt.Println(err)
@@ -127,7 +153,7 @@ type FileNameAcc struct {
 	Region   string
 }
 
-func processRegion(session *sessions.Session, token, chartName, region, downloadPath string, data StartData) ([]FileNameAcc, error) {
+func processRegion(session *sessions.Session, token *string, chartName, region, downloadPath string, data StartData) ([]FileNameAcc, error) {
 	// Get start and end years
 	// get chart title
 	// Process each year
@@ -197,7 +223,8 @@ func processRegion(session *sessions.Session, token, chartName, region, download
 		year := year
 		g.Go(func(region string, year int64, downloadPath string) func() error {
 			return func() error {
-				filename, err = processRegionYear(session, token, chartName, region, downloadPath, strconv.FormatInt(year, 10), data)
+				// TODO: remove this log
+				filename, err = processRegionYear(session, *token, chartName, region, downloadPath, strconv.FormatInt(year, 10), data)
 				accMutex.Lock()
 				filenameAccumilator = append(filenameAccumilator, FileNameAcc{Year: year, FileName: filename, Region: region})
 				accMutex.Unlock()
@@ -346,7 +373,7 @@ func StartChart(session *sessions.Session, data StartData) error {
 		return err
 	}
 	token := tokenResponse.Query.Tokens.CsrfToken
-	fmt.Println("Edit token:", token)
+	fmt.Println("Got edit token")
 
 	tmpDir, err := os.MkdirTemp("./tmp", "owid-exporter")
 	if err != nil {
@@ -368,15 +395,41 @@ func StartChart(session *sessions.Session, data StartData) error {
 	}
 	fmt.Println("Countries:====================== ", countriesList)
 
+	done := false
+	defer func() {
+		done = true
+	}()
+
+	go func() {
+		for {
+			time.Sleep(time.Minute)
+			if done {
+				break
+			}
+			fmt.Println("Gettng new token")
+			tokenResponse, err := utils.DoApiReq[TokenResponse](session, map[string]string{
+				"action": "query",
+				"meta":   "tokens",
+				"format": "json",
+			}, nil)
+			if err != nil {
+				fmt.Println("Error fetching edit token", err)
+			} else if tokenResponse.Query.Tokens.CsrfToken != "" {
+				token = tokenResponse.Query.Tokens.CsrfToken
+				fmt.Println("Got new token")
+			}
+		}
+	}()
+
 	startTime := time.Now()
 	for _, country := range countriesList {
 		country := country
-		g.Go(func(country, downloadPath string) func() error {
+		g.Go(func(country, downloadPath string, token *string) func() error {
 			return func() error {
-				processCountry(session, token, chartName, country, downloadPath, data)
+				processCountry(session, *token, chartName, country, downloadPath, data)
 				return nil
 			}
-		}(country, filepath.Join(tmpDir, country)))
+		}(country, filepath.Join(tmpDir, country), &token))
 	}
 	fmt.Println("Started in", time.Since(startTime).String())
 	err = g.Wait()
