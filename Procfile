@@ -1,1 +1,1 @@
-web: ./OWIDImporter
+web: OWIDImporter
