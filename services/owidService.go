@@ -621,6 +621,7 @@ func uploadMapFile(session *sessions.Session, token string, replaceData ReplaceV
 		if res.Upload.Result == "Success" {
 			return filename, "overwritten", nil
 		}
+		fmt.Println("Error uploading file", res)
 		return filename, "", fmt.Errorf("%s", res.Upload.Result)
 	}
 }
