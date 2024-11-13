@@ -3,8 +3,8 @@ package constants
 const (
 	OWID_BASE_URL           = "https://ourworldindata.org/grapher/"
 	RETRY_COUNT             = 3
-	CHART_WAIT_TIME_SECONDS = 10
-	CONCURRENT_REQUESTS     = 5
+	CHART_WAIT_TIME_SECONDS = 15
+	CONCURRENT_REQUESTS     = 3
 )
 
 var COUNTRY_CODES = map[string]string{
