@@ -252,9 +252,9 @@ func processRegionYear(session *sessions.Session, token, chartName, region, down
 	url := ""
 	if region == "World" {
 		// World chart has no region parameter
-		url = fmt.Sprintf("%s%s?time=%s", constants.OWID_BASE_URL, chartName, year)
+		url = fmt.Sprintf("%s%s?time=%s&tab=map", constants.OWID_BASE_URL, chartName, year)
 	} else {
-		url = fmt.Sprintf("%s%s?region=%s&time=%s", constants.OWID_BASE_URL, chartName, region, year)
+		url = fmt.Sprintf("%s%s?region=%s&time=%s&tab=map", constants.OWID_BASE_URL, chartName, region, year)
 	}
 	fmt.Println(url)
 	regionStr := region
