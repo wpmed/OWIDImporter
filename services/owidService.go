@@ -375,7 +375,7 @@ func StartChart(session *sessions.Session, data StartData) error {
 	token := tokenResponse.Query.Tokens.CsrfToken
 	fmt.Println("Got edit token")
 
-	tmpDir, err := os.MkdirTemp("./tmp", "owid-exporter")
+	tmpDir, err := os.MkdirTemp("", "owid-exporter")
 	if err != nil {
 		fmt.Println("Error creating temp directory", err)
 		return err
