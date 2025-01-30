@@ -28,6 +28,12 @@
         margin-left: 4em;
         margin-right: 4em;
       }
+      #owidsrc_countries {
+        border: 1px dashed blue;
+        padding: 1em;
+        margin-left: 4em;
+        margin-right: 4em;
+      }
     </style>
   </head>
   <body>
@@ -147,6 +153,14 @@
         Cancel
       </button>
     </form>
+    <div class="hidden" id="owidsrcdiv_countries">
+      <h2>OWID slider gallery source page syntax</h2>
+      <p>
+        If using this with {{`{{owidslider}}`}}, 
+        Please add the following to your {{`{{owidslidersrcs}}`}}
+      </p>
+      <pre id="owidsrc_countries"></pre>
+    </div>
     <ul id="messagesMap"></ul>
 
     <script>
@@ -155,6 +169,9 @@
         if (info.type === "wikitext") {
           document.getElementById("owidsrc").innerText = info.msg;
           document.getElementById("owidsrcdiv").className = "";
+        } else if (info.type === "wikitext_countries") {
+          document.getElementById("owidsrc_countries").innerText = info.msg;
+          document.getElementById("owidsrcdiv_countries").className = "";
         } else {
           var messages = document.getElementById("messages");
           if (info.type === "progress") {
@@ -237,6 +254,9 @@
         if (info.type === "wikitext") {
           //   document.getElementById("owidsrcMap").innerText = info.msg;
           //   document.getElementById("owidsrcdivMap").className = "";
+        } else if (info.type === "wikitext_countries") {
+          document.getElementById("owidsrc_countries").innerText = info.msg;
+          document.getElementById("owidsrcdiv_countries").className = "";
         } else {
           var messages = document.getElementById("messagesMap");
           if (info.type === "progress") {

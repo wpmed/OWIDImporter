@@ -30,6 +30,11 @@ type StartData struct {
 	Description string `json:"desc"`
 }
 
+type CountryTemplateDataItem struct {
+	FileName string
+	Country  string
+}
+
 func GetChartNameFromUrl(url string) (string, error) {
 	re := regexp.MustCompile(`^https://ourworldindata.org/grapher/([-a-z_0-9]+)(\?.*)?$`)
 	matches := re.FindStringSubmatch(url)
@@ -421,12 +426,20 @@ func StartChart(session *sessions.Session, data StartData) error {
 		}
 	}()
 
+	filenamesArray := make([]CountryTemplateDataItem, 0)
+	filenamesMutex := sync.Mutex{}
+
 	startTime := time.Now()
 	for _, country := range countriesList {
 		country := country
 		g.Go(func(country, downloadPath string, token *string) func() error {
 			return func() error {
-				processCountry(session, *token, chartName, country, downloadPath, data)
+				filename, _ := processCountry(session, *token, chartName, country, downloadPath, data)
+				if filename != "" {
+					filenamesMutex.Lock()
+					filenamesArray = append(filenamesArray, CountryTemplateDataItem{FileName: filename, Country: country})
+					filenamesMutex.Unlock()
+				}
 				return nil
 			}
 		}(country, filepath.Join(tmpDir, country), &token))
@@ -440,10 +453,11 @@ func StartChart(session *sessions.Session, data StartData) error {
 		return err
 	}
 	utils.SendWSMessage(session, "debug", fmt.Sprintf("Finished in %s", elapsedTime.String()))
+	SendCountriesTemplate(session, filenamesArray)
 	return nil
 }
 
-func processCountry(session *sessions.Session, token, chartName, country, downloadPath string, data StartData) error {
+func processCountry(session *sessions.Session, token, chartName, country, downloadPath string, data StartData) (string, error) {
 	url := fmt.Sprintf("%s%s?tab=chart&country=~%s", constants.OWID_BASE_URL, chartName, country)
 	utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
 	l := launcher.New()
@@ -456,6 +470,7 @@ func processCountry(session *sessions.Session, token, chartName, country, downlo
 
 	var page *rod.Page
 	var err error
+	var FileName string
 	// Retry 2 times
 	for i := 1; i <= constants.RETRY_COUNT; i++ {
 		timeoutDuration := time.Duration(i*constants.CHART_WAIT_TIME_SECONDS) * time.Second
@@ -503,12 +518,14 @@ func processCountry(session *sessions.Session, token, chartName, country, downlo
 				EndYear:   *endYear,
 				FileName:  chartName,
 			}
-			_, status, err := uploadMapFile(session, token, replaceData, downloadPath, data)
+			filename, status, err := uploadMapFile(session, token, replaceData, downloadPath, data)
 			if err != nil {
 				utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 				return
 			}
 			utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:done:%s", country, status))
+
+			FileName = filename
 		})
 
 		if err != nil {
@@ -524,10 +541,10 @@ func processCountry(session *sessions.Session, token, chartName, country, downlo
 
 	if err != nil {
 		utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
-		return err
+		return "", err
 	}
 
-	return nil
+	return FileName, nil
 }
 
 type QueryResponse struct {
@@ -812,5 +829,18 @@ func SendTemplate(session *sessions.Session, data []TemplateElement) {
 
 	wikiText.WriteString("}}\n")
 	utils.SendWSMessage(session, "wikitext", wikiText.String())
+	fmt.Println("Sent template", wikiText.String())
+}
+
+func SendCountriesTemplate(session *sessions.Session, data []CountryTemplateDataItem) {
+	wikiText := strings.Builder{}
+	wikiText.WriteString("|gallery-AllCountries=\n")
+
+	for _, el := range data {
+		wikiText.WriteString(fmt.Sprintf("File:%s!country=%s\n", el.FileName, el.Country))
+	}
+
+	wikiText.WriteString("\n")
+	utils.SendWSMessage(session, "wikitext_countries", wikiText.String())
 	fmt.Println("Sent template", wikiText.String())
 }
