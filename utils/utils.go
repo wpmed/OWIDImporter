@@ -140,13 +140,20 @@ func GetUsername(session *sessions.Session) (string, error) {
 }
 
 func SendWSMessage(session *sessions.Session, messageType string, message string) error {
-	session.WsMutex.Lock()
-	defer session.WsMutex.Unlock()
-	fmt.Println("Sending msg", messageType, "-", message)
-	return session.Ws.WriteJSON(map[string]string{
-		"type": messageType,
-		"msg":  message,
-	})
+	go func() {
+		session.WsMutex.Lock()
+		defer session.WsMutex.Unlock()
+		fmt.Println("Sending msg", messageType, "-", message)
+		err := session.Ws.WriteJSON(map[string]string{
+			"type": messageType,
+			"msg":  message,
+		})
+		if err != nil {
+			fmt.Println("Error sending msg", messageType, "-", message, ": ", err)
+		}
+	}()
+
+	return nil
 }
 
 func Contains(slice []string, item string) bool {

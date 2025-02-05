@@ -176,7 +176,6 @@ func processRegion(session *sessions.Session, token *string, chartName, region, 
 
 	control := l.Set("--no-sandbox").HeadlessNew(true).MustLaunch()
 	browser := rod.New().ControlURL(control).MustConnect()
-	defer browser.Close()
 	page := browser.MustPage("")
 
 	startYear := ""
@@ -200,6 +199,7 @@ func processRegion(session *sessions.Session, token *string, chartName, region, 
 			break
 		}
 	}
+	browser.Close()
 
 	if startYear == "" || endYear == "" {
 		utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
@@ -321,7 +321,6 @@ func processRegionYear(session *sessions.Session, token, chartName, region, down
 			}
 			lowerCaseContent := strings.ToLower(string(fileInfo.File))
 			if strings.Contains(lowerCaseContent, "missing map column") {
-
 				os.Remove(fileInfo.FilePath)
 				panic(fmt.Sprintf("Missing map column %s %s %s, retrying", replaceData.Region, replaceData.Year, replaceData.FileName))
 			}
