@@ -12,7 +12,7 @@ type WebsocketActionMessage struct {
 	Content string `json:"content"`
 }
 
-const CLIENT_BUILD_PATH = "./client/dist"
+const CLIENT_BUILD_PATH = "/workspace/client/dist"
 
 var upgrader = websocket.Upgrader{} // use default options
 
