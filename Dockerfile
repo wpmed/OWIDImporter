@@ -40,6 +40,6 @@ WORKDIR /app
 COPY --from=go-builder /app/main /app/main
 # Copy the built React app from the second stage
 COPY --from=react-builder /app/client/dist /app/client/dist
-COPY ./.env /app/.env
+#COPY ./.env /app/.env
 
 CMD ["/app/main"]
