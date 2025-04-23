@@ -49,14 +49,22 @@ jobs:
 
       - name: Make package public
         run: |
-          # Get the full name of the package
-          PACKAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')
+          # Convert repository name to lowercase for package name
+          REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          PACKAGE_NAME=$(echo "$REPO_NAME" | cut -d '/' -f 2)
+          OWNER=$(echo "$REPO_NAME" | cut -d '/' -f 1)
 
-          # Use GitHub CLI to make the package public
-          echo "Making $REGISTRY/$PACKAGE_NAME public"
-          gh api --method PATCH /user/packages/container/$PACKAGE_NAME/visibility \
+          echo "Making package $PACKAGE_NAME under owner $OWNER public"
+
+          # For repository-scoped packages
+          gh api --method PATCH "/orgs/$OWNER/packages/container/$PACKAGE_NAME/visibility" \
             -f visibility="public" \
             -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28"
+            -H "X-GitHub-Api-Version: 2022-11-28" || \
+          gh api --method PATCH "/user/packages/container/$PACKAGE_NAME/visibility" \
+            -f visibility="public" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" || \
+          echo "Could not set visibility via API, you may need to set it manually in the GitHub UI"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
