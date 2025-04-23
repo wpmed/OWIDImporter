@@ -30,6 +30,7 @@ FROM node:20.12.2 as react-builder
 WORKDIR /app
 
 COPY client/ ./client
+RUN echo "VITE_BASE_URL=https://owidimporter.toolforge.org" > ./client/.env
 RUN cd client && npm install && npm run build
 
 # Final image
