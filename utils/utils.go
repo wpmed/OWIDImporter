@@ -13,6 +13,7 @@ import (
 
 	"github.com/dghubble/oauth1"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
+	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/sessions"
 )
 
@@ -30,10 +31,10 @@ func GetOAuthConfig() *oauth1.Config {
 	}
 }
 
-func GetOAuthClient(session *sessions.Session) *http.Client {
+func GetOAuthClient(user *models.User) *http.Client {
 	return oauth1.NewClient(context.Background(), GetOAuthConfig(), &oauth1.Token{
-		Token:       session.ResourceOwnerKey,
-		TokenSecret: session.ResourceOwnerSecret,
+		Token:       user.ResourceOwnerKey,
+		TokenSecret: user.ResourceOwnerSecret,
 	})
 }
 
@@ -43,8 +44,8 @@ type UploadedFile struct {
 	Mime     string
 }
 
-func DoApiReq[T any](session *sessions.Session, params map[string]string, file *UploadedFile) (*T, error) {
-	client := GetOAuthClient(session)
+func DoApiReq[T any](user *models.User, params map[string]string, file *UploadedFile) (*T, error) {
+	client := GetOAuthClient(user)
 	values := make(url.Values)
 	url := env.GetEnv().OWID_MW_API + "?"
 	for k, v := range params {
@@ -119,14 +120,14 @@ type UserInfo struct {
 	BatchComplete string `json:"batchcomplete"`
 	Query         struct {
 		UserInfo struct {
-			ID   int    `json:"id"`
 			Name string `json:"name"`
+			ID   int    `json:"id"`
 		} `json:"userinfo"`
 	} `json:"query"`
 }
 
-func GetUsername(session *sessions.Session) (string, error) {
-	result, err := DoApiReq[UserInfo](session, map[string]string{
+func GetUsername(user *models.User) (string, error) {
+	result, err := DoApiReq[UserInfo](user, map[string]string{
 		"action": "query",
 		"meta":   "userinfo",
 		"format": "json",
@@ -135,8 +136,58 @@ func GetUsername(session *sessions.Session) (string, error) {
 		fmt.Println("Error doing API request", err)
 		return "", err
 	}
+	fmt.Println("User info", result.Query.UserInfo)
 
 	return result.Query.UserInfo.Name, nil
+}
+
+func SendWSTaskProcess(taskId string, taskProcess *models.TaskProcess) error {
+	msgJson, err := json.Marshal(taskProcess)
+	if err != nil {
+		fmt.Println("Error marshling json", err, taskProcess)
+		return err
+	}
+	sendWSTaskMessage(taskId, "task_process", string(msgJson))
+
+	return nil
+}
+
+func SendWSTask(task *models.Task) error {
+	msgJson, err := json.Marshal(task)
+	if err != nil {
+		fmt.Println("Error marshling json", err, task)
+		return err
+	}
+	sendWSTaskMessage(task.ID, "task", string(msgJson))
+	return nil
+}
+
+func sendWSTaskMessage(taskId string, messageType string, msg string) {
+	go func() {
+		if len(sessions.TaskSessions[taskId]) > 0 {
+			failedSessions := make([]string, 0)
+			for _, s := range sessions.TaskSessions[taskId] {
+				s.WsMutex.Lock()
+				fmt.Println("Sending msg ", messageType, "-", msg)
+				err := s.Ws.WriteJSON(map[string]string{
+					"type": messageType,
+					"msg":  msg,
+				})
+				if err != nil {
+					fmt.Println("Error sending msg ", messageType, "-", msg, ": ", err)
+					failedSessions = append(failedSessions, s.Id)
+				}
+				s.WsMutex.Unlock()
+			}
+
+			// Remove failed receives, most probably disconnected
+			if len(failedSessions) > 0 {
+				for _, id := range failedSessions {
+					sessions.RemoveTaskSession(taskId, id)
+				}
+			}
+		}
+	}()
 }
 
 func SendWSMessage(session *sessions.Session, messageType string, message string) error {

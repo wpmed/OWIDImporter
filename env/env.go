@@ -14,6 +14,7 @@ type EnvVariables struct {
 	OWID_OAUTH_TOKEN_URL string
 	OWID_MW_API          string
 	OWID_DEBUG           bool
+	OWID_ENV             string
 }
 
 func GetEnv() EnvVariables {
@@ -56,6 +57,11 @@ func GetEnv() EnvVariables {
 		panic("OWID_MW_API environment variable is required")
 	}
 
+	owidEnv := os.Getenv("OWID_ENV")
+	if owidEnv == "" {
+		panic("OWID_ENV environment variable is required")
+	}
+
 	return EnvVariables{
 		OWID_UA:              userAgent,
 		OWID_OAUTH_TOKEN:     oauthToken,
@@ -65,6 +71,6 @@ func GetEnv() EnvVariables {
 		OWID_OAUTH_TOKEN_URL: oauthTokenUrl,
 		OWID_MW_API:          mwApi,
 		OWID_DEBUG:           OWID_DEBUG,
+		OWID_ENV:             owidEnv,
 	}
-
 }
