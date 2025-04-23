@@ -43,4 +43,5 @@ COPY --from=go-builder /app/main /app/main
 COPY --from=react-builder /app/client/dist /app/client/dist
 #COPY ./.env /app/.env
 
+EXPOSE 8000
 CMD ["/app/main"]
