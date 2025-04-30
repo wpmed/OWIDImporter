@@ -56,6 +56,14 @@ func RemoveTaskSession(taskId, id string) {
 	assignTaskSessionMutex.Unlock()
 }
 
+func RemoveUserSession(username string) {
+	for id, session := range Sessions {
+		if session.Username == username {
+			delete(Sessions, id)
+		}
+	}
+}
+
 const (
 	SessionCookieName = "owidsession"
 )

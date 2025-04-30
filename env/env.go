@@ -15,6 +15,7 @@ type EnvVariables struct {
 	OWID_MW_API          string
 	OWID_DEBUG           bool
 	OWID_ENV             string
+	OWID_ENCRYPTION_KEY  string
 }
 
 func GetEnv() EnvVariables {
@@ -62,6 +63,11 @@ func GetEnv() EnvVariables {
 		panic("OWID_ENV environment variable is required")
 	}
 
+	owidEncKey := os.Getenv("OWID_ENCRYPTION_KEY")
+	if owidEnv == "" {
+		panic("OWID_ENCRYPTION_KEY environment variable is required")
+	}
+
 	return EnvVariables{
 		OWID_UA:              userAgent,
 		OWID_OAUTH_TOKEN:     oauthToken,
@@ -72,5 +78,6 @@ func GetEnv() EnvVariables {
 		OWID_MW_API:          mwApi,
 		OWID_DEBUG:           OWID_DEBUG,
 		OWID_ENV:             owidEnv,
+		OWID_ENCRYPTION_KEY:  owidEncKey,
 	}
 }

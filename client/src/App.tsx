@@ -19,7 +19,7 @@ import { SESSION_ID_KEY, USERNAME_KEY } from './constants';
 import { Logout } from '@mui/icons-material';
 import { useEffect, useMemo, useState } from 'react';
 import { Task, TaskTypeEnum } from './types';
-import { fetchTasks } from './request/request';
+import { fetchTasks, logout } from './request/request';
 import { TaskList } from './components/TaskList';
 
 const drawerWidth = 240;
@@ -63,6 +63,14 @@ export default function App() {
     }
     return TaskTypeEnum.CHART
   }, [tab])
+
+  const onLogout = () => {
+    logout().finally(() => {
+      window.localStorage.removeItem(SESSION_ID_KEY);
+      window.localStorage.removeItem(USERNAME_KEY);
+      window.location.reload();
+    })
+  }
 
   const onNewClick = () => {
     if (selectedTaskType === TaskTypeEnum.MAP) {
@@ -133,7 +141,7 @@ export default function App() {
                   </ListItem>
                 ))}
                 <ListItem disablePadding>
-                  <ListItemButton>
+                  <ListItemButton onClick={onLogout}>
                     <ListItemIcon>
                       <Logout sx={{ transform: "rotate(180deg)" }} />
                     </ListItemIcon>

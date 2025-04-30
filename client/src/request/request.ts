@@ -40,6 +40,20 @@ export async function verifySession(sessionId: string) {
   return data;
 }
 
+export async function logout() {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+
+  await fetch(`${import.meta.env.VITE_BASE_URL}/logout`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionId ? {
+        [SESSION_ID_KEY]: sessionId
+      } : {})
+    }
+  });
+}
+
 export interface CreateTaskData {
   action: string,
   url: string,
@@ -143,3 +157,4 @@ export async function fetchTaskById(id: string) {
 
   return responseData;
 }
+

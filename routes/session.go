@@ -46,12 +46,12 @@ func Login(c *gin.Context) {
 func Callback(c *gin.Context) {
 	sessionId, _ := c.Cookie(sessions.SessionCookieName)
 	if sessionId == "" {
-		c.HTML(http.StatusOK, "login.html", nil)
+		c.HTML(http.StatusOK, "/", nil)
 		return
 	}
 	session, ok := sessions.Sessions[sessionId]
 	if !ok {
-		c.HTML(http.StatusOK, "login.html", nil)
+		c.HTML(http.StatusOK, "/", nil)
 		return
 	}
 
@@ -71,7 +71,7 @@ func Callback(c *gin.Context) {
 		ResourceOwnerSecret: accessSecret,
 		ResourceOwnerKey:    accessToken,
 	}
-	// user, err := models.FindUserByUsername(username string)
+
 	username, err := utils.GetUsername(user)
 	if err != nil {
 		log.Println(err)
@@ -102,10 +102,21 @@ func Callback(c *gin.Context) {
 }
 
 func Logout(c *gin.Context) {
+	// Redirect session
 	c.SetCookie(sessions.SessionCookieName, "", -1, "/", "*", env.GetEnv().OWID_DEBUG, true)
 	sessionId, _ := c.Cookie(sessions.SessionCookieName)
 	if sessionId != "" {
 		delete(sessions.Sessions, sessionId)
+	}
+	// Active SPA session
+	sessionId = c.Request.Header.Get("sessionId")
+	if sessionId != "" {
+		delete(sessions.Sessions, sessionId)
+	}
+
+	if env.GetEnv().OWID_ENV == "development" {
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/")
+		return
 	}
 	c.Redirect(http.StatusTemporaryRedirect, "/")
 }
@@ -168,7 +179,7 @@ func VerifySession(c *gin.Context) {
 	username, err := utils.GetUsername(user)
 	if err != nil {
 		log.Println(err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot get username"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Session expired, please login again"})
 		return
 	}
 
