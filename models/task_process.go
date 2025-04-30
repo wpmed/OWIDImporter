@@ -13,12 +13,13 @@ import (
 type TaskProcessStatus string
 
 const (
-	TaskProcessStatusProcessing  TaskProcessStatus = "processing"
-	TaskProcessStatusUploaded    TaskProcessStatus = "uploaded"
-	TaskProcessStatusOverwritten TaskProcessStatus = "overwritten"
-	TaskProcessStatusSkipped     TaskProcessStatus = "skipped"
-	TaskProcessStatusRetrying    TaskProcessStatus = "retrying"
-	TaskProcessStatusFailed      TaskProcessStatus = "failed"
+	TaskProcessStatusProcessing         TaskProcessStatus = "processing"
+	TaskProcessStatusUploaded           TaskProcessStatus = "uploaded"
+	TaskProcessStatusOverwritten        TaskProcessStatus = "overwritten"
+	TaskProcessStatusSkipped            TaskProcessStatus = "skipped"
+	TaskProcessStatusDescriptionUpdated TaskProcessStatus = "description_updated"
+	TaskProcessStatusRetrying           TaskProcessStatus = "retrying"
+	TaskProcessStatusFailed             TaskProcessStatus = "failed"
 )
 
 type TaskProcess struct {

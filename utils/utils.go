@@ -93,6 +93,22 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 		}
 
 		res, err = client.Post(url, "multipart/form-data; boundary="+writer.Boundary(), &b)
+	} else if params["token"] != "" {
+		var b bytes.Buffer
+		writer := multipart.NewWriter(&b)
+		defer writer.Close()
+
+		for k, v := range params {
+			writer.WriteField(k, v)
+		}
+		// Close the writer to complete the form data
+		err = writer.Close()
+		if err != nil {
+			fmt.Println("Error closing writer", err)
+			return nil, err
+		}
+
+		res, err = client.Post(url, "multipart/form-data; boundary="+writer.Boundary(), &b)
 	} else {
 		res, err = client.Get(url)
 	}

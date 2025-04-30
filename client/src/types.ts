@@ -11,6 +11,7 @@ export enum TaskProcessStatusEnum {
   Uploaded = "uploaded",
   Overwritten = "overwritten",
   Skipped = "skipped",
+  DescriptionUpdated = "description_updated",
   Retrying = "retrying",
   Failed = "failed",
 }
@@ -29,15 +30,22 @@ export enum TaskTypeEnum {
   CHART = "chart"
 }
 
+export enum DescriptionOverwriteBehaviour {
+  ALL = "all",
+  ALL_EXCEPT_CATEGORIES = "all_except_categories"
+}
+
 export interface Task {
   id: string,
   userId: string,
   url: string,
   filename: string,
   description: string,
+  descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour,
   chartName: string,
   status: TaskStatusEnum,
   type: TaskTypeEnum,
   lastOperationAt: number,
   createdAt: number,
 }
+

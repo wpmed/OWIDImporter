@@ -28,6 +28,7 @@ export function getTaskProcessStatusColor(status: TaskProcessStatusEnum) {
     case TaskProcessStatusEnum.Overwritten:
     case TaskProcessStatusEnum.Uploaded:
     case TaskProcessStatusEnum.Skipped:
+    case TaskProcessStatusEnum.DescriptionUpdated:
       return "green"
     default:
       return "black"

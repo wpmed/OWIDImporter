@@ -12,8 +12,9 @@ import (
 )
 
 type (
-	TaskStatus string
-	TaskType   string
+	TaskStatus                    string
+	TaskType                      string
+	DescriptionOverwriteBehaviour string
 )
 
 const (
@@ -31,17 +32,23 @@ const (
 	TaskTypeChart TaskType = "chart"
 )
 
+const (
+	DescriptionOverwriteBehaviourAll              = "all"
+	DescriptionOverwriteBehaviourExceptCategories = "all_except_categories"
+)
+
 type Task struct {
-	ID              string     `json:"id"`
-	UserId          string     `json:"userId"`
-	URL             string     `json:"url"`
-	FileName        string     `json:"filename"`
-	Description     string     `json:"description"`
-	ChartName       string     `json:"chartName"`
-	Status          TaskStatus `json:"status"`
-	Type            TaskType   `json:"type"`
-	LastOperationAt int64      `json:"lastOperationAt"`
-	CreatedAt       int64      `json:"createdAt"`
+	ID                            string                        `json:"id"`
+	UserId                        string                        `json:"userId"`
+	URL                           string                        `json:"url"`
+	FileName                      string                        `json:"filename"`
+	Description                   string                        `json:"description"`
+	DescriptionOverwriteBehaviour DescriptionOverwriteBehaviour `json:"descriptionOverwriteBehaviour"`
+	ChartName                     string                        `json:"chartName"`
+	Status                        TaskStatus                    `json:"status"`
+	Type                          TaskType                      `json:"type"`
+	LastOperationAt               int64                         `json:"lastOperationAt"`
+	CreatedAt                     int64                         `json:"createdAt"`
 }
 
 func (t *Task) Scan(value interface{}) error {
@@ -53,26 +60,39 @@ func (t *Task) Value() (driver.Value, error) {
 	return string(b), err
 }
 
-func NewTask(userId, url, fileName, description, chartName string, status TaskStatus, taskType TaskType) (*Task, error) {
+func NewTask(userId, url, fileName, description string, descriptionOverwriteBehaviour DescriptionOverwriteBehaviour, chartName string, status TaskStatus, taskType TaskType) (*Task, error) {
 	task := Task{
-		ID:              uuid.New().String(),
-		UserId:          userId,
-		URL:             url,
-		FileName:        fileName,
-		Description:     description,
-		ChartName:       chartName,
-		Status:          status,
-		Type:            taskType,
-		LastOperationAt: time.Now().Unix(),
-		CreatedAt:       time.Now().Unix(),
+		ID:                            uuid.New().String(),
+		UserId:                        userId,
+		URL:                           url,
+		FileName:                      fileName,
+		Description:                   description,
+		ChartName:                     chartName,
+		DescriptionOverwriteBehaviour: descriptionOverwriteBehaviour,
+		Status:                        status,
+		Type:                          taskType,
+		LastOperationAt:               time.Now().Unix(),
+		CreatedAt:                     time.Now().Unix(),
 	}
-	stmt, err := db.Prepare("INSERT INTO task (id, user_id, url, file_name, description, chart_name, status, type, last_operation_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+	stmt, err := db.Prepare("INSERT INTO task (id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, last_operation_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {
 		return nil, err
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(task.ID, task.UserId, task.URL, task.FileName, task.Description, task.ChartName, task.Status, task.Type, task.LastOperationAt, task.CreatedAt)
+	result, err := stmt.Exec(
+		task.ID,
+		task.UserId,
+		task.URL,
+		task.FileName,
+		task.Description,
+		task.DescriptionOverwriteBehaviour,
+		task.ChartName,
+		task.Status,
+		task.Type,
+		task.LastOperationAt,
+		task.CreatedAt,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -82,13 +102,13 @@ func NewTask(userId, url, fileName, description, chartName string, status TaskSt
 }
 
 func (task *Task) Update() error {
-	stmt, err := db.Prepare("UPDATE task SET url=?, file_name=?, description=?, status=?, chart_name=?, last_operation_at=? WHERE id=?")
+	stmt, err := db.Prepare("UPDATE task SET url=?, file_name=?, description=?, description_overwrite_behaviour=?, status=?, chart_name=?, last_operation_at=? WHERE id=?")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(task.URL, task.FileName, task.Description, task.Status, task.ChartName, task.LastOperationAt, task.ID)
+	result, err := stmt.Exec(task.URL, task.FileName, task.Description, task.DescriptionOverwriteBehaviour, task.Status, task.ChartName, task.LastOperationAt, task.ID)
 	if err != nil {
 		return err
 	}
@@ -98,7 +118,7 @@ func (task *Task) Update() error {
 }
 
 func (task *Task) Reload() error {
-	err := db.QueryRow("SELECT id, user_id, url, file_name, description, chart_name, status, type, last_operation_at, created_at FROM task where id=?", task.ID).Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.ChartName, &task.Status, &task.Type, &task.LastOperationAt, &task.CreatedAt)
+	err := db.QueryRow("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, last_operation_at, created_at FROM task where id=?", task.ID).Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.DescriptionOverwriteBehaviour, &task.ChartName, &task.Status, &task.Type, &task.LastOperationAt, &task.CreatedAt)
 	if err != nil {
 		println("Error reloading task for id ", task.ID, err)
 		return fmt.Errorf("Error reloading task")
@@ -139,7 +159,19 @@ func UpdateTaskLastOperationAt(id string) error {
 
 func FindTaskById(id string) (*Task, error) {
 	var task Task
-	err := db.QueryRow("SELECT id, user_id, url, file_name, description, chart_name, status, type, last_operation_at, created_at FROM task where id=?", id).Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.ChartName, &task.Status, &task.Type, &task.LastOperationAt, &task.CreatedAt)
+	err := db.QueryRow("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, last_operation_at, created_at FROM task where id=?", id).
+		Scan(&task.ID,
+			&task.UserId,
+			&task.URL,
+			&task.FileName,
+			&task.Description,
+			&task.DescriptionOverwriteBehaviour,
+			&task.ChartName,
+			&task.Status,
+			&task.Type,
+			&task.LastOperationAt,
+			&task.CreatedAt,
+		)
 	if err != nil {
 		println("Error scaning for id ", id, err)
 		return nil, fmt.Errorf("Cannot find requested record")
@@ -150,10 +182,10 @@ func FindTaskById(id string) (*Task, error) {
 
 func FindTaskByUserId(id, taskType string) (*[]Task, error) {
 	tasks := make([]Task, 0)
-	rows, err := db.Query("SELECT id, user_id, url, file_name, description, chart_name, status, type, last_operation_at, created_at FROM task where user_id=? AND type=? ORDER BY created_at DESC", id, taskType)
+	rows, err := db.Query("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, last_operation_at, created_at FROM task where user_id=? AND type=? ORDER BY created_at DESC", id, taskType)
 	for rows.Next() {
 		var task Task
-		rows.Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.ChartName, &task.Status, &task.Type, &task.LastOperationAt, &task.CreatedAt)
+		rows.Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.DescriptionOverwriteBehaviour, &task.ChartName, &task.Status, &task.Type, &task.LastOperationAt, &task.CreatedAt)
 		tasks = append(tasks, task)
 	}
 	if err != nil {
@@ -167,10 +199,10 @@ func FindTaskByUserId(id, taskType string) (*[]Task, error) {
 func FindStalledTasks() (*[]Task, error) {
 	tasks := make([]Task, 0)
 	timeThreshold := time.Now().Unix() - 60*5 // 5 Min threshold
-	rows, err := db.Query("SELECT id, user_id, url, file_name, description, chart_name, status, type, last_operation_at, created_at FROM task where status=? AND last_operation_at <= ?", TaskStatusProcessing, timeThreshold)
+	rows, err := db.Query("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, last_operation_at, created_at FROM task where status=? AND last_operation_at <= ?", TaskStatusProcessing, timeThreshold)
 	for rows.Next() {
 		var task Task
-		rows.Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.ChartName, &task.Status, &task.Type, &task.LastOperationAt, &task.CreatedAt)
+		rows.Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.DescriptionOverwriteBehaviour, &task.ChartName, &task.Status, &task.Type, &task.LastOperationAt, &task.CreatedAt)
 		tasks = append(tasks, task)
 	}
 	if err != nil {
@@ -188,6 +220,7 @@ func initTaskTable() {
 		url TEXT,
 		file_name TEXT,
 		description TEXT,
+		description_overwrite_behaviour TEXT,
 		chart_name TEXT,
 		status VARCHAR(50) NOT NULL,
 		type VARCHAR(10) NOT NULL,

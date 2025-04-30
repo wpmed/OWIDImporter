@@ -12,10 +12,11 @@ import (
 )
 
 type CreateTaskData struct {
-	Action      string `json:"action"`
-	Url         string `json:"url"`
-	FileName    string `json:"fileName"`
-	Description string `json:"description"`
+	Action                        string                               `json:"action"`
+	Url                           string                               `json:"url"`
+	FileName                      string                               `json:"fileName"`
+	Description                   string                               `json:"description"`
+	DescriptionOverwriteBehaviour models.DescriptionOverwriteBehaviour `json:"descriptionOverwriteBehaviour"`
 }
 
 type GetTaskResponse struct {
@@ -62,6 +63,7 @@ func CreateTask(c *gin.Context) {
 		data.Url,
 		data.FileName,
 		data.Description,
+		data.DescriptionOverwriteBehaviour,
 		"",
 		models.TaskStatusQueued,
 		modelType,
@@ -77,9 +79,10 @@ func CreateTask(c *gin.Context) {
 		case models.TaskTypeMap:
 			fmt.Println("Action message map", task)
 			err := services.StartMap(task.ID, user, services.StartData{
-				Url:         task.URL,
-				FileName:    task.FileName,
-				Description: task.Description,
+				Url:                           task.URL,
+				FileName:                      task.FileName,
+				Description:                   task.Description,
+				DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
 			})
 			if err != nil {
 				log.Println("Error starting map", err)
@@ -87,9 +90,10 @@ func CreateTask(c *gin.Context) {
 		case models.TaskTypeChart:
 			fmt.Println("Action message chart", task)
 			err := services.StartChart(task.ID, user, services.StartData{
-				Url:         task.URL,
-				FileName:    task.FileName,
-				Description: task.Description,
+				Url:                           task.URL,
+				FileName:                      task.FileName,
+				Description:                   task.Description,
+				DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
 			})
 			if err != nil {
 				log.Println("Error starting map", err)
@@ -194,15 +198,18 @@ func RetryTask(c *gin.Context) {
 		return
 	}
 	models.FailProcessingTaskProcesses(task.ID)
+	models.UpdateTaskLastOperationAt(task.ID)
+	task.Reload()
 
 	go func() {
 		switch task.Type {
 		case models.TaskTypeMap:
 			fmt.Println("Action message map", task)
 			err := services.StartMap(task.ID, user, services.StartData{
-				Url:         task.URL,
-				FileName:    task.FileName,
-				Description: task.Description,
+				Url:                           task.URL,
+				FileName:                      task.FileName,
+				Description:                   task.Description,
+				DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
 			})
 			if err != nil {
 				log.Println("Error starting map", err)
@@ -210,9 +217,10 @@ func RetryTask(c *gin.Context) {
 		case models.TaskTypeChart:
 			fmt.Println("Action message chart", task)
 			err := services.StartChart(task.ID, user, services.StartData{
-				Url:         task.URL,
-				FileName:    task.FileName,
-				Description: task.Description,
+				Url:                           task.URL,
+				FileName:                      task.FileName,
+				Description:                   task.Description,
+				DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
 			})
 			if err != nil {
 				log.Println("Error starting map", err)

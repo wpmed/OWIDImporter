@@ -15,9 +15,10 @@ import (
 )
 
 type StartData struct {
-	Url         string `json:"url"`
-	FileName    string `json:"fileName"`
-	Description string `json:"desc"`
+	Url                           string                               `json:"url"`
+	FileName                      string                               `json:"fileName"`
+	Description                   string                               `json:"desc"`
+	DescriptionOverwriteBehaviour models.DescriptionOverwriteBehaviour `json:"description_overwrite_behaviour"`
 }
 
 type CountryTemplateDataItem struct {
@@ -111,6 +112,35 @@ type UploadResponse struct {
 	} `json:"upload"`
 }
 
+type FileRevisionsResponse struct {
+	BatchComplete bool `json:"batchcomplete"`
+	Query         struct {
+		Normalized []struct {
+			FromEncoded bool   `json:"fromencoded"`
+			From        string `json:"from"`
+			To          string `json:"to"`
+		} `json:"normalized"`
+		Pages []FileRevisionsPage `json:"pages"`
+	} `json:"query"`
+}
+
+type FileRevisionsPage struct {
+	PageID    int        `json:"pageid"`
+	Namespace int        `json:"ns"`
+	Title     string     `json:"title"`
+	Revisions []Revision `json:"revisions,omitempty"`
+}
+
+type Revision struct {
+	Slots map[string]ContentSlot `json:"slots"`
+}
+
+type ContentSlot struct {
+	ContentModel  string `json:"contentmodel"`
+	ContentFormat string `json:"contentformat"`
+	Content       string `json:"content"`
+}
+
 func GetChartNameFromUrl(url string) (string, error) {
 	re := regexp.MustCompile(`^https://ourworldindata.org/grapher/([-a-z_0-9]+)(\?.*)?$`)
 	matches := re.FindStringSubmatch(url)
@@ -133,6 +163,43 @@ func ValidateParameters(data StartData) error {
 	}
 
 	return nil
+}
+
+func getFileWikiText(user *models.User, filename string) (string, error) {
+	res, err := utils.DoApiReq[FileRevisionsResponse](user, map[string]string{
+		"action":  "query",
+		"titles":  "File:" + filename,
+		"prop":    "revisions",
+		"rvprop":  "content",
+		"rvlimit": "1",
+		"rvslots": "main",
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+
+	fmt.Println("Response: ", res)
+	for _, page := range res.Query.Pages {
+		if len(page.Revisions) > 0 {
+			// Assuming the main slot contains the wikitext
+			if mainSlot, ok := page.Revisions[0].Slots["main"]; ok {
+				return mainSlot.Content, nil
+			}
+		}
+	}
+
+	return "", nil
+}
+
+func extractCategories(wikitext string) []string {
+	// Create a regular expression to match full MediaWiki category tags
+	// Pattern: [[Category:Any text that doesn't include closing brackets]]
+	re := regexp.MustCompile(`\[\[Category:[^\]]+\]\]`)
+
+	// Find all matches (full category tags)
+	matches := re.FindAllString(wikitext, -1)
+
+	return matches
 }
 
 func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData, downloadPath string, data StartData) (string, string, error) {
@@ -182,18 +249,63 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 			return filename, "uploaded", nil
 		}
 		return filename, "", fmt.Errorf("upload failed: %s", res.Upload.Result)
+	}
 
-	} else if len(page.ImageInfo) > 0 && page.ImageInfo[0].SHA1 == fileInfo.Sha1 {
-		// Already uploaded
+	var wikiText string
+	newFileDesc := strings.TrimSpace(filedesc)
+	if data.DescriptionOverwriteBehaviour == models.DescriptionOverwriteBehaviourExceptCategories {
+		wikiText, err = getFileWikiText(user, filename)
+		if err == nil {
+			// Remove all user incoming categories
+			incomingCategories := extractCategories(filedesc)
+			for _, text := range incomingCategories {
+				newFileDesc = strings.ReplaceAll(newFileDesc, text, "")
+			}
+
+			newFileDesc = strings.TrimSpace(newFileDesc)
+			// Apply existing file categories
+			existingCategories := extractCategories(wikiText)
+			for _, text := range existingCategories {
+				newFileDesc = newFileDesc + "\n" + text
+			}
+
+		} else {
+			fmt.Println("ERROR GETTING WIKITEXT: ", err)
+		}
+	}
+
+	// Already uploaded, just update the description if changed
+	if len(page.ImageInfo) > 0 && page.ImageInfo[0].SHA1 == fileInfo.Sha1 {
+		// We ddin't fetch the wikitext or it failed, try again
+		if wikiText == "" {
+			wikiText, err = getFileWikiText(user, filename)
+		}
+		if wikiText != "" && strings.TrimSpace(wikiText) != strings.TrimSpace(newFileDesc) {
+			fmt.Println("Updating description", filename)
+			res, err := utils.DoApiReq[interface{}](user, map[string]string{
+				"action":         "edit",
+				"comment":        "Updating description from " + data.Url,
+				"text":           newFileDesc,
+				"title":          "File:" + filename,
+				"ignorewarnings": "1",
+				"token":          token,
+			}, nil)
+			if err != nil {
+				fmt.Println("Error updating description: ", err, res)
+			} else {
+				fmt.Println("Description updated")
+				return filename, "description_updated", nil
+			}
+		}
 		fmt.Println("Skipping", filename)
 		return filename, "skipped", nil
 	} else {
-		// Overwrite
+		// Image changed, Overwrite the file
 		fmt.Println("Overwriting", filename)
 		res, err := utils.DoApiReq[UploadResponse](user, map[string]string{
 			"action":         "upload",
 			"comment":        "Re-importing from " + data.Url,
-			"text":           filedesc,
+			"text":           newFileDesc,
 			"filename":       filename,
 			"ignorewarnings": "1",
 			"token":          token,

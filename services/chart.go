@@ -250,6 +250,10 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 				taskProcess.Status = models.TaskProcessStatusSkipped
 				taskProcess.Update()
 				utils.SendWSTaskProcess(task.ID, taskProcess)
+			case "description_updated":
+				taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
+				taskProcess.Update()
+				utils.SendWSTaskProcess(task.ID, taskProcess)
 			case "overwritten":
 				taskProcess.Status = models.TaskProcessStatusOverwritten
 				taskProcess.Update()

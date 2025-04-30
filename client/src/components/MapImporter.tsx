@@ -1,8 +1,8 @@
-import { Box, Button, CircularProgress, Grid, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Grid, Radio, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SocketMessage, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
 import { cancelTask, createTask, fetchTaskById, retryTask } from "../request/request";
-import { Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
+import { DescriptionOverwriteBehaviour, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
 import { getStatusColor, getTaskProcessStatusColor } from "../utils";
 
 const initial_description_map = `=={{int:filedesc}}==
@@ -11,9 +11,7 @@ const initial_description_map = `=={{int:filedesc}}==
 |author = Our World In Data
 |date= $YEAR
 |source = $URL
-|permission = "License: All of Our World in Data is completely open access and all work is licensed under the
-Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the
-source and authors are credited."
+|permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
 |other versions =
 }}
 {{Map showing old data|year=$YEAR}}
@@ -33,9 +31,7 @@ const initial_description_chart = `=={{int:filedesc}}==
 |author = Our World In Data
 |date= $END_YEAR
 |source = $URL
-|permission = "License: All of Our World in Data is completely open access and all work is licensed under the
-Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the
-source and authors are credited."
+|permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
 |other versions =
 }}
 {{Map showing old data|year=$START_YEAR-$END_YEAR}}
@@ -44,6 +40,19 @@ source and authors are credited."
 `;
 const initial_filename_chart = `$NAME, $START_YEAR to $END_YEAR, $REGION.svg`;
 const chart_info_chart = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders`;
+
+const DESCRIPTION_OVERWRITE_OPTIONS = [
+  {
+    value: DescriptionOverwriteBehaviour.ALL,
+    title: "Overwrite full description",
+    description: "Overwrite the full description of the file (if already exists) with the new description.",
+  },
+  {
+    value: DescriptionOverwriteBehaviour.ALL_EXCEPT_CATEGORIES,
+    title: "Overwrite description except the categories",
+    description: "Old categories are retained, any new categories in the new description are discarded/skipped. If the file doesn't already exist, categories in the new description are added.",
+  }
+]
 
 export interface MapImporterSubmitData {
   url: string,
@@ -59,9 +68,13 @@ export interface MapImporterProps {
 export function MapImporter(data: MapImporterProps) {
   const [loading, setLoading] = useState(false)
   const [info, setInfo] = useState("");
+
+  // Form Fields
   const [url, setUrl] = useState("");
   const [fileName, setFileName] = useState("");
   const [description, setDescription] = useState("");
+  const [descriptionOverwriteBehaviour, setDescriptionOverwriteBehaviour] = useState(DescriptionOverwriteBehaviour.ALL);
+
   const { ws, connect, disconnect } = useWebsocket();
   const [taskId, setTaskId] = useState("");
   const [task, setTask] = useState<Task | null>(null)
@@ -103,10 +116,13 @@ export function MapImporter(data: MapImporterProps) {
         setFileName(res.task.filename);
         setDescription(res.task.description)
         setUrl(res.task.url);
+        setDescriptionOverwriteBehaviour(res.task.descriptionOverwriteBehaviour)
+        setTask(res.task);
+
         if (updateItems) {
           setItems(res.processes);
         }
-        setTask(res.task);
+
         if (res.wikiText) {
           setWikiText(res.wikiText)
         }
@@ -117,7 +133,7 @@ export function MapImporter(data: MapImporterProps) {
       .finally(() => {
         setLoading(false)
       })
-  }, [setLoading, setItems, setDescription, setUrl, setFileName, setWikiText])
+  }, [setLoading, setItems, setDescription, setDescriptionOverwriteBehaviour, setUrl, setFileName, setWikiText])
 
   const onCancel = useCallback(() => {
     if (task) {
@@ -143,7 +159,8 @@ export function MapImporter(data: MapImporterProps) {
         url,
         fileName,
         description,
-        action: data.taskType === TaskTypeEnum.MAP ? "startMap" : "startChart"
+        action: data.taskType === TaskTypeEnum.MAP ? "startMap" : "startChart",
+        descriptionOverwriteBehaviour,
       })
       if (response.error) {
         return alert(response.error);
@@ -155,7 +172,7 @@ export function MapImporter(data: MapImporterProps) {
       console.log('Error seding create task', err);
     }
     setLoading(false)
-  }, [url, fileName, description, setTaskId, data.taskType])
+  }, [url, fileName, description, descriptionOverwriteBehaviour, setTaskId, data.taskType])
 
   const submitDisabled = useMemo(() => {
     return !url.length || !fileName || !description;
@@ -185,8 +202,8 @@ export function MapImporter(data: MapImporterProps) {
         console.log("Got websocket message: ", info)
         switch (info.type) {
           case SocketMessageTypeEnum.TASK_PROCESS:
-            const taskProcess = JSON.parse(info.msg) as TaskProcess;
             setItems((items) => {
+              const taskProcess = JSON.parse(info.msg) as TaskProcess;
               const newItems = items.slice();
               const index = newItems.findIndex(item => item.id == taskProcess.id);
               if (index != -1) {
@@ -199,8 +216,7 @@ export function MapImporter(data: MapImporterProps) {
             })
             break;
           case SocketMessageTypeEnum.TASK:
-            const task = JSON.parse(info.msg) as Task;
-            getTask(task.id);
+            getTask((JSON.parse(info.msg) as Task).id);
             break;
 
         }
@@ -314,6 +330,24 @@ export function MapImporter(data: MapImporterProps) {
                 />
               </Stack>
             </Stack>
+            <Stack spacing={1}>
+              <Typography>
+                If a file with the same name exists:
+              </Typography>
+              {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
+                <Stack spacing={1}>
+                  <Stack direction={"row"} alignItems={"flex-start"}>
+                    <Radio disabled={disabled} checked={descriptionOverwriteBehaviour == option.value} onClick={() => setDescriptionOverwriteBehaviour(option.value)} />
+                    <Box>
+                      <Typography>
+                        {option.title}
+                      </Typography>
+                      <Typography variant="subtitle2">{option.description}</Typography>
+                    </Box>
+                  </Stack>
+                </Stack>
+              ))}
+            </Stack>
             <Stack alignItems={"end"}>
               <Box>
                 <Button
@@ -363,7 +397,16 @@ export function MapImporter(data: MapImporterProps) {
           <Stack sx={{ textAlign: "left" }}>
             {items.map(msg => (
               <Typography key={msg.id} variant="caption" color={getTaskProcessStatusColor(msg.status)}>
-                {msg.region} {msg.year || ""} - <span style={{ textTransform: "capitalize" }}>{msg.status}</span>
+                {msg.region} {msg.year || ""} - <span style={{ textTransform: "capitalize" }}>{msg.status?.replace("_", " ")}</span>
+                {msg.filename && (
+                  <a
+                    target="_blank"
+                    href={`https://commons.wikimedia.org/wiki/File:${msg.filename}`}
+                    style={{ marginLeft: 5, textDecoration: 'underline' }}
+                  >
+                    Link
+                  </a>
+                )}
               </Typography>
             ))}
           </Stack>

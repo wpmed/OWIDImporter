@@ -1,5 +1,5 @@
 import { SESSION_ID_KEY } from "../constants";
-import { Task, TaskProcess, TaskTypeEnum } from "../types";
+import { DescriptionOverwriteBehaviour, Task, TaskProcess, TaskTypeEnum } from "../types";
 
 export interface ReplaceSessionResponse {
   sessionId: string,
@@ -45,6 +45,7 @@ export interface CreateTaskData {
   url: string,
   fileName: string,
   description: string,
+  descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour
 }
 
 export interface CreateTaskResponse {
