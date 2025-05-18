@@ -210,15 +210,18 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 		return err
 	}
 
-	// Attach country data to the first file metadata on commons
-	metadata, err := getRegionFileMetadata(task, region)
-	if err != nil {
-		fmt.Println("Error generating metadata: ", err)
-	} else if metadata != "" {
-		fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
-		err := processRegionYear(user, task, *token, chartName, region, filepath.Join(downloadPath, string(startYearInt)+"_final"), int(startYearInt), data, metadata)
+	task.Reload()
+	if task.Status != models.TaskStatusFailed {
+		// Attach country data to the first file metadata on commons
+		metadata, err := getRegionFileMetadata(task, region)
 		if err != nil {
-			fmt.Println("Error uploading with metadata: ", err)
+			fmt.Println("Error generating metadata: ", err)
+		} else if metadata != "" {
+			fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
+			err := processRegionYear(user, task, *token, chartName, region, filepath.Join(downloadPath, string(startYearInt)+"_final"), int(startYearInt), data, metadata)
+			if err != nil {
+				fmt.Println("Error uploading with metadata: ", err)
+			}
 		}
 	}
 
