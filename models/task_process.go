@@ -30,6 +30,7 @@ type TaskProcess struct {
 	TaskId    string            `json:"taskId"`
 	FileName  string            `json:"filename"`
 	CreatedAt int64             `json:"createdAt"`
+	FillData  string            `json:"fillData"`
 }
 
 func (t *TaskProcess) Value() (driver.Value, error) {
@@ -44,6 +45,7 @@ func initTaskProcessTable() {
 		region TEXT,
 		year INT,
 		filename TEXT,
+		fill_data TEXT,
 		status VARCHAR(50) NOT NULL,
 		task_id TEXT NOT NULL, 
 		created_at BIGINT,
@@ -62,15 +64,16 @@ func NewTaskProcess(region string, year int, filename string, status TaskProcess
 		Status:    status,
 		TaskId:    taskId,
 		FileName:  filename,
+		FillData:  "",
 		CreatedAt: time.Now().Unix(),
 	}
-	stmt, err := db.Prepare("INSERT INTO task_process (id, region, year, filename, status, task_id, created_at) VALUES (?,?,?,?,?,?,?)")
+	stmt, err := db.Prepare("INSERT INTO task_process (id, region, year, filename, fill_data, status, task_id, created_at) VALUES (?,?,?,?,?,?,?,?)")
 	if err != nil {
 		return nil, err
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(taskProcess.ID, taskProcess.Region, taskProcess.Year, taskProcess.FileName, taskProcess.Status, taskProcess.TaskId, taskProcess.CreatedAt)
+	result, err := stmt.Exec(taskProcess.ID, taskProcess.Region, taskProcess.Year, taskProcess.FileName, taskProcess.FillData, taskProcess.Status, taskProcess.TaskId, taskProcess.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +84,7 @@ func NewTaskProcess(region string, year int, filename string, status TaskProcess
 
 func FindTaskProcessByTaskRegionYear(region string, year int, taskId string) (*TaskProcess, error) {
 	var tb TaskProcess
-	err := db.QueryRow("SELECT id, region, year, status, filename, task_id, created_at FROM task_process where task_id=? AND region=? AND year=?", taskId, region, year).Scan(&tb.ID, &tb.Region, &tb.Year, &tb.Status, &tb.FileName, &tb.TaskId, &tb.CreatedAt)
+	err := db.QueryRow("SELECT id, region, year, status, filename, fill_data, task_id, created_at FROM task_process where task_id=? AND region=? AND year=?", taskId, region, year).Scan(&tb.ID, &tb.Region, &tb.Year, &tb.Status, &tb.FileName, &tb.FillData, &tb.TaskId, &tb.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -105,13 +108,13 @@ func FailProcessingTaskProcesses(taskId string) error {
 }
 
 func (taskProcess *TaskProcess) Update() error {
-	stmt, err := db.Prepare("UPDATE task_process SET region=?, year=?, status=?, filename=? WHERE id=?")
+	stmt, err := db.Prepare("UPDATE task_process SET region=?, year=?, status=?, filename=?, fill_data=? WHERE id=?")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(taskProcess.Region, taskProcess.Year, taskProcess.Status, taskProcess.FileName, taskProcess.ID)
+	result, err := stmt.Exec(taskProcess.Region, taskProcess.Year, taskProcess.Status, taskProcess.FileName, taskProcess.FillData, taskProcess.ID)
 	if err != nil {
 		return err
 	}
@@ -123,7 +126,7 @@ func (taskProcess *TaskProcess) Update() error {
 func FindTaskProcessesByTaskId(id string) ([]TaskProcess, error) {
 	taskProcesses := make([]TaskProcess, 0)
 
-	rows, err := db.Query("SELECT id, region, year, status, filename, task_id, created_at FROM task_process where task_id=? ORDER BY created_at DESC", id)
+	rows, err := db.Query("SELECT id, region, year, status, filename, fill_data, task_id, created_at FROM task_process where task_id=? ORDER BY created_at DESC", id)
 	if err != nil {
 		fmt.Println("Error scaning task procresses for task_id ", id, err)
 		return taskProcesses, fmt.Errorf("Cannot find requested records")
@@ -132,7 +135,31 @@ func FindTaskProcessesByTaskId(id string) ([]TaskProcess, error) {
 
 	for rows.Next() {
 		var task TaskProcess
-		err := rows.Scan(&task.ID, &task.Region, &task.Year, &task.Status, &task.FileName, &task.TaskId, &task.CreatedAt)
+		err := rows.Scan(&task.ID, &task.Region, &task.Year, &task.Status, &task.FileName, &task.FillData, &task.TaskId, &task.CreatedAt)
+		if err != nil {
+			fmt.Println("Error parsing task process", err)
+		} else {
+			taskProcesses = append(taskProcesses, task)
+		}
+
+	}
+
+	return taskProcesses, nil
+}
+
+func FindTaskProcessesByTaskIdAndRegion(id, region string) ([]TaskProcess, error) {
+	taskProcesses := make([]TaskProcess, 0)
+
+	rows, err := db.Query("SELECT id, region, year, status, filename, fill_data, task_id, created_at FROM task_process where task_id=? AND region=? ORDER BY created_at DESC", id, region)
+	if err != nil {
+		fmt.Println("Error scaning task procresses for task_id ", id, region, err)
+		return taskProcesses, fmt.Errorf("Cannot find requested records")
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var task TaskProcess
+		err := rows.Scan(&task.ID, &task.Region, &task.Year, &task.Status, &task.FileName, &task.FillData, &task.TaskId, &task.CreatedAt)
 		if err != nil {
 			fmt.Println("Error parsing task process", err)
 		} else {

@@ -3,8 +3,11 @@ package services
 import (
 	"context"
 	"fmt"
+	"html"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +18,7 @@ import (
 	"github.com/wpmed-videowiki/OWIDImporter/constants"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
+	svgprocessor "github.com/wpmed-videowiki/OWIDImporter/svg_processor"
 	"github.com/wpmed-videowiki/OWIDImporter/utils"
 	"golang.org/x/sync/errgroup"
 )
@@ -194,7 +198,7 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 		g.Go(func(region string, year int, downloadPath string) func() error {
 			return func() error {
 				if task.Status != models.TaskStatusFailed {
-					err := processRegionYear(user, task, *token, chartName, region, downloadPath, year, data)
+					err := processRegionYear(user, task, *token, chartName, region, downloadPath, year, data, "")
 					return err
 				}
 				return nil
@@ -206,16 +210,116 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 		return err
 	}
 
+	// Attach country data to the first file metadata on commons
+	metadata, err := getRegionFileMetadata(task, region)
+	if err != nil {
+		fmt.Println("Error generating metadata: ", err)
+	} else if metadata != "" {
+		fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
+		err := processRegionYear(user, task, *token, chartName, region, filepath.Join(downloadPath, string(startYearInt)+"_final"), int(startYearInt), data, metadata)
+		if err != nil {
+			fmt.Println("Error uploading with metadata: ", err)
+		}
+	}
+
 	return nil
 }
 
-func processRegionYear(user *models.User, task *models.Task, token, chartName, region, downloadPath string, year int, data StartData) error {
+type CountryFillWithYear struct {
+	Country string
+	Fill    string
+	Year    int
+}
+
+func getRegionFileMetadata(task *models.Task, region string) (string, error) {
+	taskProcesses, err := models.FindTaskProcessesByTaskIdAndRegion(task.ID, region)
+	if err != nil {
+		return "", err
+	}
+
+	metadata := make([]CountryFillWithYear, 0)
+	for _, tp := range taskProcesses {
+		if tp.FillData != "" {
+			countriesData, err := svgprocessor.ParseJSONString(tp.FillData)
+			if err != nil {
+				fmt.Println("Error parsing countries fillData", tp, err)
+				continue
+			}
+			for _, countryData := range countriesData {
+				metadata = append(metadata, CountryFillWithYear{
+					Country: countryData.Country,
+					Fill:    countryData.Fill,
+					Year:    tp.Year,
+				})
+			}
+		}
+	}
+
+	// Convert metadata to SVG metadata element
+	svgContent := generateSVGMetadata(metadata)
+	return svgContent, nil
+}
+
+// Generate SVG metadata with data grouped by years
+func generateSVGMetadata(metadata []CountryFillWithYear) string {
+	var svgBuilder strings.Builder
+
+	// Group data by year
+	dataByYear := make(map[int][]CountryFillWithYear)
+	for _, data := range metadata {
+		dataByYear[data.Year] = append(dataByYear[data.Year], data)
+	}
+
+	// Create a metadata group
+	svgBuilder.WriteString(`<metadata id="country-data">`)
+	svgBuilder.WriteString("\n")
+
+	// Embed data grouped by years
+	svgBuilder.WriteString(`  <years>`)
+	svgBuilder.WriteString("\n")
+
+	// Get all years and sort them
+	years := make([]int, 0, len(dataByYear))
+	for year := range dataByYear {
+		years = append(years, year)
+	}
+	sort.Ints(years) // Sort years for consistent output
+
+	// Create elements for each year with its countries
+	for _, year := range years {
+		countriesForYear := dataByYear[year]
+
+		svgBuilder.WriteString(fmt.Sprintf(`    <year value="%d">`, year))
+		svgBuilder.WriteString("\n")
+
+		// Add countries for this year
+		for _, data := range countriesForYear {
+			svgBuilder.WriteString(fmt.Sprintf(`      <country name="%s" fill="%s" />`,
+				html.EscapeString(data.Country),
+				html.EscapeString(data.Fill)))
+			svgBuilder.WriteString("\n")
+		}
+
+		svgBuilder.WriteString("    </year>")
+		svgBuilder.WriteString("\n")
+	}
+
+	svgBuilder.WriteString("  </years>")
+	svgBuilder.WriteString("\n")
+
+	svgBuilder.WriteString("</metadata>")
+	svgBuilder.WriteString("\n")
+
+	return svgBuilder.String()
+}
+
+func processRegionYear(user *models.User, task *models.Task, token, chartName, region, downloadPath string, year int, data StartData, fileMetadata string) error {
 	var err error
 	var taskProcess *models.TaskProcess
 	// Try to find existing process, otherwise create one
 	existingTB, err := models.FindTaskProcessByTaskRegionYear(region, year, task.ID)
 	if existingTB != nil {
-		if existingTB.Status != models.TaskProcessStatusFailed {
+		if existingTB.Status != models.TaskProcessStatusFailed && fileMetadata == "" {
 			// Not in a retry, skip
 			// existingTB.Status = models.TaskProcessStatusSkipped
 			// existingTB.Update()
@@ -320,12 +424,30 @@ func processRegionYear(user *models.User, task *models.Task, token, chartName, r
 				panic(fmt.Sprintf("Missing map column %s %s %s, retrying", replaceData.Region, replaceData.Year, replaceData.FileName))
 			}
 
+			if fileMetadata != "" {
+				if err := InjectMetadataIntoSVGSameFile(fileInfo.FilePath, fileMetadata); err != nil {
+					fmt.Println("Error injecting metadata into svg: ", err)
+				}
+			}
+
 			Filename, status, err := uploadMapFile(user, token, replaceData, downloadPath, data)
 			if err != nil {
 				fmt.Println("Error processing", region, year)
 				panic(err)
 			}
 			filename = Filename
+
+			// Save the countries fill data
+			countryFlls, err := svgprocessor.ExtractCountryFills(fileInfo.FilePath)
+			if err != nil {
+				fmt.Println("Error extracting country fills ", err)
+			} else {
+				jsonStr, err := svgprocessor.ConvertToJSON(countryFlls)
+				if jsonStr != "" && err == nil {
+					taskProcess.FillData = jsonStr
+					taskProcess.Update()
+				}
+			}
 
 			switch status {
 			case "skipped":
@@ -383,5 +505,44 @@ func processRegionYear(user *models.User, task *models.Task, token, chartName, r
 	}
 
 	utils.SendWSTaskProcess(task.ID, taskProcess)
+	return nil
+}
+
+// InjectMetadataIntoSVGSameFile injects metadata into an SVG file by modifying and overwriting it
+// Places metadata at the end of the file, just before the closing </svg> tag
+func InjectMetadataIntoSVGSameFile(filePath string, metadataString string) error {
+	// Read the original SVG file
+	svgData, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("error reading SVG file: %w", err)
+	}
+
+	// Convert to string for manipulation
+	svgContent := string(svgData)
+
+	// Check if SVG already has a metadata element
+	reMetadata := regexp.MustCompile(`<metadata[^>]*>[\s\S]*?</metadata>`)
+	if reMetadata.MatchString(svgContent) {
+		// Replace existing metadata
+		svgContent = reMetadata.ReplaceAllString(svgContent, metadataString)
+	} else {
+		// Add metadata just before the closing </svg> tag
+		closingSvgTag := "</svg>"
+		lastIndex := strings.LastIndex(svgContent, closingSvgTag)
+
+		if lastIndex == -1 {
+			return fmt.Errorf("could not find closing </svg> tag in file")
+		}
+
+		// Insert metadata before closing tag
+		svgContent = svgContent[:lastIndex] + "\n" + metadataString + "\n" + svgContent[lastIndex:]
+	}
+
+	// Write the modified content back to the same file
+	err = os.WriteFile(filePath, []byte(svgContent), 0644)
+	if err != nil {
+		return fmt.Errorf("error writing to file: %w", err)
+	}
+
 	return nil
 }

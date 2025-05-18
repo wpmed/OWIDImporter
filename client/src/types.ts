@@ -32,7 +32,8 @@ export enum TaskTypeEnum {
 
 export enum DescriptionOverwriteBehaviour {
   ALL = "all",
-  ALL_EXCEPT_CATEGORIES = "all_except_categories"
+  ALL_EXCEPT_CATEGORIES = "all_except_categories",
+  ONLY_FILE = "only_file"
 }
 
 export interface Task {

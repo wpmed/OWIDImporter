@@ -227,6 +227,7 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		break
 	}
 
+	// Doesn't exist, upload and update description directly
 	if len(page.ImageInfo) == 0 {
 		fmt.Println("Uploading", filename)
 		// Do upload
@@ -251,9 +252,12 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		return filename, "", fmt.Errorf("upload failed: %s", res.Upload.Result)
 	}
 
+	// Page already exists
 	var wikiText string
 	newFileDesc := strings.TrimSpace(filedesc)
-	if data.DescriptionOverwriteBehaviour == models.DescriptionOverwriteBehaviourExceptCategories {
+	switch data.DescriptionOverwriteBehaviour {
+
+	case models.DescriptionOverwriteBehaviourExceptCategories:
 		wikiText, err = getFileWikiText(user, filename)
 		if err == nil {
 			// Remove all user incoming categories
@@ -271,7 +275,17 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 
 		} else {
 			fmt.Println("ERROR GETTING WIKITEXT: ", err)
+			return filename, "", fmt.Errorf("Error getting wikitext for except-category overwrite")
 		}
+
+	case models.DescriptionOverwriteBehaviourOnlyFile:
+		wikiText, err = getFileWikiText(user, filename)
+		if err != nil {
+			fmt.Println(" ", err)
+			return filename, "", fmt.Errorf("Error getting wikitext for file-only overwrite")
+		}
+
+		newFileDesc = wikiText
 	}
 
 	// Already uploaded, just update the description if changed
@@ -280,16 +294,19 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		if wikiText == "" {
 			wikiText, err = getFileWikiText(user, filename)
 		}
+
+		params := map[string]string{
+			"action":         "edit",
+			"comment":        "Updating description from " + data.Url,
+			"text":           newFileDesc,
+			"title":          "File:" + filename,
+			"ignorewarnings": "1",
+			"token":          token,
+		}
+
 		if wikiText != "" && strings.TrimSpace(wikiText) != strings.TrimSpace(newFileDesc) {
 			fmt.Println("Updating description", filename)
-			res, err := utils.DoApiReq[interface{}](user, map[string]string{
-				"action":         "edit",
-				"comment":        "Updating description from " + data.Url,
-				"text":           newFileDesc,
-				"title":          "File:" + filename,
-				"ignorewarnings": "1",
-				"token":          token,
-			}, nil)
+			res, err := utils.DoApiReq[interface{}](user, params, nil)
 			if err != nil {
 				fmt.Println("Error updating description: ", err, res)
 			} else {

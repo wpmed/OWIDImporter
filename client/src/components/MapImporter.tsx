@@ -51,6 +51,11 @@ const DESCRIPTION_OVERWRITE_OPTIONS = [
     value: DescriptionOverwriteBehaviour.ALL_EXCEPT_CATEGORIES,
     title: "Overwrite description except the categories",
     description: "Old categories are retained, any new categories in the new description are discarded/skipped. If the file doesn't already exist, categories in the new description are added.",
+  },
+  {
+    value: DescriptionOverwriteBehaviour.ONLY_FILE,
+    title: "Only upload file",
+    description: "Don't update the description, only upload the file.",
   }
 ]
 
