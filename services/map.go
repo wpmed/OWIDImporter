@@ -203,7 +203,7 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 				}
 				return nil
 			}
-		}(region, int(year), filepath.Join(downloadPath, string(year))))
+		}(region, int(year), filepath.Join(downloadPath, strconv.FormatInt(year, 10))))
 	}
 
 	if err := g.Wait(); err != nil {
