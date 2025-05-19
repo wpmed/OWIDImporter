@@ -218,7 +218,7 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 			fmt.Println("Error generating metadata: ", err)
 		} else if metadata != "" {
 			fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
-			err := processRegionYear(user, task, *token, chartName, region, strconv.FormatInt(startYearInt, 10)+"_final", int(startYearInt), data, metadata)
+			err := processRegionYear(user, task, *token, chartName, region, filepath.Join(strconv.FormatInt(startYearInt, 10)+"_final"), int(startYearInt), data, metadata)
 			if err != nil {
 				fmt.Println("Error uploading with metadata: ", err)
 			}
