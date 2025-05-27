@@ -217,7 +217,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 				// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 				return
 			}
-			page.MustWaitElementsMoreThan("button.download-modal__download-button:nth-child(2)", 1)
+			page.MustWaitElementsMoreThan("button.download-modal__download-button:nth-child(2)", 0)
 			err := page.MustElements(`button.download-modal__download-button:nth-child(2)`)[0].Click(proto.InputMouseButtonLeft, 1)
 			fmt.Println("Clicked Chart download button")
 			if err != nil {
