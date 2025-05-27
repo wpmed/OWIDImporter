@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -194,31 +195,40 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 		page.MustNavigate(url)
 		fmt.Println("Navigated to url", url)
 		err = rod.Try(func() {
+			fmt.Println("Before timeline startMarker")
 			page.Timeout(timeoutDuration).MustElement(".timeline-component .startMarker")
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
+			fmt.Println("After timeline startMarker")
 			page.MustWaitElementsMoreThan("figure #line-labels", 0)
+			fmt.Println("After Line labesls")
 
 			title := page.MustElement("h1.header__title").MustText()
 			startYear := page.MustElement(".slider.clickable .handle.startMarker").MustAttribute("aria-valuenow")
 			endYear := page.MustElement(".slider.clickable .handle.endMarker").MustAttribute("aria-valuenow")
+			fmt.Println("After getting title/start/end years", title, *startYear, *endYear)
 
 			// TODO: Check if need to remove
 			time.Sleep(time.Second * 1)
 			wait := page.Browser().WaitDownload(downloadPath)
 			err = page.MustElement(`button[data-track-note="chart_click_download"]`).Click(proto.InputMouseButtonLeft, 1)
+			fmt.Println("Clicked download button")
 			if err != nil {
 				fmt.Println(country, "Error clicking download button", err)
 				// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 				return
 			}
-			err = page.MustElement(`button[data-track-note="chart_download_svg"]`).Click(proto.InputMouseButtonLeft, 1)
+			page.MustWaitElementsMoreThan("button.download-modal__download-button:nth-child(2)", 1)
+			err := page.MustElements(`button.download-modal__download-button:nth-child(2)`)[0].Click(proto.InputMouseButtonLeft, 1)
+			fmt.Println("Clicked Chart download button")
 			if err != nil {
 				// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 				fmt.Println(country, "Error clicking download svg button", err)
 				return
 			}
 
+			fmt.Println("Waiting for download")
 			wait()
+			fmt.Println("After waiting for download")
 			if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
 				// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 				taskProcess.Status = models.TaskProcessStatusFailed
@@ -318,9 +328,9 @@ func GetCountryList(chartName string) ([]string, error) {
 		fmt.Println("waiting for entity selector")
 		page.MustElement(".entity-selector__content")
 		fmt.Println("found entity selector")
-		elements := page.MustElements(".entity-selector__content li")
+		elements := page.MustElements(".entity-selector__content li .label")
 		for _, element := range elements {
-			country := element.MustText()
+			country := strings.TrimSpace(element.MustText())
 			countryCode, ok := constants.COUNTRY_CODES[country]
 			if !ok {
 				fmt.Println("Country not found", country)
