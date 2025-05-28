@@ -390,8 +390,10 @@ func processRegionYear(user *models.User, task *models.Task, token, chartName, r
 			time.Sleep(time.Second * 1)
 			wait := page.Browser().WaitDownload(downloadPath)
 			// err = page.MustElement(`figure button[data-track-note="chart_download_svg"]`).Click(proto.InputMouseButtonLeft, 1)
-			page.MustWaitElementsMoreThan("button.download-modal__download-button:nth-child(2)", 0)
-			err := page.MustElements(`button.download-modal__download-button:nth-child(2)`)[0].Click(proto.InputMouseButtonLeft, 1)
+
+			downloadSelector := "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
+			page.MustWaitElementsMoreThan(downloadSelector, 0)
+			err := page.MustElements(downloadSelector)[0].Click(proto.InputMouseButtonLeft, 1)
 			if err != nil {
 				taskProcess.Status = models.TaskProcessStatusFailed
 				taskProcess.Update()
