@@ -141,6 +141,11 @@ type ContentSlot struct {
 	Content       string `json:"content"`
 }
 
+const (
+	DOWNLOAD_BUTTON_SELECTOR = `figure div[data-track-note="chart_click_download"] button`
+	HEADLESS                 = true
+)
+
 func GetChartNameFromUrl(url string) (string, error) {
 	re := regexp.MustCompile(`^https://ourworldindata.org/grapher/([-a-z_0-9]+)(\?.*)?$`)
 	matches := re.FindStringSubmatch(url)

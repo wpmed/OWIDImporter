@@ -145,7 +145,7 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 	l := launcher.New()
 	defer l.Cleanup()
 
-	control := l.Set("--no-sandbox").HeadlessNew(true).MustLaunch()
+	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
 	browser := rod.New().ControlURL(control).MustConnect()
 	page := browser.MustPage("")
 
@@ -347,7 +347,7 @@ func processRegionYear(user *models.User, task *models.Task, token, chartName, r
 	defer l.Cleanup()
 
 	// control := l.Set("--no-sandbox").Headless(false).MustLaunch()
-	control := l.Set("--no-sandbox").HeadlessNew(true).MustLaunch()
+	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
 	browser := rod.New().ControlURL(control).MustConnect()
 	defer browser.Close()
 	url := ""
@@ -378,7 +378,7 @@ func processRegionYear(user *models.User, task *models.Task, token, chartName, r
 			page.MustNavigate(url)
 
 			title := page.MustElement("h1.header__title").MustText()
-			err = page.MustElement(`figure button[data-track-note="chart_click_download"]`).Click(proto.InputMouseButtonLeft, 1)
+			err = page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
 			if err != nil {
 				fmt.Println(year, "Error clicking download button", err)
 				taskProcess.Status = models.TaskProcessStatusFailed

@@ -180,7 +180,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 	l := launcher.New()
 	defer l.Cleanup()
 
-	control := l.Set("--no-sandbox").HeadlessNew(true).MustLaunch()
+	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
 	browser := rod.New().ControlURL(control).MustConnect()
 	defer browser.Close()
 	fmt.Println("Processing", url)
@@ -210,7 +210,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			// TODO: Check if need to remove
 			time.Sleep(time.Second * 1)
 			wait := page.Browser().WaitDownload(downloadPath)
-			err = page.MustElement(`button[data-track-note="chart_click_download"]`).Click(proto.InputMouseButtonLeft, 1)
+			err = page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
 			fmt.Println("Clicked download button")
 			if err != nil {
 				fmt.Println(country, "Error clicking download button", err)
@@ -319,7 +319,7 @@ func GetCountryList(chartName string) ([]string, error) {
 	l := launcher.New()
 	defer l.Cleanup()
 
-	control := l.Set("--no-sandbox").HeadlessNew(true).MustLaunch()
+	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
 	browser := rod.New().ControlURL(control).MustConnect()
 	defer browser.MustClose()
 	page := browser.MustPage("")
