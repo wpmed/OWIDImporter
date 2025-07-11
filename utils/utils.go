@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"os"
 
 	"github.com/dghubble/oauth1"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
@@ -123,6 +124,7 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 		fmt.Println("Error reading body", err)
 		return nil, err
 	}
+	fmt.Println("Res body: ", string(body))
 	var result T
 	err = json.Unmarshal(body, &result)
 	if err != nil {
@@ -184,7 +186,7 @@ func sendWSTaskMessage(taskId string, messageType string, msg string) {
 			failedSessions := make([]string, 0)
 			for _, s := range sessions.TaskSessions[taskId] {
 				s.WsMutex.Lock()
-				fmt.Println("Sending msg ", messageType, "-", msg)
+				fmt.Println("Sending msg ", messageType)
 				err := s.Ws.WriteJSON(map[string]string{
 					"type": messageType,
 					"msg":  msg,
@@ -230,4 +232,33 @@ func Contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func DownloadFile(url, filepath string) (err error) {
+	// Create the file
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	// Get the data
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Check server response
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	// Writer the body to file
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

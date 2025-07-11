@@ -215,6 +215,7 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 	if err != nil {
 		return filename, "", err
 	}
+	fmt.Println("Uploading file: ", fileInfo.FilePath)
 
 	res, err := utils.DoApiReq[QueryResponse](user, map[string]string{
 		"action": "query",
