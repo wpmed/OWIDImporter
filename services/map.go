@@ -305,7 +305,8 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 		if err != nil {
 			fmt.Println("Error generating metadata: ", err)
 		} else if metadata != "" {
-			fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
+			// fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
+			fmt.Println("GOT METADATA, YAAAAAAAAAAY")
 			err := processRegionYear(user, task, *token, chartName, title, region, filepath.Join(downloadPath, strconv.FormatInt(startYearInt, 10)+"_final"), int(startYearInt), data, metadata)
 			if err != nil {
 				fmt.Println("Error uploading with metadata: ", err)
@@ -418,6 +419,7 @@ func downloadChartFile(url, downloadPath string) error {
 	err := rod.Try(func() {
 		page = page.Timeout(timeoutDuration)
 		page.MustNavigate(url)
+		page.MustWaitIdle()
 
 		err := page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
 		if err != nil {

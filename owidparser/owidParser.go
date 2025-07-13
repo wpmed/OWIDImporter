@@ -70,9 +70,16 @@ func (g *GenericSVG) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	// Set the tag name
 	start.Name = g.XMLName
 
-	// Add attributes
-	for key, value := range g.Attributes {
-		start.Attr = append(start.Attr, xml.Attr{Name: xml.Name{Local: key}, Value: value})
+	// Sort attribute keys for consistent ordering
+	keys := make([]string, 0, len(g.Attributes))
+	for key := range g.Attributes {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	// Add attributes in sorted order
+	for _, key := range keys {
+		start.Attr = append(start.Attr, xml.Attr{Name: xml.Name{Local: key}, Value: g.Attributes[key]})
 	}
 
 	// Start the element
@@ -102,9 +109,16 @@ func (g *GenericElement) MarshalXML(e *xml.Encoder, start xml.StartElement) erro
 	// Set the tag name
 	start.Name = g.XMLName
 
-	// Add attributes
-	for key, value := range g.Attributes {
-		start.Attr = append(start.Attr, xml.Attr{Name: xml.Name{Local: key}, Value: value})
+	// Sort attribute keys for consistent ordering
+	keys := make([]string, 0, len(g.Attributes))
+	for key := range g.Attributes {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	// Add attributes in sorted order
+	for _, key := range keys {
+		start.Attr = append(start.Attr, xml.Attr{Name: xml.Name{Local: key}, Value: g.Attributes[key]})
 	}
 
 	// Start the element

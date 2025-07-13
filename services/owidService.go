@@ -233,6 +233,7 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		break
 	}
 
+	fmt.Println("Got page info", page.ImageInfo)
 	// Doesn't exist, upload and update description directly
 	if len(page.ImageInfo) == 0 {
 		fmt.Println("Uploading", filename)
@@ -310,13 +311,16 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 			"token":          token,
 		}
 
-		if wikiText != "" && strings.TrimSpace(wikiText) != strings.TrimSpace(newFileDesc) {
+		if wikiText != "" && strings.Compare(strings.TrimSpace(wikiText), strings.TrimSpace(newFileDesc)) != 0 {
 			fmt.Println("Updating description", filename)
+			fmt.Println("Old Desc:\n", strings.TrimSpace(wikiText))
+			fmt.Println("New Desc:\n", strings.TrimSpace(newFileDesc))
+
 			res, err := utils.DoApiReq[interface{}](user, params, nil)
 			if err != nil {
 				fmt.Println("Error updating description: ", err, res)
 			} else {
-				fmt.Println("Description updated")
+				fmt.Println("Description updated", *res)
 				return filename, "description_updated", nil
 			}
 		}
@@ -324,7 +328,7 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		return filename, "skipped", nil
 	} else {
 		// Image changed, Overwrite the file
-		fmt.Println("Overwriting", filename)
+		fmt.Println("Overwriting", filename, page.ImageInfo[0].SHA1, fileInfo.Sha1)
 		res, err := utils.DoApiReq[UploadResponse](user, map[string]string{
 			"action":         "upload",
 			"comment":        "Re-importing from " + data.Url,
@@ -362,7 +366,7 @@ func getFileInfo(fileDirectory string) (*FileInfo, error) {
 	}
 
 	if len(files) != 1 {
-		return nil, fmt.Errorf("expected exactly 1 SVG file, found %d", len(files))
+		return nil, fmt.Errorf("expected exactly 1 SVG file, found %d, %s", len(files), fileDirectory)
 	}
 
 	fileContents, err := os.ReadFile(files[0])
