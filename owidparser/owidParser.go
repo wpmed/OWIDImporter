@@ -569,6 +569,7 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 	}
 
 	writeResults := make([]WriteResult, 0)
+	CleanupTextElementsPreserveStructure(&genericSVG)
 
 	for year, yearData := range yearlyData {
 		fmt.Printf("Processing year: %d with %d data points\n", year, len(yearData))
@@ -710,4 +711,113 @@ func getFillValue(fillMap []FillItem, value float64) string {
 	}
 
 	return ""
+}
+
+// CleanupTextElements removes nested elements (like <a> tags) from <text> elements
+// and ensures each text element contains only simple text or a single tspan with text
+func CleanupTextElements(svg *GenericSVG) {
+	textElements := svg.FindElements("text")
+
+	for _, textElement := range textElements {
+		cleanupTextElement(textElement)
+	}
+}
+
+func cleanupTextElement(textElement *GenericElement) {
+	// Extract all text content from the element and its children
+	textContent := extractAllTextContent(textElement)
+
+	// If we have text content, replace the entire structure with simple text
+	if strings.TrimSpace(textContent) != "" {
+		// Check if the original element had a single tspan - if so, preserve that structure
+		tspans := textElement.FindElements("tspan")
+
+		if len(tspans) == 1 {
+			// Keep single tspan structure but clean its content
+			tspan := tspans[0]
+			tspan.SetTextContent(strings.TrimSpace(textContent))
+
+			// Replace text element's children with just the cleaned tspan
+			textElement.Children = []Node{
+				{
+					IsText:  false,
+					Element: tspan,
+				},
+			}
+		} else {
+			// Replace with direct text content
+			textElement.SetTextContent(strings.TrimSpace(textContent))
+		}
+	}
+}
+
+// extractAllTextContent recursively extracts all text content from an element and its children
+func extractAllTextContent(element *GenericElement) string {
+	var textBuilder strings.Builder
+
+	for _, child := range element.Children {
+		if child.IsText {
+			textBuilder.WriteString(child.Text)
+		} else if child.Element != nil {
+			// Recursively extract text from child elements
+			childText := extractAllTextContent(child.Element)
+			textBuilder.WriteString(childText)
+		}
+	}
+
+	return textBuilder.String()
+}
+
+// Alternative version that preserves more structure if needed
+func CleanupTextElementsPreserveStructure(svg *GenericSVG) {
+	textElements := svg.FindElements("text")
+
+	for _, textElement := range textElements {
+		cleanupTextElementPreserveStructure(textElement)
+	}
+}
+
+func cleanupTextElementPreserveStructure(textElement *GenericElement) {
+	var newChildren []Node
+
+	for _, child := range textElement.Children {
+		if child.IsText {
+			// Keep text nodes as-is
+			newChildren = append(newChildren, child)
+		} else if child.Element != nil {
+			// Process child elements
+			if child.Element.XMLName.Local == "tspan" {
+				// Clean the tspan and keep it
+				cleanedTspan := cleanTspan(child.Element)
+				newChildren = append(newChildren, Node{
+					IsText:  false,
+					Element: cleanedTspan,
+				})
+			}
+			// Skip other elements like <a> tags
+		}
+	}
+
+	textElement.Children = newChildren
+}
+
+func cleanTspan(tspan *GenericElement) *GenericElement {
+	// Extract all text content from the tspan
+	textContent := extractAllTextContent(tspan)
+
+	// Create a new tspan with cleaned content
+	cleanedTspan := &GenericElement{
+		XMLName:    tspan.XMLName,
+		Attributes: make(map[string]string),
+	}
+
+	// Copy attributes
+	for k, v := range tspan.Attributes {
+		cleanedTspan.Attributes[k] = v
+	}
+
+	// Set only the text content
+	cleanedTspan.SetTextContent(strings.TrimSpace(textContent))
+
+	return cleanedTspan
 }

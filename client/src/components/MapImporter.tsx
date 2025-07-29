@@ -192,6 +192,10 @@ export function MapImporter(data: MapImporterProps) {
     return false;
   }, [task, items])
 
+  const failedItemsCount = useMemo(() => {
+    return items.filter(item => item.status === TaskProcessStatusEnum.Failed).length;
+  }, [items])
+
   useEffect(() => {
     connect()
     return () => {
@@ -299,7 +303,12 @@ export function MapImporter(data: MapImporterProps) {
                     )}
                   </Stack>
                   {canRetry && (
-                    <Button variant="outlined" loading={retryLoading} onClick={onRetry}>Retry failed items</Button>
+                    <Stack>
+                      <Button variant="outlined" loading={retryLoading} onClick={onRetry}>Retry failed items</Button>
+                      {failedItemsCount > 0 && (
+                        <Typography color="error">{failedItemsCount} Failed items</Typography>
+                      )}
+                    </Stack>
                   )}
                 </Stack>
               )}

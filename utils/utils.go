@@ -124,7 +124,7 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 		fmt.Println("Error reading body", err)
 		return nil, err
 	}
-	fmt.Println("Res body: ", string(body))
+	fmt.Println("Res body: ", string(body), res.StatusCode)
 	var result T
 	err = json.Unmarshal(body, &result)
 	if err != nil {

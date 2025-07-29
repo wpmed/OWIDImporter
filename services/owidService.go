@@ -320,6 +320,16 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 			if err != nil {
 				fmt.Println("Error updating description: ", err, res)
 			} else {
+				res2 := *res
+				res3, ok1 := res2.(map[string]interface{})
+				if ok1 {
+					_, ok2 := res3["error"]
+					if ok2 {
+						fmt.Println("Error updating description", res3)
+						return filename, "", fmt.Errorf("Error updating description")
+
+					}
+				}
 				fmt.Println("Description updated", *res)
 				return filename, "description_updated", nil
 			}
