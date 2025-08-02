@@ -470,6 +470,9 @@ func processRegionYearNewFlow(user *models.User, task *models.Task, data StartDa
 	var taskProcess *models.TaskProcess
 	mapPath := path.Join(mapDir, strconv.Itoa(year))
 	fmt.Println("Map path: ", mapPath)
+	if err := models.UpdateTaskLastOperationAt(task.ID); err != nil {
+		fmt.Println("Error updating task last operation at ", task.ID, err)
+	}
 
 	// Try to find existing process, otherwise create one
 	existingTB, err := models.FindTaskProcessByTaskRegionYear(region, year, task.ID)
@@ -574,6 +577,7 @@ func processRegionYearNewFlow(user *models.User, task *models.Task, data StartDa
 		utils.SendWSTaskProcess(task.ID, taskProcess)
 	}
 
+	time.Sleep(time.Millisecond * 2000)
 	return nil
 }
 
@@ -594,7 +598,6 @@ func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, 
 		}
 		processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, "", year)
 
-		time.Sleep(time.Millisecond * 2000)
 	}
 
 	task.Reload()
