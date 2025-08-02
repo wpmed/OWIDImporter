@@ -594,7 +594,7 @@ func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, 
 		}
 		processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, "", year)
 
-		time.Sleep(time.Millisecond * 500)
+		time.Sleep(time.Millisecond * 2000)
 	}
 
 	task.Reload()

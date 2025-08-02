@@ -313,8 +313,8 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 
 		if wikiText != "" && strings.Compare(strings.TrimSpace(wikiText), strings.TrimSpace(newFileDesc)) != 0 {
 			fmt.Println("Updating description", filename)
-			fmt.Println("Old Desc:\n", strings.TrimSpace(wikiText))
-			fmt.Println("New Desc:\n", strings.TrimSpace(newFileDesc))
+			// fmt.Println("Old Desc:\n", strings.TrimSpace(wikiText))
+			// fmt.Println("New Desc:\n", strings.TrimSpace(newFileDesc))
 
 			res, err := utils.DoApiReq[interface{}](user, params, nil)
 			if err != nil {
