@@ -598,6 +598,15 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 			}
 		}
 
+		// Clear all years data
+		chartMap := yearQuery.Select("#map")
+		if len(chartMap) > 0 {
+			countriesPaths := chartMap[0].FindElements("path")
+			for i := range countriesPaths {
+				countriesPaths[i].Attributes["fill"] = "url(#noDataPattern)"
+			}
+
+		}
 		matchedCount := 0
 
 		// Generate image for this year by replacing the colors of the data
