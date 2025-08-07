@@ -34,6 +34,7 @@ type Dimensions struct {
 type Metadata struct {
 	Name       string     `json:"name"`
 	Unit       string     `json:"unit"`
+	ShortUnit  string     `json:"shortUnit"`
 	Timespan   string     `json:"timespan"`
 	Dimensions Dimensions `json:"dimensions"`
 }
@@ -534,6 +535,9 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 		key := item.Attributes["id"]
 		if metadata.Unit != "" {
 			key = strings.ReplaceAll(key, metadata.Unit, "")
+		}
+		if metadata.ShortUnit != "" {
+			key = strings.ReplaceAll(key, metadata.ShortUnit, "")
 		}
 
 		floatKey, err := strconv.ParseFloat(key, 64)
