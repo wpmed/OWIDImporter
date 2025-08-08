@@ -32,11 +32,23 @@ type Dimensions struct {
 }
 
 type Metadata struct {
-	Name       string     `json:"name"`
-	Unit       string     `json:"unit"`
-	ShortUnit  string     `json:"shortUnit"`
-	Timespan   string     `json:"timespan"`
-	Dimensions Dimensions `json:"dimensions"`
+	Name         string       `json:"name"`
+	Unit         string       `json:"unit"`
+	ShortUnit    string       `json:"shortUnit"`
+	Timespan     string       `json:"timespan"`
+	Dimensions   Dimensions   `json:"dimensions"`
+	Display      Display      `json:"display"`
+	Presentation Presentation `json:"presentation"`
+}
+
+type Display struct {
+	Name      string `json:"name"`
+	Unit      string `json:"unit"`
+	ShortUnit string `json:"shortUnit"`
+}
+
+type Presentation struct {
+	TitlePublic string `json:"titlePublic"`
 }
 
 type CombinedDataPoint struct {
@@ -424,6 +436,14 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 		return nil, err
 	}
 
+	if title == "" {
+		if metadata.Display.Name != "" {
+			title = metadata.Display.Name
+		} else if metadata.Presentation.TitlePublic != "" {
+			title = metadata.Presentation.TitlePublic
+		}
+	}
+
 	// Create entity lookup map
 	entityLookup := make(map[int]Entity)
 	for _, entity := range metadata.Dimensions.Entities.Values {
@@ -539,6 +559,12 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 		if metadata.ShortUnit != "" {
 			key = strings.ReplaceAll(key, metadata.ShortUnit, "")
 		}
+		if metadata.Display.Unit != "" {
+			key = strings.ReplaceAll(key, metadata.Display.Unit, "")
+		}
+		if metadata.Display.ShortUnit != "" {
+			key = strings.ReplaceAll(key, metadata.Display.ShortUnit, "")
+		}
 
 		floatKey, err := strconv.ParseFloat(key, 64)
 		if err != nil {
@@ -646,6 +672,9 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 		}
 	}
 
+	sort.SliceStable(writeResults, func(a int, b int) bool {
+		return writeResults[a].Year < writeResults[b].Year
+	})
 	return &writeResults, nil
 }
 

@@ -198,6 +198,7 @@ func getMapStartEndYearTitle(chartName, region string) (string, string, string) 
 	} else {
 		url = fmt.Sprintf("%s%s?region=%s", constants.OWID_BASE_URL, chartName, region)
 	}
+	fmt.Println("Getting map start/end year + title: ", url)
 
 	l := launcher.New()
 	defer l.Cleanup()
@@ -217,11 +218,16 @@ func getMapStartEndYearTitle(chartName, region string) (string, string, string) 
 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 			page.MustNavigate(url)
+			fmt.Println("Before idle")
 			page.MustWaitIdle()
+			fmt.Println("After idle")
 			marker := page.MustElement(".handle.startMarker")
+			fmt.Println("Got marker", marker)
 			startYear = *marker.MustAttribute("aria-valuemin")
 			endYear = *marker.MustAttribute("aria-valuemax")
+			fmt.Println("Got start/end")
 			title = page.MustElement("h1.header__title").MustText()
+			fmt.Println("Got start/end title")
 		})
 
 		if err != nil {
@@ -233,6 +239,7 @@ func getMapStartEndYearTitle(chartName, region string) (string, string, string) 
 		}
 	}
 
+	fmt.Println("Start: ", startYear, " End: ", endYear, " Title: ", title)
 	return startYear, endYear, title
 }
 
@@ -587,18 +594,23 @@ func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, 
 		return err
 	}
 
-	_, err = owidparser.GenerateImages(title, dataPath, metadataPath, fileinfo.FilePath, mapDir)
+	results, err := owidparser.GenerateImages(title, dataPath, metadataPath, fileinfo.FilePath, mapDir)
 	if err != nil {
 		return err
 	}
 
-	for year := startYear; year <= endYear; year++ {
+	for i := range *results {
 		if task.Status == models.TaskStatusFailed {
 			break
 		}
-		processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, "", year)
-
+		processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, "", (*results)[i].Year)
 	}
+	// for year := startYear; year <= endYear; year++ {
+	// 	if task.Status == models.TaskStatusFailed {
+	// 		break
+	// 	}
+	// 	processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, "", year)
+	// }
 
 	task.Reload()
 	if task.Status != models.TaskStatusFailed {
