@@ -537,6 +537,7 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 
 	lines2 := query.Select("#lines")
 	swatches := query.Select("#swatches")
+	labels := query.Select("#labels")
 
 	if len(lines2) == 0 || len(swatches) == 0 {
 		return nil, fmt.Errorf("Could not find legend lines or swatches in SVG")
@@ -544,15 +545,15 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 
 	fillMap := make([]FillItem, 0)
 
-	linesElements := lines2[0].GetElements()
+	// linesElements := lines2[0].GetElements()
 	swatchesElements := swatches[0].GetElements()
 
-	for index, item := range linesElements {
+	for index, item := range labels[0].GetElements() {
 		if index >= len(swatchesElements) {
 			break
 		}
 
-		key := item.Attributes["id"]
+		key := item.GetTextContent()
 		if metadata.Unit != "" {
 			key = strings.ReplaceAll(key, metadata.Unit, "")
 		}
@@ -565,6 +566,11 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 		if metadata.Display.ShortUnit != "" {
 			key = strings.ReplaceAll(key, metadata.Display.ShortUnit, "")
 		}
+
+		// Remove any spaces
+		key = strings.TrimSpace(key)
+		key = strings.ReplaceAll(key, ",", "")
+		// key = strings.ReplaceAll(key, ".", "")
 
 		floatKey, err := strconv.ParseFloat(key, 64)
 		if err != nil {
@@ -723,6 +729,9 @@ func getFillValue(fillMap []FillItem, value float64) string {
 	if value < 0 || value != value { // NaN check
 		for _, item := range fillMap {
 			if item.StrValue == "No-data" {
+				return item.Fill
+			}
+			if item.StrValue == "No data" {
 				return item.Fill
 			}
 		}
