@@ -14,5 +14,4 @@ libxrandr2
 libatspi2.0-0
 sqlite3
 libsqlite3-dev
-zip
-unzip
+chromium
