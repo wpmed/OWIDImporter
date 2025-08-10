@@ -637,7 +637,14 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 			for i := range countriesPaths {
 				countriesPaths[i].Attributes["fill"] = "url(#noDataPattern)"
 			}
-
+		} else {
+			chartMap = yearQuery.Select("#globe")
+			if len(chartMap) > 0 {
+				countriesPaths := chartMap[0].FindElements("path")
+				for i := range countriesPaths {
+					countriesPaths[i].Attributes["fill"] = "url(#noDataPattern)"
+				}
+			}
 		}
 		matchedCount := 0
 

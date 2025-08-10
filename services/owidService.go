@@ -233,10 +233,8 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		break
 	}
 
-	fmt.Println("Got page info", page.ImageInfo)
 	// Doesn't exist, upload and update description directly
 	if len(page.ImageInfo) == 0 {
-		fmt.Println("Uploading", filename)
 		// Do upload
 		res, err := utils.DoApiReq[UploadResponse](user, map[string]string{
 			"action":         "upload",
@@ -312,7 +310,6 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		}
 
 		if wikiText != "" && strings.Compare(strings.TrimSpace(wikiText), strings.TrimSpace(newFileDesc)) != 0 {
-			fmt.Println("Updating description", filename)
 			// fmt.Println("Old Desc:\n", strings.TrimSpace(wikiText))
 			// fmt.Println("New Desc:\n", strings.TrimSpace(newFileDesc))
 
@@ -330,15 +327,12 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 
 					}
 				}
-				fmt.Println("Description updated", *res)
 				return filename, "description_updated", nil
 			}
 		}
-		fmt.Println("Skipping", filename)
 		return filename, "skipped", nil
 	} else {
 		// Image changed, Overwrite the file
-		fmt.Println("Overwriting", filename, page.ImageInfo[0].SHA1, fileInfo.Sha1)
 		res, err := utils.DoApiReq[UploadResponse](user, map[string]string{
 			"action":         "upload",
 			"comment":        "Re-importing from " + data.Url,
