@@ -108,7 +108,6 @@ func FindUserByUsername(username string) (*User, error) {
 		user.ResourceOwnerSecret = decryptedSecret
 	}
 
-	fmt.Println("Query result: ", user.ID, user.Username, "Owner Key: [REDACTED]", "Secret: [REDACTED]")
 	return &user, nil
 }
 

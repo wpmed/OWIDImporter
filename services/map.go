@@ -84,6 +84,10 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				break
 			}
 			task.Reload()
+			if task.Status == models.TaskStatusDone || task.Status == models.TaskStatusFailed {
+				done = true
+				break
+			}
 		}
 	}()
 

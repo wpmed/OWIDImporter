@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/go-rod/rod/lib/launcher"
 	"github.com/joho/godotenv"
 
 	"github.com/wpmed-videowiki/OWIDImporter/env"
@@ -24,6 +25,9 @@ func main() {
 	go func() {
 		monitorStalledTasks()
 	}()
+
+	// Download browser if not available
+	launcher.NewBrowser().Get()
 
 	router := routes.BuildRoutes()
 	err = router.Run(":8000")
