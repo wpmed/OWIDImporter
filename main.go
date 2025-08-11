@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os/exec"
 	"time"
 
 	"github.com/go-rod/rod/lib/launcher"
@@ -25,6 +26,11 @@ func main() {
 	go func() {
 		monitorStalledTasks()
 	}()
+
+	whoami, err := exec.Command("whoami").Output()
+	pwd, err := exec.Command("pwd").Output()
+	fmt.Println("whoami", string(whoami), err)
+	fmt.Println("pwd", string(pwd), err)
 
 	// Download browser if not available
 	b := launcher.NewBrowser()
