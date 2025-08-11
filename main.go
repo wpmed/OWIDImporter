@@ -27,7 +27,10 @@ func main() {
 	}()
 
 	// Download browser if not available
-	launcher.NewBrowser().Get()
+	b := launcher.NewBrowser()
+	b.Hosts = []launcher.Host{launcher.HostNPM, launcher.HostPlaywright}
+	r, err := b.Get()
+	fmt.Println("launcher ", r, err)
 
 	router := routes.BuildRoutes()
 	err = router.Run(":8000")
