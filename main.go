@@ -21,6 +21,7 @@ func main() {
 	}
 	// Verify environment variables
 	env.GetEnv()
+	launcher.DefaultBrowserDir = "/workspace/.cache/rod/browser"
 
 	go func() {
 		monitorStalledTasks()
@@ -28,7 +29,6 @@ func main() {
 
 	// Download browser if not available
 	b := launcher.NewBrowser()
-	b.RootDir = "/workspace/.cache/rod/browser"
 	fmt.Println("Dir is", b.Dir(), b.RootDir)
 	b.Hosts = []launcher.Host{launcher.HostNPM, launcher.HostPlaywright}
 	r, err := b.Get()
