@@ -138,11 +138,8 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 }
 
 func downloadMapData(url, dataPath, metadataPath, mapPath string) error {
-	l := GetLauncher()
+	l, browser := GetBrowser()
 	defer l.Cleanup()
-
-	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
-	browser := rod.New().ControlURL(control).MustConnect()
 	defer browser.Close()
 
 	page := browser.MustPage("")
@@ -203,11 +200,9 @@ func getMapStartEndYearTitle(chartName, region string) (string, string, string) 
 	}
 	fmt.Println("Getting map start/end year + title: ", url)
 
-	l := GetLauncher()
+	l, browser := GetBrowser()
 	defer l.Cleanup()
 
-	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
-	browser := rod.New().ControlURL(control).MustConnect()
 	page := browser.MustPage("")
 
 	defer browser.Close()
@@ -434,13 +429,10 @@ func generateSVGMetadata(metadata []CountryFillWithYear) string {
 }
 
 func downloadChartFile(url, downloadPath string) error {
-	l := GetLauncher()
+	l, browser := GetBrowser()
 	defer l.Cleanup()
-
-	// control := l.Set("--no-sandbox").Headless(false).MustLaunch()
-	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
-	browser := rod.New().ControlURL(control).MustConnect()
 	defer browser.Close()
+
 	timeoutDuration := time.Duration(constants.CHART_WAIT_TIME_SECONDS) * time.Second
 	page := browser.MustPage("")
 
