@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os/exec"
 	"time"
 
 	"github.com/go-rod/rod/lib/launcher"
@@ -27,13 +26,10 @@ func main() {
 		monitorStalledTasks()
 	}()
 
-	whoami, err := exec.Command("whoami").Output()
-	pwd, err := exec.Command("pwd").Output()
-	fmt.Println("whoami", string(whoami), err)
-	fmt.Println("pwd", string(pwd), err)
-
 	// Download browser if not available
 	b := launcher.NewBrowser()
+	b.RootDir = "/workspace/.cache/rod/browser"
+	fmt.Println("Dir is", b.Dir(), b.RootDir)
 	b.Hosts = []launcher.Host{launcher.HostNPM, launcher.HostPlaywright}
 	r, err := b.Get()
 	fmt.Println("launcher ", r, err)
