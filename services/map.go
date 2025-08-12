@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/wpmed-videowiki/OWIDImporter/constants"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
@@ -139,7 +138,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 }
 
 func downloadMapData(url, dataPath, metadataPath, mapPath string) error {
-	l := launcher.New()
+	l := GetLauncher()
 	defer l.Cleanup()
 
 	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
@@ -204,7 +203,7 @@ func getMapStartEndYearTitle(chartName, region string) (string, string, string) 
 	}
 	fmt.Println("Getting map start/end year + title: ", url)
 
-	l := launcher.New()
+	l := GetLauncher()
 	defer l.Cleanup()
 
 	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
@@ -435,7 +434,7 @@ func generateSVGMetadata(metadata []CountryFillWithYear) string {
 }
 
 func downloadChartFile(url, downloadPath string) error {
-	l := launcher.New()
+	l := GetLauncher()
 	defer l.Cleanup()
 
 	// control := l.Set("--no-sandbox").Headless(false).MustLaunch()
