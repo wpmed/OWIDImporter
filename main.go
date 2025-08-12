@@ -20,9 +20,10 @@ func main() {
 		log.Println("Failed to load environment variables: ", err)
 	}
 	// Verify environment variables
-	env.GetEnv()
-	launcher.DefaultBrowserDir = "/workspace/.cache/rod/browser"
-
+	e := env.GetEnv()
+	if e.OWID_ROD_BROWSER_DIR != "" {
+		launcher.DefaultBrowserDir = e.OWID_ROD_BROWSER_DIR // "/workspace/.cache/rod/browser"
+	}
 	go func() {
 		monitorStalledTasks()
 	}()
@@ -30,7 +31,7 @@ func main() {
 	// Download browser if not available
 	b := launcher.NewBrowser()
 	fmt.Println("Dir is", b.Dir(), b.RootDir)
-	b.Hosts = []launcher.Host{launcher.HostNPM, launcher.HostPlaywright}
+	// b.Hosts = []launcher.Host{launcher.HostNPM, launcher.HostPlaywright}
 	r, err := b.Get()
 	fmt.Println("launcher ", r, err)
 

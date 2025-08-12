@@ -1,6 +1,7 @@
 package env
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 )
@@ -16,6 +17,7 @@ type EnvVariables struct {
 	OWID_DEBUG           bool
 	OWID_ENV             string
 	OWID_ENCRYPTION_KEY  string
+	OWID_ROD_BROWSER_DIR string
 }
 
 func GetEnv() EnvVariables {
@@ -68,6 +70,11 @@ func GetEnv() EnvVariables {
 		panic("OWID_ENCRYPTION_KEY environment variable is required")
 	}
 
+	rodBrowserDir := os.Getenv("OWID_ROD_BROWSER_DIR")
+	if rodBrowserDir == "" {
+		fmt.Println("Warning: OWID_ROD_BROWSER_DIR environment variable is not set. Using environment default")
+	}
+
 	return EnvVariables{
 		OWID_UA:              userAgent,
 		OWID_OAUTH_TOKEN:     oauthToken,
@@ -79,5 +86,6 @@ func GetEnv() EnvVariables {
 		OWID_DEBUG:           OWID_DEBUG,
 		OWID_ENV:             owidEnv,
 		OWID_ENCRYPTION_KEY:  owidEncKey,
+		OWID_ROD_BROWSER_DIR: rodBrowserDir,
 	}
 }
