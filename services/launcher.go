@@ -33,12 +33,12 @@ func GetBrowser() (*launcher.Launcher, *rod.Browser) {
 
 	fmt.Println("Dir is", b.Dir(), b.RootDir)
 	b.Hosts = []launcher.Host{launcher.HostNPM, launcher.HostPlaywright}
-	_, err := b.Get()
+	binPath, err := b.Get()
 	if err != nil {
 		fmt.Println("Error getting browser", err)
 	}
 
-	l := launcher.New()
+	l := launcher.New().Bin(binPath)
 
 	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
 	browser := rod.New().ControlURL(control).MustConnect()
