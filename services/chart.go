@@ -68,7 +68,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	g.SetLimit(constants.CONCURRENT_REQUESTS)
 
 	// utils.SendWSMessage(session, "debug", "Fetching country list")
-	countriesList, err := GetCountryList(chartName)
+	countriesList, startYear, endYear, err := GetCountryList(chartName)
 	// utils.SendWSMessage(session, "debug", fmt.Sprintf("Fetched %d countries. Countries are %s", len(countriesList), countriesList))
 	if err != nil {
 		fmt.Println("Error fetching country list", err)
@@ -119,7 +119,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 		g.Go(func(country, downloadPath string, token *string) func() error {
 			return func() error {
 				if task.Status != models.TaskStatusFailed {
-					processCountry(user, task, *token, chartName, country, downloadPath, data)
+					processCountry(user, task, *token, chartName, country, startYear, endYear, downloadPath, data)
 				}
 				return nil
 			}
@@ -148,7 +148,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	return nil
 }
 
-func processCountry(user *models.User, task *models.Task, token, chartName, country, downloadPath string, data StartData) error {
+func processCountry(user *models.User, task *models.Task, token, chartName, country, startYear, endYear, downloadPath string, data StartData) error {
 	var err error
 	var taskProcess *models.TaskProcess
 	// Try to find existing process, otherwise create one
@@ -174,7 +174,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 
 	utils.SendWSTaskProcess(task.ID, taskProcess)
 
-	url := fmt.Sprintf("%s%s?tab=chart&country=~%s", constants.OWID_BASE_URL, chartName, country)
+	url := fmt.Sprintf("%s%s?tab=chart&time=%s..%s&country=~%s", constants.OWID_BASE_URL, chartName, startYear, endYear, country)
 	// utils.SendWSTaskProcess(taskId string, taskProcess *models.TaskProcess)
 	// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
 	l := launcher.New()
@@ -199,8 +199,8 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			page.Timeout(timeoutDuration).MustElement(".timeline-component .startMarker")
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
 			fmt.Println("After timeline startMarker")
-			page.MustWaitElementsMoreThan("figure #line-labels", 0)
-			fmt.Println("After Line labesls")
+			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+			fmt.Println("After download labesls")
 
 			title := page.MustElement("h1.header__title").MustText()
 			startYear := page.MustElement(".slider.clickable .handle.startMarker").MustAttribute("aria-valuenow")
@@ -314,7 +314,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 	return nil
 }
 
-func GetCountryList(chartName string) ([]string, error) {
+func GetCountryList(chartName string) ([]string, string, string, error) {
 	url := fmt.Sprintf("%s%s?tab=chart", constants.OWID_BASE_URL, chartName)
 	l := launcher.New()
 	defer l.Cleanup()
@@ -326,6 +326,9 @@ func GetCountryList(chartName string) ([]string, error) {
 	fmt.Println("Getting  c ountry list")
 
 	countries := []string{}
+	startYear := ""
+	endYear := ""
+
 	err := rod.Try(func() {
 		page = page.Timeout(time.Second * constants.CHART_WAIT_TIME_SECONDS)
 		page.MustNavigate(url)
@@ -345,7 +348,13 @@ func GetCountryList(chartName string) ([]string, error) {
 				countries = append(countries, countryCode)
 			}
 		}
+
+		// Get start/end years
+		marker := page.MustElement(".handle.startMarker")
+		fmt.Println("Got marker", marker)
+		startYear = *marker.MustAttribute("aria-valuemin")
+		endYear = *marker.MustAttribute("aria-valuemax")
 	})
 
-	return countries, err
+	return countries, startYear, endYear, err
 }
