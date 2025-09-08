@@ -34,6 +34,7 @@ type Dimensions struct {
 type Metadata struct {
 	Name         string       `json:"name"`
 	Unit         string       `json:"unit"`
+	Type         string       `json:"type"`
 	ShortUnit    string       `json:"shortUnit"`
 	Timespan     string       `json:"timespan"`
 	Dimensions   Dimensions   `json:"dimensions"`
@@ -587,9 +588,11 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 		}
 	}
 
-	sort.SliceStable(fillMap, func(a int, b int) bool {
-		return fillMap[a].Value < fillMap[b].Value
-	})
+	if metadata.Unit != "" {
+		sort.SliceStable(fillMap, func(a int, b int) bool {
+			return fillMap[a].Value < fillMap[b].Value
+		})
+	}
 
 	if len(fillMap) < 2 {
 		return nil, fmt.Errorf("Error finding fill map")
@@ -650,8 +653,16 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 
 		// Generate image for this year by replacing the colors of the data
 		for _, item := range yearData {
-			fillValue := getFillValue(fillMap, item.Value)
+			fillValue := ""
+			if metadata.Type == "int" && metadata.Unit == "" {
+				// Index based matching
+				fillValue = fillMap[int(item.Value)+1].Fill
+			} else {
+				fillValue = getFillValue(fillMap, item.Value)
+			}
+
 			countryID := getCountryID(item.EntityName)
+			// fmt.Println("Fill value: value:", item.Value, "Fill value: ", fillValue, countryID)
 
 			// Find the path element for this country
 			for i := range yearPathElements {
