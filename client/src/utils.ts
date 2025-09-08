@@ -53,3 +53,52 @@ export function formatDate(date: Date) {
 
   return `${month}/${day}/${year} ${hoursStr}:${minutes} ${ampm.toUpperCase()}`;
 }
+
+export function copyText(text: string) {
+  if (navigator.clipboard) {
+    return navigator.clipboard
+      .writeText(text)
+      .then(function () { })
+      .catch(function (err) {
+        console.log("Error copying");
+        console.log(err);
+        copyExecCommand(text);
+      });
+  }
+
+  copyExecCommand(text);
+}
+
+function copyExecCommand(text: string) {
+  const span = document.createElement("span");
+  span.textContent = text;
+
+  // Preserve consecutive spaces and newlines
+  span.style.whiteSpace = "pre";
+  span.style.webkitUserSelect = "auto";
+  span.style.userSelect = "all";
+
+  // Add the <span> to the page
+  document.body.appendChild(span);
+  const selection = window.getSelection();
+  const range = window.document.createRange();
+
+  if (selection) {
+    selection.removeAllRanges();
+    range.selectNode(span);
+    selection.addRange(range);
+
+    // Copy text to the clipboard
+    let success = false;
+    try {
+      success = window.document.execCommand("copy");
+    } finally {
+      // Cleanup
+      selection.removeAllRanges();
+      window.document.body.removeChild(span);
+    }
+    return success;
+  }
+
+  return false;
+}

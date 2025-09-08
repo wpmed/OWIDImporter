@@ -1,9 +1,9 @@
-import { Box, Button, CircularProgress, Grid, Radio, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Grid, Radio, Snackbar, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SocketMessage, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
 import { cancelTask, createTask, fetchTaskById, retryTask } from "../request/request";
 import { DescriptionOverwriteBehaviour, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
-import { getStatusColor, getTaskProcessStatusColor } from "../utils";
+import { copyText, getStatusColor, getTaskProcessStatusColor } from "../utils";
 
 const initial_description_map = `=={{int:filedesc}}==
 {{Information
@@ -71,8 +71,9 @@ export interface MapImporterProps {
 }
 
 export function MapImporter(data: MapImporterProps) {
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState("");
+  const [isCopied, setIsCopied] = useState(false);
 
   // Form Fields
   const [url, setUrl] = useState("");
@@ -179,6 +180,11 @@ export function MapImporter(data: MapImporterProps) {
     setLoading(false)
   }, [url, fileName, description, descriptionOverwriteBehaviour, setTaskId, data.taskType])
 
+  const onCopy = useCallback(() => {
+    copyText(wikiText);
+    setIsCopied(true);
+  }, [wikiText, setIsCopied]);
+
   const submitDisabled = useMemo(() => {
     return !url.length || !fileName || !description;
   }, [url, fileName, description])
@@ -281,7 +287,12 @@ export function MapImporter(data: MapImporterProps) {
 
   return (
     <Box textAlign={"left"}>
-      <Grid container columnSpacing={2}>
+      <Snackbar
+        open={isCopied}
+        autoHideDuration={2000}
+        onClose={() => setIsCopied(false)}
+        message="Copied succesfully"
+      />      <Grid container columnSpacing={2}>
         <Grid size={6} ref={formContainerRef}>
           <Stack sx={{ textAlign: "left" }} spacing={4}>
             <Stack spacing={2}>
@@ -386,16 +397,19 @@ export function MapImporter(data: MapImporterProps) {
           </Stack>
           {task && wikiText && (
             <Box marginTop={4}>
-              {task.type === TaskTypeEnum.MAP ? (
-                <Typography>
-                  If using this with {`{{owidslider}}`}, you can use the following
-                  wikicode for the gallery list page:
+              <Stack direction="row" justifyContent="space-between" alignItems={"center"}>
+                {task.type === TaskTypeEnum.MAP ? (
+                  <Typography>
+                    If using this with {`{{owidslider}}`}, you can use the following
+                    wikicode for the gallery list page:
+                  </Typography>
+                ) : <Typography>
+                  If using this with {`{{owidslider}}`}
+                  Please add the following to your {`{{owidslidersrcs}}`}
                 </Typography>
-              ) : <Typography>
-                If using this with {`{{owidslider}}`}
-                Please add the following to your {`{{owidslidersrcs}}`}
-              </Typography>
-              }
+                }
+                <Button onClick={onCopy}>Copy</Button>
+              </Stack>
               <Box>
                 <pre style={{
                   border: "1px dashed blue",
@@ -416,6 +430,7 @@ export function MapImporter(data: MapImporterProps) {
                   <a
                     target="_blank"
                     href={`https://commons.wikimedia.org/wiki/File:${msg.filename}`}
+                    // href={`http://localhost:8083/index.php/File:${msg.filename}`}
                     style={{ marginLeft: 5, textDecoration: 'underline' }}
                   >
                     Link
