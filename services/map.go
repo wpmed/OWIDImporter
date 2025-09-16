@@ -194,9 +194,9 @@ func getMapStartEndYearTitle(chartName, region string) (string, string, string) 
 	url := ""
 	if region == "World" {
 		// World chart has no region parameter
-		url = fmt.Sprintf("%s%s", constants.OWID_BASE_URL, chartName)
+		url = fmt.Sprintf("%s%s?time=latest", constants.OWID_BASE_URL, chartName)
 	} else {
-		url = fmt.Sprintf("%s%s?region=%s", constants.OWID_BASE_URL, chartName, region)
+		url = fmt.Sprintf("%s%s?region=%s&time=latest", constants.OWID_BASE_URL, chartName, region)
 	}
 	fmt.Println("Getting map start/end year + title: ", url)
 
