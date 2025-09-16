@@ -536,6 +536,23 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 	pathElements := query.Select("path")
 	fmt.Printf("Query found %d path elements\n", len(pathElements))
 
+	// TODO: Check if this is needed
+	// Remove any style elements
+	// defs := query.SelectAll("defs")
+	//
+	// fmt.Println("Got defentions", defs)
+	// for _, def := range defs {
+	// 	if len(def.Children) > 0 {
+	// 		for _, child := range def.Children {
+	// 			fmt.Println("Children: ", child.Element.XMLName.Local)
+	// 			if child.Element.XMLName.Local == "style" {
+	// 				def.Children = make([]Node, 0)
+	// 				break
+	// 			}
+	// 		}
+	// 	}
+	// }
+	//
 	lines2 := query.Select("#lines")
 	swatches := query.Select("#swatches")
 	labels := query.Select("#labels")
@@ -561,6 +578,15 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 		if metadata.ShortUnit != "" {
 			key = strings.ReplaceAll(key, metadata.ShortUnit, "")
 		}
+		// If it has ShortUnit and it contains "/" character, most probably the first part
+		// only is being used (e.g. g/day, they use only "g" in the label)
+		if strings.Contains(metadata.ShortUnit, "/") {
+			parts := strings.Split(metadata.ShortUnit, "/")
+			if len(parts) == 2 {
+				key = strings.ReplaceAll(key, parts[0], "")
+			}
+		}
+
 		if metadata.Display.Unit != "" {
 			key = strings.ReplaceAll(key, metadata.Display.Unit, "")
 		}
