@@ -224,8 +224,13 @@ func getMapStartEndYearTitle(chartName, region string) (string, string, string) 
 			startYear = *marker.MustAttribute("aria-valuemin")
 			endYear = *marker.MustAttribute("aria-valuemax")
 			fmt.Println("Got start/end")
-			title = page.MustElement("h1.header__title").MustText()
+			title = page.MustElement("h1.header__title, .HeaderHTML h1").MustText()
+			title = strings.TrimSpace(title)
 			fmt.Println("Got start/end title")
+			suffix := ", " + endYear
+			if strings.HasSuffix(title, suffix) {
+				title = strings.ReplaceAll(title, suffix, "")
+			}
 		})
 
 		if err != nil {
