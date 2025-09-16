@@ -86,6 +86,10 @@ func Callback(c *gin.Context) {
 			fmt.Println("Error creating user", err)
 			return
 		}
+	} else {
+		user.ResourceOwnerKey = accessToken
+		user.ResourceOwnerSecret = accessSecret
+		user.Update()
 	}
 
 	fmt.Println("User info", username)
