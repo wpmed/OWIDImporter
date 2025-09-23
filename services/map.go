@@ -123,9 +123,59 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		}
 	}
 
-	// utils.SendWSMessage(session, "debug", fmt.Sprintf("Finished in %s", time.Since(startTime).String()))
-	// SendTemplate(taskId, user)
+	if data.ImportCountries {
+		countriesList, startYear, endYear, err := GetCountryList(chartName)
+		if err != nil {
+			fmt.Println("Error fetching country list", err)
+			return err
+		}
+		fmt.Println("Countries:====================== ", countriesList)
+
+		startTime := time.Now()
+		g, _ := errgroup.WithContext(context.Background())
+		g.SetLimit(constants.CONCURRENT_REQUESTS)
+
+		for _, country := range countriesList {
+			country := country
+			g.Go(func(country, downloadPath string, token *string) func() error {
+				return func() error {
+					if task.Status != models.TaskStatusFailed {
+						processCountry(user, task, *token, chartName, country, startYear, endYear, downloadPath, StartData{
+							Url:                           data.Url,
+							FileName:                      data.CountryFileName,
+							Description:                   data.CountryDescription,
+							DescriptionOverwriteBehaviour: data.CountryDescriptionOverwriteBehaviour,
+						})
+					}
+					return nil
+				}
+			}(country, filepath.Join(tmpDir, country), &token))
+		}
+
+		fmt.Println("Started in", time.Since(startTime).String())
+		err = g.Wait()
+		elapsedTime := time.Since(startTime)
+		fmt.Println("Finished in", elapsedTime.String())
+		if err != nil {
+			fmt.Println("Error processing countries", err)
+			return err
+		}
+	}
+
 	if task.Status == models.TaskStatusProcessing {
+		if data.GenerateTemplateCommons {
+			// Create template page in commons
+			wikiText, err := GetMapTemplate(task.ID)
+			if err == nil {
+				title, err := createCommonsTemplatePage(user, token, task.ChartName, wikiText)
+				if err == nil {
+					task.CommonsTemplateName = title
+				}
+			} else {
+				fmt.Println("Error getting task wikitext", task.ID, err)
+			}
+		}
+
 		task.Status = models.TaskStatusDone
 		if err := task.Update(); err != nil {
 			fmt.Println("Error saving task staus to done: ", err)
@@ -133,6 +183,37 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	}
 
 	utils.SendWSTask(task)
+
+	return nil
+}
+
+func CreateCommonsTemplatePage(taskId string, user *models.User) error {
+	task, err := models.FindTaskById(taskId)
+	tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
+		"action": "query",
+		"meta":   "tokens",
+		"format": "json",
+	}, nil)
+	if err != nil {
+		fmt.Println("Error fetching edit token", err)
+		return err
+	}
+	token := tokenResponse.Query.Tokens.CsrfToken
+
+	wikiText, err := GetMapTemplate(task.ID)
+	if err != nil {
+		fmt.Println("Error getting task wikitext", task.ID, err)
+		return nil
+	}
+
+	title, err := createCommonsTemplatePage(user, token, task.ChartName, wikiText)
+	if err != nil {
+		fmt.Println("Error creating commons template page", task.ID, err)
+		return nil
+	}
+
+	task.CommonsTemplateName = title
+	task.Update()
 
 	return nil
 }
@@ -497,7 +578,7 @@ func processRegionYearNewFlow(user *models.User, task *models.Task, data StartDa
 		}
 		taskProcess = existingTB
 	} else {
-		taskProcess, err = models.NewTaskProcess(region, year, "", models.TaskProcessStatusProcessing, task.ID)
+		taskProcess, err = models.NewTaskProcess(region, year, "", models.TaskProcessStatusProcessing, models.TaskProcessTypeMap, task.ID)
 		if err != nil {
 			fmt.Println("Error creating new task process: ", region, year, err)
 			return err
@@ -650,7 +731,7 @@ func processRegionYear(user *models.User, task *models.Task, token, chartName, t
 		}
 		taskProcess = existingTB
 	} else {
-		taskProcess, err = models.NewTaskProcess(region, year, "", models.TaskProcessStatusProcessing, task.ID)
+		taskProcess, err = models.NewTaskProcess(region, year, "", models.TaskProcessStatusProcessing, models.TaskProcessTypeMap, task.ID)
 		if err != nil {
 			return err
 		}

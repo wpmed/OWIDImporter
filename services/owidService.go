@@ -9,16 +9,22 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/utils"
 )
 
 type StartData struct {
-	Url                           string                               `json:"url"`
-	FileName                      string                               `json:"fileName"`
-	Description                   string                               `json:"desc"`
-	DescriptionOverwriteBehaviour models.DescriptionOverwriteBehaviour `json:"description_overwrite_behaviour"`
+	Url                                  string                               `json:"url"`
+	FileName                             string                               `json:"fileName"`
+	Description                          string                               `json:"desc"`
+	DescriptionOverwriteBehaviour        models.DescriptionOverwriteBehaviour `json:"description_overwrite_behaviour"`
+	ImportCountries                      bool                                 `json:"importCountries"`
+	GenerateTemplateCommons              bool                                 `json:"generateTemplateCommons"`
+	CountryFileName                      string                               `json:"countryFileName"`
+	CountryDescription                   string                               `json:"countryDescription"`
+	CountryDescriptionOverwriteBehaviour models.DescriptionOverwriteBehaviour `json:"countryDescriptionOverwriteBehaviour"`
 }
 
 type CountryTemplateDataItem struct {
@@ -205,6 +211,23 @@ func extractCategories(wikitext string) []string {
 	matches := re.FindAllString(wikitext, -1)
 
 	return matches
+}
+
+func createCommonsTemplatePage(user *models.User, token, chartName, wikiText string) (string, error) {
+	title := "Template:OWID/" + chartName
+	params := map[string]string{
+		"action":         "edit",
+		"text":           wikiText,
+		"title":          title,
+		"ignorewarnings": "1",
+		"token":          token,
+	}
+	_, err := utils.DoApiReq[interface{}](user, params, nil)
+	if err != nil {
+		return "", err
+	}
+
+	return title, nil
 }
 
 func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData, downloadPath string, data StartData) (string, string, error) {
@@ -444,20 +467,43 @@ func GetMapTemplate(taskId string) (string, error) {
 		return "", err
 	}
 
+	task, err := models.FindTaskById(taskId)
+	if err != nil {
+		fmt.Println("Error getting task to send template ", taskId, err)
+		return "", err
+	}
+
 	data := make([]TemplateElement, 0)
+	countriesData := make([]CountryTemplateDataItem, 0)
+	firstFileName := ""
+	endFileName := ""
+	startYear := time.Now().Year()
+	endYear := 0
 
 	// Accumilate regions
 	regions := make(map[string]bool)
 	for _, el := range taskProcesses {
-		if !regions[el.Region] {
+		if el.Type == models.TaskProcessTypeMap && !regions[el.Region] {
 			regions[el.Region] = true
+		}
+		if el.Type == models.TaskProcessTypeMap && el.Status != models.TaskProcessStatusFailed && strings.ToLower(el.Region) == "world" {
+
+			if int64(el.Year) < int64(startYear) {
+				startYear = el.Year
+				firstFileName = el.FileName
+			}
+
+			if int64(el.Year) > int64(endYear) {
+				endYear = el.Year
+				endFileName = el.FileName
+			}
 		}
 	}
 
 	for key := range regions {
 		items := make([]FileNameAcc, 0)
 		for _, tp := range taskProcesses {
-			if tp.Region == key {
+			if tp.Status != models.TaskProcessStatusFailed && tp.Region == key && tp.Type == models.TaskProcessTypeMap {
 				items = append(items, FileNameAcc{
 					Year:     int64(tp.Year),
 					Region:   tp.Region,
@@ -465,14 +511,48 @@ func GetMapTemplate(taskId string) (string, error) {
 				})
 			}
 		}
-		data = append(data, TemplateElement{
-			Region: key,
-			Data:   items,
-		})
+
+		if len(items) > 0 {
+			data = append(data, TemplateElement{
+				Region: key,
+				Data:   items,
+			})
+		}
 	}
 
+	for _, tp := range taskProcesses {
+		if tp.Type == models.TaskProcessTypeCountry {
+			countriesData = append(countriesData, CountryTemplateDataItem{
+				Country:  tp.Region,
+				FileName: tp.FileName,
+			})
+		}
+	}
+
+	sliderTemplateText := strings.Builder{}
+	sliderTemplateText.WriteString("{{owidslider\n")
+	sliderTemplateText.WriteString(fmt.Sprintf("|start        = %d\n", endYear))
+	sliderTemplateText.WriteString(fmt.Sprintf("|list         = Template:OWID/%s#gallery\n", task.ChartName))
+	sliderTemplateText.WriteString("|caption      =\n")
+	sliderTemplateText.WriteString("|title        =\n")
+	sliderTemplateText.WriteString("|language     =\n")
+	sliderTemplateText.WriteString(fmt.Sprintf("|file         = [[File:%s|link=|thumb|upright=1.6|%s]]\n", endFileName, task.ChartName))
+	sliderTemplateText.WriteString("|startingView = World\n")
+	sliderTemplateText.WriteString("}}\n")
+
 	wikiText := strings.Builder{}
-	wikiText.WriteString("{{owidslidersrcs|id=gallery|widths=640|heights=640\n")
+	wikiText.WriteString("*[[Commons:List of interactive graphs|Return to list]]\n\n")
+
+	wikiText.WriteString(sliderTemplateText.String())
+	wikiText.WriteString("<syntaxhighlight lang=\"wikitext\" style=\"overflow:auto;\">\n")
+	wikiText.WriteString(sliderTemplateText.String())
+	wikiText.WriteString("</syntaxhighlight>\n")
+	wikiText.WriteString(fmt.Sprintf("*'''Source''': https://ourworldindata.org/grapher/%s\n", task.ChartName))
+	wikiText.WriteString(fmt.Sprintf("*'''Translate''': https://svgtranslate.toolforge.org/File:%s\n", firstFileName))
+	wikiText.WriteString("{{-}}\n\n")
+	wikiText.WriteString("==Data==\n")
+
+	wikiText.WriteString("{{owidslidersrcs|id=gallery|widths=240|heights=240\n")
 	for _, el := range data {
 		sort.SliceStable(el.Data, func(i, j int) bool {
 			return el.Data[i].Year < el.Data[j].Year
@@ -481,6 +561,14 @@ func GetMapTemplate(taskId string) (string, error) {
 		wikiText.WriteString(fmt.Sprintf("|gallery-%s=\n", el.Region))
 		for _, item := range el.Data {
 			wikiText.WriteString(fmt.Sprintf("File:%s!year=%d\n", item.FileName, item.Year))
+		}
+	}
+
+	if len(countriesData) > 0 {
+		wikiText.WriteString("|gallery-AllCountries=\n")
+
+		for _, el := range countriesData {
+			wikiText.WriteString(fmt.Sprintf("File:%s!country=%s\n", el.FileName, el.Country))
 		}
 	}
 

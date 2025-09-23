@@ -12,11 +12,15 @@ import (
 )
 
 type CreateTaskData struct {
-	Action                        string                               `json:"action"`
-	Url                           string                               `json:"url"`
-	FileName                      string                               `json:"fileName"`
-	Description                   string                               `json:"description"`
-	DescriptionOverwriteBehaviour models.DescriptionOverwriteBehaviour `json:"descriptionOverwriteBehaviour"`
+	Action                               string                               `json:"action"`
+	Url                                  string                               `json:"url"`
+	FileName                             string                               `json:"fileName"`
+	Description                          string                               `json:"description"`
+	DescriptionOverwriteBehaviour        models.DescriptionOverwriteBehaviour `json:"descriptionOverwriteBehaviour"`
+	ImportCountries                      bool                                 `json:"importCountries"`
+	CountryFileName                      string                               `json:"countryFileName"`
+	CountryDescription                   string                               `json:"countryDescription"`
+	CountryDescriptionOverwriteBehaviour models.DescriptionOverwriteBehaviour `json:"countryDescriptionOverwriteBehaviour"`
 }
 
 type GetTaskResponse struct {
@@ -58,6 +62,10 @@ func CreateTask(c *gin.Context) {
 		modelType = models.TaskTypeChart
 	}
 
+	importCountries := 0
+	if data.ImportCountries {
+		importCountries = 1
+	}
 	task, err := models.NewTask(
 		user.ID,
 		data.Url,
@@ -67,6 +75,10 @@ func CreateTask(c *gin.Context) {
 		"",
 		models.TaskStatusQueued,
 		modelType,
+		importCountries,
+		data.CountryFileName,
+		data.CountryDescription,
+		data.CountryDescriptionOverwriteBehaviour,
 	)
 	if err != nil {
 		fmt.Println("Error creating task ", err)
@@ -79,10 +91,14 @@ func CreateTask(c *gin.Context) {
 		case models.TaskTypeMap:
 			fmt.Println("Action message map", task)
 			err := services.StartMap(task.ID, user, services.StartData{
-				Url:                           task.URL,
-				FileName:                      task.FileName,
-				Description:                   task.Description,
-				DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
+				Url:                                  task.URL,
+				FileName:                             task.FileName,
+				Description:                          task.Description,
+				DescriptionOverwriteBehaviour:        task.DescriptionOverwriteBehaviour,
+				ImportCountries:                      data.ImportCountries,
+				CountryFileName:                      data.CountryFileName,
+				CountryDescription:                   data.CountryDescription,
+				CountryDescriptionOverwriteBehaviour: data.CountryDescriptionOverwriteBehaviour,
 			})
 			if err != nil {
 				log.Println("Error starting map", err)
@@ -263,5 +279,36 @@ func CancelTask(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusOK, gin.H{"taskId": task.ID})
+}
+
+func GenerateCommonsTemplate(c *gin.Context) {
+	sessionId := c.Request.Header.Get("sessionId")
+
+	if sessionId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session"})
+		return
+	}
+
+	session, ok := sessions.Sessions[sessionId]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown session"})
+		return
+	}
+	user, err := models.FindUserByUsername(session.Username)
+	if err != nil || user == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown user"})
+		return
+	}
+
+	taskId := c.Param("id")
+	task, err := models.FindTaskById(taskId)
+	if err != nil || task == nil {
+		fmt.Println("Error retrying task: ", err, task)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrying task"})
+		return
+	}
+
+	services.CreateCommonsTemplatePage(taskId, user)
 	c.JSON(http.StatusOK, gin.H{"taskId": task.ID})
 }

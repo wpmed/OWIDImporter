@@ -45,7 +45,9 @@ func main() {
 func monitorStalledTasks() {
 	for {
 		tasks, err := models.FindStalledTasks()
-		fmt.Println("Found stalled tasks", len(*tasks), err)
+		if tasks != nil && len(*tasks) > 0 {
+			fmt.Println("Found stalled tasks", len(*tasks), err)
+		}
 		for _, task := range *tasks {
 			task.Status = models.TaskStatusFailed
 			task.Update()

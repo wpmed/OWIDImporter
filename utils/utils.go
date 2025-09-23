@@ -50,7 +50,7 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 	values := make(url.Values)
 	url := env.GetEnv().OWID_MW_API + "?"
 	for k, v := range params {
-		if k != "token" {
+		if k != "token" && k != "text" {
 			values.Set(k, v)
 		}
 	}
@@ -109,8 +109,10 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 			return nil, err
 		}
 
+		fmt.Println("SENDING POST REQUEST")
 		res, err = client.Post(url, "multipart/form-data; boundary="+writer.Boundary(), &b)
 	} else {
+		fmt.Println("SENDING GET REQUEST")
 		res, err = client.Get(url)
 	}
 
@@ -124,7 +126,7 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 		fmt.Println("Error reading body", err)
 		return nil, err
 	}
-	fmt.Println("Res body: ", res.StatusCode)
+	fmt.Println("Res body: ", res.StatusCode, string(body))
 	var result T
 	err = json.Unmarshal(body, &result)
 	if err != nil {

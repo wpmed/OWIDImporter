@@ -64,9 +64,6 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	g, _ := errgroup.WithContext(context.Background())
-	g.SetLimit(constants.CONCURRENT_REQUESTS)
-
 	// utils.SendWSMessage(session, "debug", "Fetching country list")
 	countriesList, startYear, endYear, err := GetCountryList(chartName)
 	// utils.SendWSMessage(session, "debug", fmt.Sprintf("Fetched %d countries. Countries are %s", len(countriesList), countriesList))
@@ -114,6 +111,9 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	}()
 
 	startTime := time.Now()
+	g, _ := errgroup.WithContext(context.Background())
+	g.SetLimit(constants.CONCURRENT_REQUESTS)
+
 	for _, country := range countriesList {
 		country := country
 		g.Go(func(country, downloadPath string, token *string) func() error {
@@ -134,6 +134,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 		fmt.Println("Error processing countries", err)
 		return err
 	}
+
 	// utils.SendWSMessage(session, "debug", fmt.Sprintf("Finished in %s", elapsedTime.String()))
 	// SendCountriesTemplate(user, filenamesArray)
 	if task.Status == models.TaskStatusProcessing {
@@ -166,7 +167,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 		}
 		taskProcess = existingTB
 	} else {
-		taskProcess, err = models.NewTaskProcess(country, 0, "", models.TaskProcessStatusProcessing, task.ID)
+		taskProcess, err = models.NewTaskProcess(country, 0, "", models.TaskProcessStatusProcessing, models.TaskProcessTypeCountry, task.ID)
 		if err != nil {
 			return err
 		}

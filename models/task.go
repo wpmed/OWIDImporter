@@ -39,17 +39,22 @@ const (
 )
 
 type Task struct {
-	ID                            string                        `json:"id"`
-	UserId                        string                        `json:"userId"`
-	URL                           string                        `json:"url"`
-	FileName                      string                        `json:"filename"`
-	Description                   string                        `json:"description"`
-	DescriptionOverwriteBehaviour DescriptionOverwriteBehaviour `json:"descriptionOverwriteBehaviour"`
-	ChartName                     string                        `json:"chartName"`
-	Status                        TaskStatus                    `json:"status"`
-	Type                          TaskType                      `json:"type"`
-	LastOperationAt               int64                         `json:"lastOperationAt"`
-	CreatedAt                     int64                         `json:"createdAt"`
+	ID                                   string                        `json:"id"`
+	UserId                               string                        `json:"userId"`
+	URL                                  string                        `json:"url"`
+	FileName                             string                        `json:"filename"`
+	Description                          string                        `json:"description"`
+	DescriptionOverwriteBehaviour        DescriptionOverwriteBehaviour `json:"descriptionOverwriteBehaviour"`
+	ImportCountries                      int                           `json:"importCountries"` // 0 for false, 1 for true
+	CountryFileName                      string                        `json:"countryFileName"`
+	CountryDescription                   string                        `json:"countryDescription"`
+	CountryDescriptionOverwriteBehaviour DescriptionOverwriteBehaviour `json:"countryDescriptionOverwriteBehaviour"`
+	ChartName                            string                        `json:"chartName"`
+	CommonsTemplateName                  string                        `json:"commonsTemplateName"`
+	Status                               TaskStatus                    `json:"status"`
+	Type                                 TaskType                      `json:"type"`
+	LastOperationAt                      int64                         `json:"lastOperationAt"`
+	CreatedAt                            int64                         `json:"createdAt"`
 }
 
 func (t *Task) Scan(value interface{}) error {
@@ -61,21 +66,26 @@ func (t *Task) Value() (driver.Value, error) {
 	return string(b), err
 }
 
-func NewTask(userId, url, fileName, description string, descriptionOverwriteBehaviour DescriptionOverwriteBehaviour, chartName string, status TaskStatus, taskType TaskType) (*Task, error) {
+func NewTask(userId, url, fileName, description string, descriptionOverwriteBehaviour DescriptionOverwriteBehaviour, chartName string, status TaskStatus, taskType TaskType, importCountries int, countryFileName, countryDescription string, countryDescriptionOverwriteBehaviour DescriptionOverwriteBehaviour) (*Task, error) {
 	task := Task{
-		ID:                            uuid.New().String(),
-		UserId:                        userId,
-		URL:                           url,
-		FileName:                      fileName,
-		Description:                   description,
-		ChartName:                     chartName,
-		DescriptionOverwriteBehaviour: descriptionOverwriteBehaviour,
-		Status:                        status,
-		Type:                          taskType,
-		LastOperationAt:               time.Now().Unix(),
-		CreatedAt:                     time.Now().Unix(),
+		ID:                                   uuid.New().String(),
+		UserId:                               userId,
+		URL:                                  url,
+		FileName:                             fileName,
+		Description:                          description,
+		ChartName:                            chartName,
+		DescriptionOverwriteBehaviour:        descriptionOverwriteBehaviour,
+		Status:                               status,
+		Type:                                 taskType,
+		ImportCountries:                      importCountries,
+		CountryFileName:                      countryFileName,
+		CountryDescription:                   countryDescription,
+		CountryDescriptionOverwriteBehaviour: countryDescriptionOverwriteBehaviour,
+		CommonsTemplateName:                  "",
+		LastOperationAt:                      time.Now().Unix(),
+		CreatedAt:                            time.Now().Unix(),
 	}
-	stmt, err := db.Prepare("INSERT INTO task (id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, last_operation_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+	stmt, err := db.Prepare("INSERT INTO task (id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, country_file_name, country_description, country_description_overwrite_behaviour, commons_template_name, last_operation_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +101,11 @@ func NewTask(userId, url, fileName, description string, descriptionOverwriteBeha
 		task.ChartName,
 		task.Status,
 		task.Type,
+		task.ImportCountries,
+		task.CountryFileName,
+		task.CountryDescription,
+		task.CountryDescriptionOverwriteBehaviour,
+		task.CommonsTemplateName,
 		task.LastOperationAt,
 		task.CreatedAt,
 	)
@@ -103,13 +118,13 @@ func NewTask(userId, url, fileName, description string, descriptionOverwriteBeha
 }
 
 func (task *Task) Update() error {
-	stmt, err := db.Prepare("UPDATE task SET url=?, file_name=?, description=?, description_overwrite_behaviour=?, status=?, chart_name=?, last_operation_at=? WHERE id=?")
+	stmt, err := db.Prepare("UPDATE task SET url=?, file_name=?, description=?, description_overwrite_behaviour=?, status=?, import_countries=?, chart_name=?, commons_template_name=?, last_operation_at=? WHERE id=?")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(task.URL, task.FileName, task.Description, task.DescriptionOverwriteBehaviour, task.Status, task.ChartName, task.LastOperationAt, task.ID)
+	result, err := stmt.Exec(task.URL, task.FileName, task.Description, task.DescriptionOverwriteBehaviour, task.Status, task.ImportCountries, task.ChartName, task.CommonsTemplateName, task.LastOperationAt, task.ID)
 	if err != nil {
 		return err
 	}
@@ -119,7 +134,10 @@ func (task *Task) Update() error {
 }
 
 func (task *Task) Reload() error {
-	err := db.QueryRow("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, last_operation_at, created_at FROM task where id=?", task.ID).Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.DescriptionOverwriteBehaviour, &task.ChartName, &task.Status, &task.Type, &task.LastOperationAt, &task.CreatedAt)
+	err := db.QueryRow(
+		"SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, commons_template_name, last_operation_at, created_at FROM task where id=?",
+		task.ID,
+	).Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.DescriptionOverwriteBehaviour, &task.ChartName, &task.Status, &task.Type, &task.ImportCountries, &task.CommonsTemplateName, &task.LastOperationAt, &task.CreatedAt)
 	if err != nil {
 		println("Error reloading task for id ", task.ID, err)
 		return fmt.Errorf("Error reloading task")
@@ -160,7 +178,7 @@ func UpdateTaskLastOperationAt(id string) error {
 
 func FindTaskById(id string) (*Task, error) {
 	var task Task
-	err := db.QueryRow("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, last_operation_at, created_at FROM task where id=?", id).
+	err := db.QueryRow("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, country_file_name, country_description, country_description_overwrite_behaviour, commons_template_name, last_operation_at, created_at FROM task where id=?", id).
 		Scan(&task.ID,
 			&task.UserId,
 			&task.URL,
@@ -170,6 +188,11 @@ func FindTaskById(id string) (*Task, error) {
 			&task.ChartName,
 			&task.Status,
 			&task.Type,
+			&task.ImportCountries,
+			&task.CountryFileName,
+			&task.CountryDescription,
+			&task.CountryDescriptionOverwriteBehaviour,
+			&task.CommonsTemplateName,
 			&task.LastOperationAt,
 			&task.CreatedAt,
 		)
@@ -183,15 +206,34 @@ func FindTaskById(id string) (*Task, error) {
 
 func FindTaskByUserId(id, taskType string) (*[]Task, error) {
 	tasks := make([]Task, 0)
-	rows, err := db.Query("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, last_operation_at, created_at FROM task where user_id=? AND type=? ORDER BY created_at DESC", id, taskType)
-	for rows.Next() {
-		var task Task
-		rows.Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.DescriptionOverwriteBehaviour, &task.ChartName, &task.Status, &task.Type, &task.LastOperationAt, &task.CreatedAt)
-		tasks = append(tasks, task)
-	}
+	rows, err := db.Query("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, country_file_name, country_description, country_description_overwrite_behaviour, commons_template_name, last_operation_at, created_at FROM task where user_id=? AND type=? ORDER BY created_at DESC", id, taskType)
 	if err != nil {
-		println("Error scaning for id ", id, err)
+		fmt.Println("Error scaning for id ", id, err)
 		return nil, fmt.Errorf("Cannot find requested record")
+	}
+
+	for rows.Next() {
+		fmt.Println(rows.Columns())
+		var task Task
+		rows.Scan(
+			&task.ID,
+			&task.UserId,
+			&task.URL,
+			&task.FileName,
+			&task.Description,
+			&task.DescriptionOverwriteBehaviour,
+			&task.ChartName,
+			&task.Status,
+			&task.Type,
+			&task.ImportCountries,
+			&task.CountryFileName,
+			&task.CountryDescription,
+			&task.CountryDescriptionOverwriteBehaviour,
+			&task.CommonsTemplateName,
+			&task.LastOperationAt,
+			&task.CreatedAt,
+		)
+		tasks = append(tasks, task)
 	}
 
 	return &tasks, nil
@@ -224,6 +266,11 @@ func initTaskTable() {
 		description_overwrite_behaviour TEXT,
 		chart_name TEXT,
 		status VARCHAR(50) NOT NULL,
+		import_countries INT,
+		country_file_name TEXT,
+		country_description TEXT,
+		country_description_overwrite_behaviour TEXT,
+		commons_template_name TEXT,
 		type VARCHAR(10) NOT NULL,
 		user_id TEXT NOT NULL,
 		last_operation_at BIGINT,

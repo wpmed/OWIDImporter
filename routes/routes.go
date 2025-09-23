@@ -36,6 +36,7 @@ func BuildRoutes() *gin.Engine {
 	router.POST("/task", CreateTask)
 	router.POST("/task/:id/retry", RetryTask)
 	router.POST("/task/:id/cancel", CancelTask)
+	router.POST("/task/:id/upload_commons_template", GenerateCommonsTemplate)
 	router.GET("/task/:id", GetTask)
 
 	router.Static("/assets", filepath.Join(CLIENT_BUILD_PATH, "assets"))

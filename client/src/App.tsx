@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Task, TaskTypeEnum } from './types';
 import { fetchTasks, logout } from './request/request';
 import { TaskList } from './components/TaskList';
+import { ChartImporter } from './components/ChartImporter';
 
 const drawerWidth = 240;
 
@@ -156,7 +157,13 @@ export default function App() {
             {[TABS.MAP_LSIT, TABS.CHART_LIST].includes(tab) ? (
               <TaskList tasks={tasks} taskType={selectedTaskType} onNew={onNewClick} onTaskClick={onTaskClick} />
             ) : (
-              <MapImporter taskId={selectedTaskId} taskType={selectedTaskType} />
+              <>
+                {selectedTaskType == TaskTypeEnum.MAP ? (
+                  <MapImporter taskId={selectedTaskId} />
+                ) : (
+                  <ChartImporter taskId={selectedTaskId} />
+                )}
+              </>
             )}
           </Box>
         </>

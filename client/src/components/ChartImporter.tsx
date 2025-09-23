@@ -1,28 +1,11 @@
-import { Box, Button, Checkbox, CircularProgress, Grid, Radio, Snackbar, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Grid, Radio, Snackbar, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SocketMessage, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
 import { cancelTask, createTask, fetchTaskById, retryTask } from "../request/request";
 import { DescriptionOverwriteBehaviour, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
 import { copyText, getStatusColor, getTaskProcessStatusColor } from "../utils";
 
-const initial_description_map = `=={{int:filedesc}}==
-{{Information
-|description={{en|1=$TITLE, $REGION}}
-|author = Our World In Data
-|date= $YEAR
-|source = $URL
-|permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
-|other versions =
-}}
-{{Map showing old data|year=$YEAR}}
-=={{int:license-header}}==
-{{cc-by-4.0}}
-[[Category:$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}]]
-[[Category:SVG maps by Our World in Data]]
-`;
 
-const chart_info_map = `You can use $NAME (filename without extension), $YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders. This only works for graphs that are maps with data over multiple years.`;
-const initial_filename_map = `$NAME,$REGION,$YEAR.svg`;
 const url_placeholder = `https://ourworldindata.org/grapher/<NAME OF GRAPH>`;
 
 const initial_description_chart = `=={{int:filedesc}}==
@@ -59,32 +42,25 @@ const DESCRIPTION_OVERWRITE_OPTIONS = [
   }
 ]
 
-export interface MapImporterSubmitData {
+export interface ChartImporterSubmitData {
   url: string,
   fileName: string,
   description: string,
 }
 
-export interface MapImporterProps {
+export interface ChartImporterProps {
   taskId?: string
 }
 
-export function MapImporter(data: MapImporterProps) {
+export function ChartImporter(data: ChartImporterProps) {
   const [loading, setLoading] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [importCountries, setImportCountries] = useState(false);
-  const [generateTemplateCommons, setGenerateTemplateCommons] = useState(false);
 
   // Form Fields
   const [url, setUrl] = useState("");
-  const [fileName, setFileName] = useState(initial_filename_map);
-  const [description, setDescription] = useState(initial_description_map);
+  const [fileName, setFileName] = useState(initial_filename_chart);
+  const [description, setDescription] = useState(initial_description_chart);
   const [descriptionOverwriteBehaviour, setDescriptionOverwriteBehaviour] = useState(DescriptionOverwriteBehaviour.ALL);
-
-
-  const [countryFileName, setCountryFileName] = useState(initial_filename_chart);
-  const [countryDescription, setCountryDescription] = useState(initial_description_chart);
-  const [countryDescriptionOverwriteBehaviour, setCountryDescriptionOverwriteBehaviour] = useState(DescriptionOverwriteBehaviour.ALL);
 
   const { ws, connect, disconnect } = useWebsocket();
   const [taskId, setTaskId] = useState("");
@@ -129,12 +105,6 @@ export function MapImporter(data: MapImporterProps) {
         setUrl(res.task.url);
         setDescriptionOverwriteBehaviour(res.task.descriptionOverwriteBehaviour)
         setTask(res.task);
-        if (res.task.importCountries) {
-          setImportCountries(!!res.task.importCountries);
-          setCountryFileName(res.task.countryFileName || "");
-          setCountryDescription(res.task.countryDescription || "");
-          setCountryDescriptionOverwriteBehaviour(res.task.countryDescriptionOverwriteBehaviour || DescriptionOverwriteBehaviour.ALL);
-        }
 
         if (updateItems) {
           setItems(res.processes);
@@ -151,19 +121,6 @@ export function MapImporter(data: MapImporterProps) {
         setLoading(false)
       })
   }, [setLoading, setItems, setDescription, setDescriptionOverwriteBehaviour, setUrl, setFileName, setWikiText])
-
-  const toggleGenerateTemplateCommons = useCallback(() => {
-
-    setGenerateTemplateCommons(!generateTemplateCommons);
-  }, [setGenerateTemplateCommons, generateTemplateCommons])
-
-  const toggleImportCountries = useCallback(() => {
-    setCountryFileName(initial_filename_chart)
-    setCountryDescription(initial_description_chart)
-    setCountryDescriptionOverwriteBehaviour(DescriptionOverwriteBehaviour.ALL)
-
-    setImportCountries(!importCountries)
-  }, [importCountries, setImportCountries])
 
   const onCancel = useCallback(() => {
     if (task) {
@@ -189,13 +146,8 @@ export function MapImporter(data: MapImporterProps) {
         url,
         fileName,
         description,
-        action: "startMap",
+        action: "startChart",
         descriptionOverwriteBehaviour,
-        importCountries,
-        generateTemplateCommons,
-        countryFileName,
-        countryDescription,
-        countryDescriptionOverwriteBehaviour
       })
       if (response.error) {
         return alert(response.error);
@@ -207,18 +159,7 @@ export function MapImporter(data: MapImporterProps) {
       console.log('Error seding create task', err);
     }
     setLoading(false)
-  }, [
-    url,
-    fileName,
-    description,
-    descriptionOverwriteBehaviour,
-    importCountries,
-    generateTemplateCommons,
-    countryFileName,
-    countryDescription,
-    countryDescriptionOverwriteBehaviour,
-    setTaskId
-  ])
+  }, [url, fileName, description, descriptionOverwriteBehaviour, setTaskId,])
 
   const onCopy = useCallback(() => {
     copyText(wikiText);
@@ -320,15 +261,16 @@ export function MapImporter(data: MapImporterProps) {
         autoHideDuration={2000}
         onClose={() => setIsCopied(false)}
         message="Copied succesfully"
-      />      <Grid container columnSpacing={2}>
+      />
+      <Grid container columnSpacing={2}>
         <Grid size={6} ref={formContainerRef}>
           <Stack sx={{ textAlign: "left" }} spacing={4}>
             <Stack spacing={2}>
               <Typography variant="h4">
-                <span>Import OWID Map</span>
+                <span>Import OWID Country Chart</span>
               </Typography>
               <Typography>
-                <span dangerouslySetInnerHTML={{ __html: chart_info_map }} />
+                <span dangerouslySetInnerHTML={{ __html: chart_info_chart }} />
               </Typography>
             </Stack>
             <Stack spacing={2}>
@@ -401,71 +343,6 @@ export function MapImporter(data: MapImporterProps) {
                 </Stack>
               ))}
             </Stack>
-            {!task && (
-              <Stack>
-                <Stack direction="row" alignItems={"center"} >
-                  <Checkbox checked={generateTemplateCommons} onClick={toggleGenerateTemplateCommons} disabled={disabled} />
-                  <Typography>Automatically Create Template Page On Commons</Typography>
-                </Stack>
-              </Stack>
-            )}
-            <Stack>
-              <Stack direction="row" alignItems={"center"} >
-                <Checkbox checked={importCountries} disabled={disabled} onClick={toggleImportCountries} />
-                <Typography>Import Countries</Typography>
-              </Stack>
-            </Stack>
-            {importCountries && (
-              <>
-                <Stack spacing={2}>
-                  <Typography variant="h4">
-                    <span>Import OWID Country Chart</span>
-                  </Typography>
-                  <Typography>
-                    <span dangerouslySetInnerHTML={{ __html: chart_info_chart }} />
-                  </Typography>
-                </Stack>
-                <Stack spacing={1}>
-                  <Typography>File name</Typography>
-                  <TextField
-                    size="small"
-                    value={countryFileName}
-                    onChange={e => setCountryFileName(e.target.value)}
-                    fullWidth
-                    disabled={disabled}
-                  />
-                </Stack>
-                <Stack spacing={1}>
-                  <Typography>Description</Typography>
-                  <TextareaAutosize
-                    value={countryDescription}
-                    onChange={e => setCountryDescription(e.target.value)}
-                    style={{ width: "100%", backgroundColor: "white", color: "black" }}
-                    minRows={5}
-                    disabled={disabled}
-                  />
-                </Stack>
-
-                <Stack spacing={1}>
-                  <Typography>
-                    If a file with the same name exists:
-                  </Typography>
-                  {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
-                    <Stack spacing={1}>
-                      <Stack direction={"row"} alignItems={"flex-start"}>
-                        <Radio disabled={disabled} checked={countryDescriptionOverwriteBehaviour == option.value} onClick={() => setCountryDescriptionOverwriteBehaviour(option.value)} />
-                        <Box>
-                          <Typography>
-                            {option.title}
-                          </Typography>
-                          <Typography variant="subtitle2">{option.description}</Typography>
-                        </Box>
-                      </Stack>
-                    </Stack>
-                  ))}
-                </Stack>
-              </>
-            )}
             <Stack alignItems={"end"}>
               <Box>
                 <Button
@@ -501,24 +378,12 @@ export function MapImporter(data: MapImporterProps) {
                   Please add the following to your {`{{owidslidersrcs}}`}
                 </Typography>
                 }
-                <Stack direction="row" alignItems="center">
-                  {task.commonsTemplateName && (
-                    <a
-                      target="_blank"
-                      href={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`}
-                      style={{ marginLeft: 5, textDecoration: 'underline' }}
-                    >
-                      Uploaded template
-                    </a>
-                  )}
-                  <Button onClick={onCopy}>Copy</Button>
-                </Stack>
+                <Button onClick={onCopy}>Copy</Button>
               </Stack>
               <Box>
                 <pre style={{
                   border: "1px dashed blue",
                   padding: "1em",
-                  overflow: "auto"
                 }}>
                   {wikiText}
                 </pre>
@@ -534,7 +399,8 @@ export function MapImporter(data: MapImporterProps) {
                 {msg.filename && (
                   <a
                     target="_blank"
-                    href={`${import.meta.env.VITE_MW_BASE_URL}/File:${msg.filename}`}
+                    // href={`https://commons.wikimedia.org/wiki/File:${msg.filename}`}
+                    href={`http://localhost:8083/index.php/File:${msg.filename}`}
                     style={{ marginLeft: 5, textDecoration: 'underline' }}
                   >
                     Link

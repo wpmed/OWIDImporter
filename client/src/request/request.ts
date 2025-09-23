@@ -60,6 +60,11 @@ export interface CreateTaskData {
   fileName: string,
   description: string,
   descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour
+  importCountries?: boolean,
+  generateTemplateCommons?: boolean,
+  countryFileName?: string,
+  countryDescription?: string,
+  countryDescriptionOverwriteBehaviour?: DescriptionOverwriteBehaviour,
 }
 
 export interface CreateTaskResponse {
