@@ -123,7 +123,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		}
 	}
 
-	if data.ImportCountries {
+	if task.ImportCountries == 1 {
 		countriesList, startYear, endYear, err := GetCountryList(chartName)
 		if err != nil {
 			fmt.Println("Error fetching country list", err)
@@ -142,9 +142,9 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 					if task.Status != models.TaskStatusFailed {
 						processCountry(user, task, *token, chartName, country, startYear, endYear, downloadPath, StartData{
 							Url:                           data.Url,
-							FileName:                      data.CountryFileName,
-							Description:                   data.CountryDescription,
-							DescriptionOverwriteBehaviour: data.CountryDescriptionOverwriteBehaviour,
+							FileName:                      task.CountryFileName,
+							Description:                   task.CountryDescription,
+							DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
 						})
 					}
 					return nil

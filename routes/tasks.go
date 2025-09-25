@@ -222,10 +222,14 @@ func RetryTask(c *gin.Context) {
 		case models.TaskTypeMap:
 			fmt.Println("Action message map", task)
 			err := services.StartMap(task.ID, user, services.StartData{
-				Url:                           task.URL,
-				FileName:                      task.FileName,
-				Description:                   task.Description,
-				DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
+				Url:                                  task.URL,
+				FileName:                             task.FileName,
+				Description:                          task.Description,
+				DescriptionOverwriteBehaviour:        task.DescriptionOverwriteBehaviour,
+				ImportCountries:                      task.ImportCountries == 1,
+				CountryFileName:                      task.CountryFileName,
+				CountryDescription:                   task.CountryDescription,
+				CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
 			})
 			if err != nil {
 				log.Println("Error starting map", err)

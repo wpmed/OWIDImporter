@@ -336,9 +336,15 @@ func GetCountryList(chartName string) ([]string, string, string, error) {
 		fmt.Println("waiting for entity selector")
 		page.MustElement(".entity-selector__content")
 		fmt.Println("found entity selector")
-		elements := page.MustElements(".entity-selector__content li .label")
+		elements := page.MustElements(".entity-selector__content li")
 		for _, element := range elements {
-			country := strings.TrimSpace(element.MustText())
+			label := element.MustElement(".label")
+			value := element.MustElement(".value")
+			if value != nil && value.MustText() != "" && strings.ToLower(value.MustText()) == "no data" {
+				fmt.Println("No data for country: ", element.MustText())
+				continue
+			}
+			country := strings.TrimSpace(label.MustText())
 			countryCode, ok := constants.COUNTRY_CODES[country]
 			if !ok {
 				fmt.Println("Country not found", country)

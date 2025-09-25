@@ -521,7 +521,7 @@ func GetMapTemplate(taskId string) (string, error) {
 	}
 
 	for _, tp := range taskProcesses {
-		if tp.Type == models.TaskProcessTypeCountry {
+		if tp.Type == models.TaskProcessTypeCountry && tp.Status != models.TaskProcessStatusFailed {
 			countriesData = append(countriesData, CountryTemplateDataItem{
 				Country:  tp.Region,
 				FileName: tp.FileName,
@@ -533,6 +533,7 @@ func GetMapTemplate(taskId string) (string, error) {
 	sliderTemplateText.WriteString("{{owidslider\n")
 	sliderTemplateText.WriteString(fmt.Sprintf("|start        = %d\n", endYear))
 	sliderTemplateText.WriteString(fmt.Sprintf("|list         = Template:OWID/%s#gallery\n", task.ChartName))
+	sliderTemplateText.WriteString("|location      = commons\n")
 	sliderTemplateText.WriteString("|caption      =\n")
 	sliderTemplateText.WriteString("|title        =\n")
 	sliderTemplateText.WriteString("|language     =\n")
