@@ -21,6 +21,7 @@ type CreateTaskData struct {
 	CountryFileName                      string                               `json:"countryFileName"`
 	CountryDescription                   string                               `json:"countryDescription"`
 	CountryDescriptionOverwriteBehaviour models.DescriptionOverwriteBehaviour `json:"countryDescriptionOverwriteBehaviour"`
+	GenerateTemplateCommons              bool                                 `json:"generateTemplateCommons"`
 }
 
 type GetTaskResponse struct {
@@ -66,6 +67,12 @@ func CreateTask(c *gin.Context) {
 	if data.ImportCountries {
 		importCountries = 1
 	}
+
+	generateTemplateCommons := 0
+	if data.GenerateTemplateCommons {
+		generateTemplateCommons = 1
+	}
+
 	task, err := models.NewTask(
 		user.ID,
 		data.Url,
@@ -79,6 +86,7 @@ func CreateTask(c *gin.Context) {
 		data.CountryFileName,
 		data.CountryDescription,
 		data.CountryDescriptionOverwriteBehaviour,
+		generateTemplateCommons,
 	)
 	if err != nil {
 		fmt.Println("Error creating task ", err)
@@ -99,6 +107,7 @@ func CreateTask(c *gin.Context) {
 				CountryFileName:                      data.CountryFileName,
 				CountryDescription:                   data.CountryDescription,
 				CountryDescriptionOverwriteBehaviour: data.CountryDescriptionOverwriteBehaviour,
+				GenerateTemplateCommons:              data.GenerateTemplateCommons,
 			})
 			if err != nil {
 				log.Println("Error starting map", err)
@@ -230,6 +239,7 @@ func RetryTask(c *gin.Context) {
 				CountryFileName:                      task.CountryFileName,
 				CountryDescription:                   task.CountryDescription,
 				CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
+				GenerateTemplateCommons:              task.GenerateTemplateCommons == 1,
 			})
 			if err != nil {
 				log.Println("Error starting map", err)

@@ -159,6 +159,8 @@ func GetChartNameFromUrl(url string) (string, error) {
 		return "", fmt.Errorf("invalid url")
 	}
 	return matches[1], nil
+	// name := strings.ReplaceAll(matches[1], "-", " ")
+	// return name, nil
 }
 
 func ValidateParameters(data StartData) error {
@@ -261,7 +263,7 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		// Do upload
 		res, err := utils.DoApiReq[UploadResponse](user, map[string]string{
 			"action":         "upload",
-			"comment":        "Importing from " + data.Url,
+			"comment":        replaceData.Comment,
 			"text":           filedesc,
 			"filename":       filename,
 			"ignorewarnings": "1",
@@ -358,7 +360,7 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		// Image changed, Overwrite the file
 		res, err := utils.DoApiReq[UploadResponse](user, map[string]string{
 			"action":         "upload",
-			"comment":        "Re-importing from " + data.Url,
+			"comment":        replaceData.Comment,
 			"text":           newFileDesc,
 			"filename":       filename,
 			"ignorewarnings": "1",
@@ -430,6 +432,7 @@ type ReplaceVarsData struct {
 	StartYear string
 	EndYear   string
 	FileName  string
+	Comment   string
 }
 
 func replaceVars(value string, params ReplaceVarsData) string {
@@ -532,12 +535,12 @@ func GetMapTemplate(taskId string) (string, error) {
 	sliderTemplateText := strings.Builder{}
 	sliderTemplateText.WriteString("{{owidslider\n")
 	sliderTemplateText.WriteString(fmt.Sprintf("|start        = %d\n", endYear))
-	sliderTemplateText.WriteString(fmt.Sprintf("|list         = Template:OWID/%s#gallery\n", task.ChartName))
+	sliderTemplateText.WriteString(fmt.Sprintf("|list         = Template:OWID/%s#gallery\n", GetFileNameFromChartName(task.ChartName)))
 	sliderTemplateText.WriteString("|location      = commons\n")
 	sliderTemplateText.WriteString("|caption      =\n")
 	sliderTemplateText.WriteString("|title        =\n")
 	sliderTemplateText.WriteString("|language     =\n")
-	sliderTemplateText.WriteString(fmt.Sprintf("|file         = [[File:%s|link=|thumb|upright=1.6|%s]]\n", endFileName, task.ChartName))
+	sliderTemplateText.WriteString(fmt.Sprintf("|file         = [[File:%s|link=|thumb|upright=1.6|%s]]\n", endFileName, GetFileNameFromChartName(task.ChartName)))
 	sliderTemplateText.WriteString("|startingView = World\n")
 	sliderTemplateText.WriteString("}}\n")
 
@@ -549,7 +552,7 @@ func GetMapTemplate(taskId string) (string, error) {
 	wikiText.WriteString(sliderTemplateText.String())
 	wikiText.WriteString("</syntaxhighlight>\n")
 	wikiText.WriteString(fmt.Sprintf("*'''Source''': https://ourworldindata.org/grapher/%s\n", task.ChartName))
-	wikiText.WriteString(fmt.Sprintf("*'''Translate''': https://svgtranslate.toolforge.org/File:%s\n", firstFileName))
+	wikiText.WriteString(fmt.Sprintf("*'''Translate''': https://svgtranslate.toolforge.org/File:%s\n", strings.ReplaceAll(firstFileName, " ", "_")))
 	wikiText.WriteString("{{-}}\n\n")
 	wikiText.WriteString("==Data==\n")
 
@@ -603,4 +606,8 @@ func GetChartTemplate(taskId string) (string, error) {
 	wikiText.WriteString("\n")
 	// utils.SendWSMessage(session, "wikitext_countries", wikiText.String())
 	return wikiText.String(), nil
+}
+
+func GetFileNameFromChartName(chartName string) string {
+	return strings.ReplaceAll(chartName, "-", " ")
 }

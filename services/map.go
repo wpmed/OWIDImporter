@@ -123,7 +123,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		}
 	}
 
-	if task.ImportCountries == 1 {
+	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
 		countriesList, startYear, endYear, err := GetCountryList(chartName)
 		if err != nil {
 			fmt.Println("Error fetching country list", err)
@@ -167,9 +167,11 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			// Create template page in commons
 			wikiText, err := GetMapTemplate(task.ID)
 			if err == nil {
-				title, err := createCommonsTemplatePage(user, token, task.ChartName, wikiText)
+				title, err := createCommonsTemplatePage(user, token, GetFileNameFromChartName(task.ChartName), wikiText)
 				if err == nil {
 					task.CommonsTemplateName = title
+				} else {
+					fmt.Println("Error creating commons template page: ", err)
 				}
 			} else {
 				fmt.Println("Error getting task wikitext", task.ID, err)
@@ -609,7 +611,8 @@ func processRegionYearNewFlow(user *models.User, task *models.Task, data StartDa
 		Title:    title,
 		Region:   regionStr,
 		Year:     strconv.Itoa(year),
-		FileName: chartName,
+		FileName: GetFileNameFromChartName(chartName),
+		Comment:  "Importing from " + data.Url,
 	}
 
 	fileInfo, err := getFileInfo(mapPath)
@@ -621,6 +624,8 @@ func processRegionYearNewFlow(user *models.User, task *models.Task, data StartDa
 	if fileMetadata != "" {
 		if err := InjectMetadataIntoSVGSameFile(fileInfo.FilePath, fileMetadata); err != nil {
 			fmt.Println("Error injecting metadata into svg: ", err)
+		} else {
+			replaceData.Comment = "Importing from " + data.Url + " with metadata"
 		}
 	}
 
@@ -770,7 +775,8 @@ func processRegionYear(user *models.User, task *models.Task, token, chartName, t
 				Title:    title,
 				Region:   regionStr,
 				Year:     strconv.Itoa(year),
-				FileName: chartName,
+				FileName: GetFileNameFromChartName(chartName),
+				Comment:  "Importing from " + data.Url,
 			}
 
 			fileInfo, err := getFileInfo(downloadPath)
@@ -786,6 +792,8 @@ func processRegionYear(user *models.User, task *models.Task, token, chartName, t
 			if fileMetadata != "" {
 				if err := InjectMetadataIntoSVGSameFile(fileInfo.FilePath, fileMetadata); err != nil {
 					fmt.Println("Error injecting metadata into svg: ", err)
+				} else {
+					replaceData.Comment = "Importing from " + data.Url + " with metadata"
 				}
 			}
 

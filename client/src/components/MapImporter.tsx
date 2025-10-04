@@ -19,10 +19,11 @@ const initial_description_map = `=={{int:filedesc}}==
 {{cc-by-4.0}}
 [[Category:$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}]]
 [[Category:SVG maps by Our World in Data]]
+[[Category:Uploaded by OWID importer tool]]
 `;
 
 const chart_info_map = `You can use $NAME (filename without extension), $YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders. This only works for graphs that are maps with data over multiple years.`;
-const initial_filename_map = `$NAME,$REGION,$YEAR.svg`;
+const initial_filename_map = `$NAME, $REGION, $YEAR.svg`;
 const url_placeholder = `https://ourworldindata.org/grapher/<NAME OF GRAPH>`;
 
 const initial_description_chart = `=={{int:filedesc}}==
@@ -37,6 +38,7 @@ const initial_description_chart = `=={{int:filedesc}}==
 {{Map showing old data|year=$START_YEAR-$END_YEAR}}
 =={{int:license-header}}==
 {{cc-by-4.0}}
+[[Category:Uploaded by OWID importer tool]]
 `;
 const initial_filename_chart = `$NAME, $START_YEAR to $END_YEAR, $REGION.svg`;
 const chart_info_chart = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders`;
@@ -72,8 +74,8 @@ export interface MapImporterProps {
 export function MapImporter(data: MapImporterProps) {
   const [loading, setLoading] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [importCountries, setImportCountries] = useState(false);
-  const [generateTemplateCommons, setGenerateTemplateCommons] = useState(false);
+  const [importCountries, setImportCountries] = useState(true);
+  const [generateTemplateCommons, setGenerateTemplateCommons] = useState(true);
 
   // Form Fields
   const [url, setUrl] = useState("");

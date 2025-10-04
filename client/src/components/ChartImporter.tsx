@@ -20,6 +20,7 @@ const initial_description_chart = `=={{int:filedesc}}==
 {{Map showing old data|year=$START_YEAR-$END_YEAR}}
 =={{int:license-header}}==
 {{cc-by-4.0}}
+[[Category:Uploaded by OWID importer tool]]
 `;
 const initial_filename_chart = `$NAME, $START_YEAR to $END_YEAR, $REGION.svg`;
 const chart_info_chart = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders`;

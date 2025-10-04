@@ -249,7 +249,8 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 				Region:    country,
 				StartYear: *startYear,
 				EndYear:   *endYear,
-				FileName:  chartName,
+				FileName:  GetFileNameFromChartName(chartName),
+				Comment:   "Importing from " + data.Url,
 			}
 			filename, status, err := uploadMapFile(user, token, replaceData, downloadPath, data)
 			if err != nil {
