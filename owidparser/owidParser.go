@@ -8,10 +8,35 @@ import (
 	"log"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 )
+
+const NO_DATA_FILL string = "url(#noDataPattern)"
+
+type ColorScale struct {
+	BaseColorScheme           string    `json:"baseColorScheme"`
+	BinningStrategy           string    `json:"binningStrategy"`
+	CustomNumericColors       []*string `json:"customNumericColors"`
+	CustomNumericLabels       []*string `json:"customNumericLabels"`
+	CustomNumericValues       []float64 `json:"customNumericValues"`
+	CustomNumericColorsActive bool      `json:"customNumericColorsActive"`
+	TimeTolerance             int       `json:"timeTolerance"`
+}
+
+// MapConfig represents the map field from the OWID grapher config
+type MapConfig struct {
+	ColorScale             ColorScale `json:"colorScale"`
+	ColumnSlug             string     `json:"columnSlug"`
+	TooltipUseCustomLabels bool       `json:"tooltipUseCustomLabels"`
+}
+
+// OWIDGrapherConfig represents the full config object (we only extract the map field)
+type OWIDGrapherConfig struct {
+	Map MapConfig `json:"map"`
+}
 
 type Data struct {
 	Values   []float64 `json:"values"`
@@ -405,6 +430,13 @@ type FillItem struct {
 	Fill     string
 }
 
+type RangeFillItem struct {
+	StartValue float64
+	EndValue   float64
+	StrValue   string
+	Fill       string
+}
+
 type WriteResult struct {
 	Path string
 	Year int
@@ -415,7 +447,7 @@ func getCountryID(entityName string) string {
 	return strings.ReplaceAll(entityName, " ", "-")
 }
 
-func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]WriteResult, error) {
+func GenerateImages(config *OWIDGrapherConfig, title, dataPath, metadataPath, mapPath, outPath string) (*[]WriteResult, error) {
 	dataBytes, err := os.ReadFile(dataPath)
 	if err != nil {
 		return nil, err
@@ -486,7 +518,7 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 
 	// Print the combined data (or process as needed)
 	for i, point := range combinedData {
-		fmt.Printf("Data point %d: %.2f%% in %d for %s (%s)\n",
+		fmt.Printf("Data point %d: %.2f in %d for %s (%s)\n",
 			i+1, point.Value, point.Year, point.EntityName, point.CountryCode)
 
 		// Print only first 10 to avoid overwhelming output
@@ -562,6 +594,7 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 	}
 
 	fillMap := make([]FillItem, 0)
+	rangeFillMap := make([]RangeFillItem, 0)
 
 	// linesElements := lines2[0].GetElements()
 	swatchesElements := swatches[0].GetElements()
@@ -584,6 +617,31 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 			parts := strings.Split(metadata.ShortUnit, "/")
 			if len(parts) == 2 {
 				key = strings.ReplaceAll(key, parts[0], "")
+			}
+		}
+
+		if metadata.Type == "float" || metadata.Type == "int" {
+			// Check for numeric shortcuts (thousand, million)
+			numericFound := false
+			if strings.Contains(key, "millions") {
+				key = strings.ReplaceAll(key, "millions", "000000")
+				numericFound = true
+			}
+			if strings.Contains(key, "million") {
+				key = strings.ReplaceAll(key, "million", "000000")
+				numericFound = true
+			}
+			if strings.Contains(key, "thousands") {
+				key = strings.ReplaceAll(key, "thousands", "000")
+				numericFound = true
+			}
+			if strings.Contains(key, "thousand") {
+				key = strings.ReplaceAll(key, "thousand", "000")
+				numericFound = true
+			}
+
+			if numericFound {
+				key = strings.ReplaceAll(key, " ", "")
 			}
 		}
 
@@ -614,6 +672,67 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 		}
 	}
 
+	numericValues := config.Map.ColorScale.CustomNumericValues
+	if len(numericValues) > 0 {
+		fmt.Println("Data: labels: ", len(labels[0].GetElements()), " - Swatches", len(swatchesElements), "- numericValues: ", len(numericValues))
+		fmt.Println("Labels: ", labels[0].GetElements())
+		fmt.Println("Swatches: ", swatchesElements)
+		fmt.Println("numericValues: ", numericValues)
+		for index := range swatchesElements {
+			if index >= len(numericValues) {
+				fmt.Println("Breaking for numeric")
+				break
+			}
+			if swatchesElements[index].Attributes["fill"] == "url(#noDataPattern)" {
+				fmt.Println("Continue no data")
+				continue
+			}
+
+			rangeFillMap = append(rangeFillMap, RangeFillItem{
+				Fill:       swatchesElements[index].Attributes["fill"],
+				StartValue: numericValues[index-1],
+				EndValue:   numericValues[index],
+			})
+			fmt.Println("Range fill map:", rangeFillMap, index)
+		}
+	}
+
+	// Reverse the range fill map
+	slices.Reverse(rangeFillMap)
+
+	fmt.Println("=================== RANGE FILL MAP ===============", rangeFillMap)
+
+	// After collecting the fill map, check if we have custom numeric labels
+	// if so, remove the StrValue and add the value instead
+	if len(config.Map.ColorScale.CustomNumericLabels) > 0 {
+		for i := range fillMap {
+			if i == 0 {
+				continue
+			}
+			if fillMap[i].StrValue != "" && strings.ToLower(fillMap[i].StrValue) != "no data" {
+				configLabel := config.Map.ColorScale.CustomNumericLabels[i-1]
+				configLabelValue := config.Map.ColorScale.CustomNumericValues[i]
+				if configLabel != nil && *configLabel != "" {
+					fillMap[i].StrValue = ""
+					fillMap[i].Value = configLabelValue
+				}
+			}
+		}
+	}
+
+	// TODO: Check if we need to unshift the colors
+	// Happens when the swatches are bounded
+	// if swatchesElements[len(swatchesElements)-1].XMLName.Local != "path" && !(metadata.Type == "int" && metadata.Unit == "") {
+	// 	newFillMap := make([]FillItem, 0)
+	// 	for i, item := range fillMap {
+	// 		if i == len(fillMap) -1 {
+	// 			continue
+	// 		}
+	// 		newFillMap = append(newFillMap, FillItem{})
+	//
+	// 	}
+	// }
+	//
 	if metadata.Unit != "" {
 		sort.SliceStable(fillMap, func(a int, b int) bool {
 			return fillMap[a].Value < fillMap[b].Value
@@ -679,16 +798,15 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 
 		// Generate image for this year by replacing the colors of the data
 		for _, item := range yearData {
+			countryID := getCountryID(item.EntityName)
+
 			fillValue := ""
 			if metadata.Type == "int" && metadata.Unit == "" {
 				// Index based matching
 				fillValue = fillMap[int(item.Value)+1].Fill
 			} else {
-				fillValue = getFillValue(fillMap, item.Value)
+				fillValue = getFillValueFromRange(rangeFillMap, item.Value)
 			}
-
-			countryID := getCountryID(item.EntityName)
-			// fmt.Println("Fill value: value:", item.Value, "Fill value: ", fillValue, countryID)
 
 			// Find the path element for this country
 			for i := range yearPathElements {
@@ -708,13 +826,13 @@ func GenerateImages(title, dataPath, metadataPath, mapPath, outPath string) (*[]
 			continue
 		}
 
-		fmt.Println("CREATING DIRECTORY: ", dirpath, err)
+		// fmt.Println("CREATING DIRECTORY: ", dirpath, err)
 		filename := path.Join(outPath, strconv.Itoa(year), fmt.Sprintf("%d.svg", year))
 		err = WriteSVGFile(&yearSVG, filename)
 		if err != nil {
 			log.Printf("Error writing file %s: %v", filename, err)
 		} else {
-			fmt.Printf("Successfully wrote %s\n", filename)
+			// fmt.Printf("Successfully wrote %s\n", filename)
 			writeResults = append(writeResults, WriteResult{
 				Path: filename,
 				Year: year,
@@ -768,7 +886,30 @@ func WriteSVGFile(yearSVG *GenericSVG, filename string) error {
 	return nil
 }
 
-func getFillValue(fillMap []FillItem, value float64) string {
+func getFillValueFromRange(fillMap []RangeFillItem, value float64) string {
+	if value < 0 || value != value { // NaN check
+		return NO_DATA_FILL
+	}
+
+	// Special case, the value is 0, then find the 0 label
+	if value == 0 {
+		for _, item := range fillMap {
+			if item.StartValue == 0 && item.EndValue == 0 {
+				return item.Fill
+			}
+		}
+	}
+
+	for _, item := range fillMap {
+		if value >= item.StartValue {
+			return item.Fill
+		}
+	}
+
+	return fillMap[len(fillMap)-1].Fill
+}
+
+func getFillValue(fillMap []FillItem, value float64, expl bool) string {
 	// Handle special cases first
 	if value < 0 || value != value { // NaN check
 		for _, item := range fillMap {
@@ -794,9 +935,19 @@ func getFillValue(fillMap []FillItem, value float64) string {
 		return sortedMap[a].Value > sortedMap[b].Value
 	})
 
+	if expl {
+		fmt.Println("Sorted Map: ", sortedMap)
+	}
 	for _, item := range sortedMap {
-		if value >= item.Value {
+		if value > item.Value {
+			if expl {
+				fmt.Println("Found match", value, item.Value)
+			}
 			return item.Fill
+		} else {
+			if expl {
+				fmt.Println("No match: ", value, item.Value)
+			}
 		}
 	}
 

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"os"
@@ -220,7 +221,7 @@ func CreateCommonsTemplatePage(taskId string, user *models.User) error {
 	return nil
 }
 
-func downloadMapData(url, dataPath, metadataPath, mapPath string) error {
+func downloadMapData(url, dataPath, metadataPath, mapPath string) (*owidparser.OWIDGrapherConfig, error) {
 	l, browser := GetBrowser()
 	defer l.Cleanup()
 	defer browser.Close()
@@ -253,24 +254,34 @@ func downloadMapData(url, dataPath, metadataPath, mapPath string) error {
 
 	time.Sleep(time.Second * 3)
 	if dataUrl == "" || metadataUrl == "" {
-		return fmt.Errorf("Error getting data/metadata urls")
+		return nil, fmt.Errorf("Error getting data/metadata urls")
 	}
 
 	fmt.Println("DOWNLOADING DATA")
 	if err := utils.DownloadFile(dataUrl, dataPath); err != nil {
-		return fmt.Errorf("ERROR DOWNLOADING DATA JSON %v", err)
+		return nil, fmt.Errorf("ERROR DOWNLOADING DATA JSON %v", err)
 	}
 	fmt.Println("DOWNLOADING METADATA")
 	if err := utils.DownloadFile(metadataUrl, metadataPath); err != nil {
-		return fmt.Errorf("ERROR DOWNLOADING METADATA JSON %v", err)
+		return nil, fmt.Errorf("ERROR DOWNLOADING METADATA JSON %v", err)
 	}
 
 	fmt.Println("DOWNLOADING MAP FILE")
 	if err := downloadChartFile(url, mapPath); err != nil {
-		return err
+		return nil, err
+	}
+	// Extract the window._OWID_GRAPHER_CONFIG object
+	var config owidparser.OWIDGrapherConfig
+	configJSON := page.MustEval(`() => {
+		return JSON.stringify(window._OWID_GRAPHER_CONFIG);
+	}`).String()
+	err := json.Unmarshal([]byte(configJSON), &config)
+	if err != nil {
+		fmt.Println("Failed to parse config: %v", err)
+		return nil, nil
 	}
 
-	return nil
+	return &config, nil
 }
 
 func getMapStartEndYearTitle(chartName, region string) (string, string, string) {
@@ -370,8 +381,9 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 	dataPath := path.Join(downloadPath, "data.json")
 	metadataPath := path.Join(downloadPath, "metadata.json")
 	mapPath := path.Join(downloadPath, "map")
-	err = downloadMapData(url, dataPath, metadataPath, mapPath)
+	config, err := downloadMapData(url, dataPath, metadataPath, mapPath)
 
+	// fmt.Println("CONFIG IS: ==================", config)
 	// Fallback to the old flow of getting each image individually
 	if err != nil {
 		fmt.Println("ERROR GETTING CHART JSON DATA", err)
@@ -419,7 +431,7 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 			return err
 		}
 		fmt.Println("Map info: ", mapInfo.FilePath)
-		err = generateAndprocessRegionYearsNewFlow(user, task, *token, chartName, title, region, int(startYearInt), int(endYearInt), data, dataPath, metadataPath, mapPath)
+		err = generateAndprocessRegionYearsNewFlow(user, task, config, *token, chartName, title, region, int(startYearInt), int(endYearInt), data, dataPath, metadataPath, mapPath)
 		if err != nil {
 			return err
 		}
@@ -674,13 +686,13 @@ func processRegionYearNewFlow(user *models.User, task *models.Task, data StartDa
 	return nil
 }
 
-func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, token, chartName, title, region string, startYear, endYear int, data StartData, dataPath, metadataPath, mapDir string) error {
+func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, config *owidparser.OWIDGrapherConfig, token, chartName, title, region string, startYear, endYear int, data StartData, dataPath, metadataPath, mapDir string) error {
 	fileinfo, err := getFileInfo(mapDir)
 	if err != nil {
 		return err
 	}
 
-	results, err := owidparser.GenerateImages(title, dataPath, metadataPath, fileinfo.FilePath, mapDir)
+	results, err := owidparser.GenerateImages(config, title, dataPath, metadataPath, fileinfo.FilePath, mapDir)
 	if err != nil {
 		return err
 	}

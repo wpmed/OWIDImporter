@@ -217,7 +217,6 @@ func FindTaskByUserId(id, taskType string) (*[]Task, error) {
 	}
 
 	for rows.Next() {
-		fmt.Println(rows.Columns())
 		var task Task
 		rows.Scan(
 			&task.ID,
