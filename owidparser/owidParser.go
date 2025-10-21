@@ -678,6 +678,8 @@ func GenerateImages(config *OWIDGrapherConfig, title, dataPath, metadataPath, ma
 		fmt.Println("Labels: ", labels[0].GetElements())
 		fmt.Println("Swatches: ", swatchesElements)
 		fmt.Println("numericValues: ", numericValues)
+		hasNoData := false
+
 		for index := range swatchesElements {
 			if index >= len(numericValues) {
 				fmt.Println("Breaking for numeric")
@@ -685,14 +687,23 @@ func GenerateImages(config *OWIDGrapherConfig, title, dataPath, metadataPath, ma
 			}
 			if swatchesElements[index].Attributes["fill"] == "url(#noDataPattern)" {
 				fmt.Println("Continue no data")
+				hasNoData = true
 				continue
 			}
 
-			rangeFillMap = append(rangeFillMap, RangeFillItem{
-				Fill:       swatchesElements[index].Attributes["fill"],
-				StartValue: numericValues[index-1],
-				EndValue:   numericValues[index],
-			})
+			if hasNoData {
+				rangeFillMap = append(rangeFillMap, RangeFillItem{
+					Fill:       swatchesElements[index].Attributes["fill"],
+					StartValue: numericValues[index-1],
+					EndValue:   numericValues[index],
+				})
+			} else {
+				rangeFillMap = append(rangeFillMap, RangeFillItem{
+					Fill:       swatchesElements[index].Attributes["fill"],
+					StartValue: numericValues[index],
+					EndValue:   numericValues[index+1],
+				})
+			}
 			fmt.Println("Range fill map:", rangeFillMap, index)
 		}
 	}
