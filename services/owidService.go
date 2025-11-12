@@ -150,7 +150,7 @@ type ContentSlot struct {
 
 const (
 	DOWNLOAD_BUTTON_SELECTOR = `figure div[data-track-note="chart_click_download"] button`
-	HEADLESS                 = false
+	HEADLESS                 = true
 )
 
 func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[string]string) string {
