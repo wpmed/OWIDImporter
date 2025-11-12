@@ -22,6 +22,8 @@ type CreateTaskData struct {
 	CountryDescription                   string                               `json:"countryDescription"`
 	CountryDescriptionOverwriteBehaviour models.DescriptionOverwriteBehaviour `json:"countryDescriptionOverwriteBehaviour"`
 	GenerateTemplateCommons              bool                                 `json:"generateTemplateCommons"`
+	ChartParameters                      string                               `json:"chartParameters"`    // query string for the chart params
+	TemplateNameFormat                   string                               `json:"templateNameFormat"` // formatting for OWID Template name
 }
 
 type GetTaskResponse struct {
@@ -87,6 +89,8 @@ func CreateTask(c *gin.Context) {
 		data.CountryDescription,
 		data.CountryDescriptionOverwriteBehaviour,
 		generateTemplateCommons,
+		data.ChartParameters,
+		data.TemplateNameFormat,
 	)
 	if err != nil {
 		fmt.Println("Error creating task ", err)
@@ -108,6 +112,7 @@ func CreateTask(c *gin.Context) {
 				CountryDescription:                   data.CountryDescription,
 				CountryDescriptionOverwriteBehaviour: data.CountryDescriptionOverwriteBehaviour,
 				GenerateTemplateCommons:              data.GenerateTemplateCommons,
+				TemplateNameFormat:                   data.TemplateNameFormat,
 			})
 			if err != nil {
 				log.Println("Error starting map", err)
@@ -240,6 +245,7 @@ func RetryTask(c *gin.Context) {
 				CountryDescription:                   task.CountryDescription,
 				CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
 				GenerateTemplateCommons:              task.GenerateTemplateCommons == 1,
+				TemplateNameFormat:                   task.CommonsTemplateNameFormat,
 			})
 			if err != nil {
 				log.Println("Error starting map", err)
@@ -296,33 +302,33 @@ func CancelTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"taskId": task.ID})
 }
 
-func GenerateCommonsTemplate(c *gin.Context) {
-	sessionId := c.Request.Header.Get("sessionId")
-
-	if sessionId == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session"})
-		return
-	}
-
-	session, ok := sessions.Sessions[sessionId]
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown session"})
-		return
-	}
-	user, err := models.FindUserByUsername(session.Username)
-	if err != nil || user == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown user"})
-		return
-	}
-
-	taskId := c.Param("id")
-	task, err := models.FindTaskById(taskId)
-	if err != nil || task == nil {
-		fmt.Println("Error retrying task: ", err, task)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrying task"})
-		return
-	}
-
-	services.CreateCommonsTemplatePage(taskId, user)
-	c.JSON(http.StatusOK, gin.H{"taskId": task.ID})
-}
+// func GenerateCommonsTemplate(c *gin.Context) {
+// 	sessionId := c.Request.Header.Get("sessionId")
+//
+// 	if sessionId == "" {
+// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session"})
+// 		return
+// 	}
+//
+// 	session, ok := sessions.Sessions[sessionId]
+// 	if !ok {
+// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown session"})
+// 		return
+// 	}
+// 	user, err := models.FindUserByUsername(session.Username)
+// 	if err != nil || user == nil {
+// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown user"})
+// 		return
+// 	}
+//
+// 	taskId := c.Param("id")
+// 	task, err := models.FindTaskById(taskId)
+// 	if err != nil || task == nil {
+// 		fmt.Println("Error retrying task: ", err, task)
+// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrying task"})
+// 		return
+// 	}
+//
+// 	services.CreateCommonsTemplatePage(taskId, user)
+// 	c.JSON(http.StatusOK, gin.H{"taskId": task.ID})
+// }

@@ -65,7 +65,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	defer os.RemoveAll(tmpDir)
 
 	// utils.SendWSMessage(session, "debug", "Fetching country list")
-	countriesList, startYear, endYear, err := GetCountryList(chartName)
+	countriesList, startYear, endYear, err := GetCountryList(data.Url)
 	// utils.SendWSMessage(session, "debug", fmt.Sprintf("Fetched %d countries. Countries are %s", len(countriesList), countriesList))
 	if err != nil {
 		fmt.Println("Error fetching country list", err)
@@ -119,7 +119,8 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 		g.Go(func(country, downloadPath string, token *string) func() error {
 			return func() error {
 				if task.Status != models.TaskStatusFailed {
-					processCountry(user, task, *token, chartName, country, startYear, endYear, downloadPath, data)
+					params := make(map[string]string, 0)
+					processCountry(user, task, *token, chartName, country, startYear, endYear, downloadPath, data, params)
 				}
 				return nil
 			}
@@ -149,7 +150,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	return nil
 }
 
-func processCountry(user *models.User, task *models.Task, token, chartName, country, startYear, endYear, downloadPath string, data StartData) error {
+func processCountry(user *models.User, task *models.Task, token, chartName, country, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
 	var err error
 	var taskProcess *models.TaskProcess
 	// Try to find existing process, otherwise create one
@@ -176,6 +177,11 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 	utils.SendWSTaskProcess(task.ID, taskProcess)
 
 	url := fmt.Sprintf("%s%s?tab=chart&time=%s..%s&country=~%s", constants.OWID_BASE_URL, chartName, startYear, endYear, country)
+	if task.ChartParameters != "" {
+		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
+	}
+
+	fmt.Println("================== Processing country: ", url)
 	// utils.SendWSTaskProcess(taskId string, taskProcess *models.TaskProcess)
 	// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
 	l := launcher.New()
@@ -251,6 +257,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 				EndYear:   *endYear,
 				FileName:  GetFileNameFromChartName(chartName),
 				Comment:   "Importing from " + data.Url,
+				Params:    chartParams,
 			}
 			filename, status, err := uploadMapFile(user, token, replaceData, downloadPath, data)
 			if err != nil {
@@ -316,8 +323,8 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 	return nil
 }
 
-func GetCountryList(chartName string) ([]string, string, string, error) {
-	url := fmt.Sprintf("%s%s?tab=chart", constants.OWID_BASE_URL, chartName)
+func GetCountryList(url string) ([]string, string, string, error) {
+	// url := fmt.Sprintf("%s%s?tab=chart", constants.OWID_BASE_URL, chartName)
 	l := launcher.New()
 	defer l.Cleanup()
 

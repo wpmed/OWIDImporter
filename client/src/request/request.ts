@@ -57,6 +57,7 @@ export async function logout() {
 export interface CreateTaskData {
   action: string,
   url: string,
+  chartParameters: string, // Query string for the chart parameters
   fileName: string,
   description: string,
   descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour
@@ -65,6 +66,7 @@ export interface CreateTaskData {
   countryFileName?: string,
   countryDescription?: string,
   countryDescriptionOverwriteBehaviour?: DescriptionOverwriteBehaviour,
+  templateNameFormat: string
 }
 
 export interface CreateTaskResponse {
@@ -162,4 +164,39 @@ export async function fetchTaskById(id: string) {
 
   return responseData;
 }
+
+export interface GetChartParametersResponse {
+  params: ChartParamteres[]
+}
+
+export interface ChartParamteres {
+  name: string
+  description: string
+  slug: string
+  choices: ChartParamteresChoice[]
+}
+
+export interface ChartParamteresChoice {
+  name: string
+  slug: string
+}
+
+export async function getChartParameters(url: string) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+
+  const response = await fetch(`${import.meta.env.VITE_BASE_URL}/chart/parameters?url=${url}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionId ? {
+        [SESSION_ID_KEY]: sessionId
+      } : {})
+    }
+  });
+
+  const responseData = await response.json() as GetChartParametersResponse;
+
+  return responseData;
+}
+
 

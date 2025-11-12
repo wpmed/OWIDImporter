@@ -9,7 +9,7 @@ import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
 import MapIcon from '@mui/icons-material/Map';
-import ChartIcon from '@mui/icons-material/PieChart';
+// import ChartIcon from '@mui/icons-material/PieChart';
 
 import { ListItemIcon } from '@mui/material';
 import { MapImporter } from './components/MapImporter';
@@ -39,12 +39,12 @@ const LIST_ITEMS = [
     icon: <MapIcon />,
     taskType: TaskTypeEnum.MAP,
   },
-  {
-    id: TABS.CHART_LIST,
-    title: "Country Chart",
-    icon: <ChartIcon />,
-    taskType: TaskTypeEnum.CHART,
-  }
+  // {
+  //   id: TABS.CHART_LIST,
+  //   title: "Country Chart",
+  //   icon: <ChartIcon />,
+  //   taskType: TaskTypeEnum.CHART,
+  // }
 ];
 
 

@@ -17,6 +17,7 @@ import (
 
 type StartData struct {
 	Url                                  string                               `json:"url"`
+	TemplateNameFormat                   string                               `json:"templateNameFormat"`
 	FileName                             string                               `json:"fileName"`
 	Description                          string                               `json:"desc"`
 	DescriptionOverwriteBehaviour        models.DescriptionOverwriteBehaviour `json:"description_overwrite_behaviour"`
@@ -149,8 +150,19 @@ type ContentSlot struct {
 
 const (
 	DOWNLOAD_BUTTON_SELECTOR = `figure div[data-track-note="chart_click_download"] button`
-	HEADLESS                 = true
+	HEADLESS                 = false
 )
+
+func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[string]string) string {
+	fileName := GetFileNameFromChartName(chartName)
+	templateName := strings.ReplaceAll(chartFormat, "$CHART_NAME", fileName)
+
+	for k, v := range chartParams {
+		templateName = strings.ReplaceAll(templateName, fmt.Sprintf("$%s", k), v)
+	}
+
+	return fmt.Sprintf("Template:OWID/%s", templateName)
+}
 
 func GetChartNameFromUrl(url string) (string, error) {
 	re := regexp.MustCompile(`^https://ourworldindata.org/grapher/([-a-z_0-9]+)(\?.*)?$`)
@@ -215,8 +227,7 @@ func extractCategories(wikitext string) []string {
 	return matches
 }
 
-func createCommonsTemplatePage(user *models.User, token, chartName, wikiText string) (string, error) {
-	title := "Template:OWID/" + chartName
+func createCommonsTemplatePage(user *models.User, token, title, wikiText string) (string, error) {
 	params := map[string]string{
 		"action":         "edit",
 		"text":           wikiText,
@@ -433,6 +444,7 @@ type ReplaceVarsData struct {
 	EndYear   string
 	FileName  string
 	Comment   string
+	Params    map[string]string
 }
 
 func replaceVars(value string, params ReplaceVarsData) string {
@@ -455,12 +467,43 @@ func replaceVars(value string, params ReplaceVarsData) string {
 		value = strings.ReplaceAll(value, "$END_YEAR", params.EndYear)
 	}
 
+	for k, v := range params.Params {
+		value = strings.ReplaceAll(value, fmt.Sprintf("$%s", k), v)
+	}
+
 	return value
 }
 
 type TemplateElement struct {
 	Region string
 	Data   []FileNameAcc
+}
+
+func GetChartParametersMap(url string, selectedParams string) map[string]string {
+	chartParameters := GetChartParameters(url)
+	chartParamsMap := make(map[string]string, 0)
+
+	for _, param := range strings.Split(selectedParams, "&") {
+		parts := strings.Split(param, "=")
+		if len(parts) == 2 {
+			// Find it within all options
+			for _, chartParam := range *chartParameters {
+				if chartParam.Slug == parts[0] {
+					// Find in choices
+					for _, choice := range chartParam.Choices {
+						if choice.Slug == parts[1] {
+							chartParamsMap[strings.ToUpper(chartParam.Slug)] = choice.Name
+							break
+						}
+					}
+					break
+				}
+			}
+		}
+	}
+
+	fmt.Println("================= GOT CHART PARAMETERS MAP: ==============", chartParamsMap)
+	return chartParamsMap
 }
 
 func GetMapTemplate(taskId string) (string, error) {
@@ -535,12 +578,12 @@ func GetMapTemplate(taskId string) (string, error) {
 	sliderTemplateText := strings.Builder{}
 	sliderTemplateText.WriteString("{{owidslider\n")
 	sliderTemplateText.WriteString(fmt.Sprintf("|start        = %d\n", endYear))
-	sliderTemplateText.WriteString(fmt.Sprintf("|list         = Template:OWID/%s#gallery\n", GetFileNameFromChartName(task.ChartName)))
+	sliderTemplateText.WriteString(fmt.Sprintf("|list         = %s#gallery\n", task.CommonsTemplateName))
 	sliderTemplateText.WriteString("|location      = commons\n")
 	sliderTemplateText.WriteString("|caption      =\n")
 	sliderTemplateText.WriteString("|title        =\n")
 	sliderTemplateText.WriteString("|language     =\n")
-	sliderTemplateText.WriteString(fmt.Sprintf("|file         = [[File:%s|link=|thumb|upright=1.6|%s]]\n", endFileName, GetFileNameFromChartName(task.ChartName)))
+	sliderTemplateText.WriteString(fmt.Sprintf("|file         = [[File:%s|link=|thumb|upright=1.6|%s]]\n", endFileName, strings.ReplaceAll(task.CommonsTemplateName, "Template:OWID/", "")))
 	sliderTemplateText.WriteString("|startingView = World\n")
 	sliderTemplateText.WriteString("}}\n")
 

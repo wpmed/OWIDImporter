@@ -1,7 +1,7 @@
 import { Box, Button, CircularProgress, Grid, Radio, Snackbar, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SocketMessage, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
-import { cancelTask, createTask, fetchTaskById, retryTask } from "../request/request";
+import { cancelTask, fetchTaskById, retryTask } from "../request/request";
 import { DescriptionOverwriteBehaviour, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
 import { copyText, getStatusColor, getTaskProcessStatusColor } from "../utils";
 
@@ -143,19 +143,19 @@ export function ChartImporter(data: ChartImporterProps) {
   const submit = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await createTask({
-        url,
-        fileName,
-        description,
-        action: "startChart",
-        descriptionOverwriteBehaviour,
-      })
-      if (response.error) {
-        return alert(response.error);
-      }
-      if (response.taskId) {
-        setTaskId(response.taskId);
-      }
+      // const response = await createTask({
+      //   url,
+      //   fileName,
+      //   description,
+      //   action: "startChart",
+      //   descriptionOverwriteBehaviour,
+      // })
+      // if (response.error) {
+      //   return alert(response.error);
+      // }
+      // if (response.taskId) {
+      //   setTaskId(response.taskId);
+      // }
     } catch (err: any) {
       console.log('Error seding create task', err);
     }

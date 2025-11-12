@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -36,8 +38,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	}
 
 	fmt.Println("Chart Name:", chartName)
-	// utils.SendWSMessage(session, "msg", "Starting")
-	// utils.SendWSMessage(session, "debug", "Fetching Upload token")
 
 	tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
 		"action": "query",
@@ -112,6 +112,15 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		}
 	}()
 
+	url := fmt.Sprintf("%s%s?tab=map", constants.OWID_BASE_URL, chartName)
+	if task.ChartParameters != "" {
+		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
+	}
+	chartParamsMap := GetChartParametersMap(url, task.ChartParameters)
+	templateName := GenerateTemplateCommonsName(data.TemplateNameFormat, task.ChartName, chartParamsMap)
+	task.CommonsTemplateName = templateName
+	task.Update()
+
 	for _, region := range constants.REGIONS {
 		if task.Status == models.TaskStatusFailed {
 			break
@@ -125,7 +134,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	}
 
 	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
-		countriesList, startYear, endYear, err := GetCountryList(chartName)
+		countriesList, startYear, endYear, err := GetCountryList(url)
 		if err != nil {
 			fmt.Println("Error fetching country list", err)
 			return err
@@ -136,6 +145,14 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		g, _ := errgroup.WithContext(context.Background())
 		g.SetLimit(constants.CONCURRENT_REQUESTS)
 
+		fmt.Println("================================================")
+		fmt.Println("================================================")
+
+		fmt.Println(url)
+		fmt.Println(chartParamsMap)
+		fmt.Println("================================================")
+		fmt.Println("================================================")
+		fmt.Println("================================================")
 		for _, country := range countriesList {
 			country := country
 			g.Go(func(country, downloadPath string, token *string) func() error {
@@ -146,7 +163,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 							FileName:                      task.CountryFileName,
 							Description:                   task.CountryDescription,
 							DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-						})
+						}, chartParamsMap)
 					}
 					return nil
 				}
@@ -168,7 +185,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			// Create template page in commons
 			wikiText, err := GetMapTemplate(task.ID)
 			if err == nil {
-				title, err := createCommonsTemplatePage(user, token, GetFileNameFromChartName(task.ChartName), wikiText)
+				title, err := createCommonsTemplatePage(user, token, task.CommonsTemplateName, wikiText)
 				if err == nil {
 					task.CommonsTemplateName = title
 				} else {
@@ -190,69 +207,128 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	return nil
 }
 
-func CreateCommonsTemplatePage(taskId string, user *models.User) error {
-	task, err := models.FindTaskById(taskId)
-	tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
-		"action": "query",
-		"meta":   "tokens",
-		"format": "json",
-	}, nil)
-	if err != nil {
-		fmt.Println("Error fetching edit token", err)
-		return err
-	}
-	token := tokenResponse.Query.Tokens.CsrfToken
-
-	wikiText, err := GetMapTemplate(task.ID)
-	if err != nil {
-		fmt.Println("Error getting task wikitext", task.ID, err)
-		return nil
-	}
-
-	title, err := createCommonsTemplatePage(user, token, task.ChartName, wikiText)
-	if err != nil {
-		fmt.Println("Error creating commons template page", task.ID, err)
-		return nil
-	}
-
-	task.CommonsTemplateName = title
-	task.Update()
-
-	return nil
+type ChartParameter struct {
+	Name        string                 `json:"name"`
+	Slug        string                 `json:"slug"`
+	Description string                 `json:"description"`
+	Choices     []ChartParameterChoice `json:"choices"`
 }
 
-func downloadMapData(url, dataPath, metadataPath, mapPath string) (*owidparser.OWIDGrapherConfig, error) {
+type ChartParameterChoice struct {
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+func GetChartParameters(url string) *[]ChartParameter {
 	l, browser := GetBrowser()
 	defer l.Cleanup()
 	defer browser.Close()
 
-	page := browser.MustPage("")
+	configJSON := ""
 
+	var err error
+	params := make([]ChartParameter, 0)
+
+	for trials := 0; trials < 2; trials++ {
+		err = rod.Try(func() {
+			page := browser.MustPage("")
+			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
+
+			fmt.Println("Before navigate")
+			page.MustNavigate(url)
+			page.MustWaitIdle()
+			page.MustWaitLoad()
+			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+			fmt.Println("FOUND ELEMENT")
+			configJSON = page.MustEval(`() => {
+				if (window._OWID_MULTI_DIM_PROPS) {
+					return JSON.stringify(window._OWID_MULTI_DIM_PROPS.configObj.dimensions);
+ 
+				}
+				return JSON.stringify([]);
+			}`).String()
+		})
+
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		fmt.Println("Error getting chart parameters: ", err)
+		return nil
+	}
+	err = json.Unmarshal([]byte(configJSON), &params)
+	if err != nil {
+		fmt.Println("Error parsing configObj.dimensions: ", err)
+		return nil
+	}
+
+	return &params
+}
+
+func downloadMapData(url, dataPath, metadataPath, mapPath string) (*owidparser.OWIDGrapherConfig, error) {
+	var config owidparser.OWIDGrapherConfig
+	var err error
+	configJSON := ""
 	dataUrl := ""
 	metadataUrl := ""
+	configUrl := ""
 
-	router := browser.HijackRequests()
-	defer router.MustStop()
+	l, browser := GetBrowser()
+	defer l.Cleanup()
+	defer browser.Close()
 
-	router.MustAdd("*.json", func(ctx *rod.Hijack) {
-		fmt.Println("Got req: ", ctx.Request.URL().String())
-		if ctx.Request.Method() == "GET" {
-			url := ctx.Request.URL().String()
-			if strings.Contains(url, ".data.json") && dataUrl == "" {
-				dataUrl = url
-			}
-			if strings.Contains(url, ".metadata.json") && metadataUrl == "" {
-				metadataUrl = url
-			}
+	fmt.Println("DOWNLOADING MAP DATA: ", url)
+	for trials := 0; trials < 2; trials++ {
+		err = rod.Try(func() {
+			page := browser.MustPage("")
+			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
+
+			router := browser.HijackRequests()
+			defer router.MustStop()
+
+			fmt.Println("Getting map data: ", url)
+			router.MustAdd("*.json", func(ctx *rod.Hijack) {
+				fmt.Println("Got req: ", ctx.Request.URL().String())
+				if ctx.Request.Method() == "GET" {
+					url := ctx.Request.URL().String()
+					if strings.Contains(url, ".data.json") && dataUrl == "" {
+						dataUrl = url
+					}
+					if strings.Contains(url, ".metadata.json") && metadataUrl == "" {
+						metadataUrl = url
+					}
+					if strings.Contains(url, ".config.json") && configUrl == "" {
+						configUrl = url
+					}
+				}
+
+				fmt.Println("Finished req: ", ctx.Request.URL().String())
+				ctx.MustLoadResponse()
+			})
+			go router.Run()
+
+			fmt.Println("Before navigate")
+			page.MustNavigate(url)
+			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+			fmt.Println("FOUND ELEMENT")
+			configJSON = page.MustEval(`() => {
+				return JSON.stringify(window._OWID_GRAPHER_CONFIG);
+			}`).String()
+		})
+
+		if err == nil {
+			break
 		}
-	})
-	go router.Run()
+	}
 
-	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-	fmt.Println("Before navigate")
-	page.MustNavigate(url)
+	fmt.Println("Data URL: ", dataUrl)
+	fmt.Println("Metadata URL: ", metadataUrl)
+	fmt.Println("Config URL: ", configUrl)
 
-	time.Sleep(time.Second * 3)
 	if dataUrl == "" || metadataUrl == "" {
 		return nil, fmt.Errorf("Error getting data/metadata urls")
 	}
@@ -271,27 +347,45 @@ func downloadMapData(url, dataPath, metadataPath, mapPath string) (*owidparser.O
 		return nil, err
 	}
 	// Extract the window._OWID_GRAPHER_CONFIG object
-	var config owidparser.OWIDGrapherConfig
-	configJSON := page.MustEval(`() => {
-		return JSON.stringify(window._OWID_GRAPHER_CONFIG);
-	}`).String()
-	err := json.Unmarshal([]byte(configJSON), &config)
+	err = json.Unmarshal([]byte(configJSON), &config)
 	if err != nil {
-		fmt.Println("Failed to parse config: %v", err)
-		return nil, nil
+		fmt.Println("Failed to parse config, trying from config url: ", err)
+
+		if configUrl != "" {
+			client := &http.Client{
+				Timeout: 10 * time.Second,
+			}
+
+			resp, err := client.Get(configUrl)
+			if err != nil {
+				fmt.Printf("Error fetching URL: %v\n", err)
+				return nil, err
+			}
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Printf("Error reading response: %v\n", err)
+				return nil, err
+			}
+
+			err = json.Unmarshal(body, &config)
+			if err != nil {
+				fmt.Printf("Error parsing JSON: %v\n", err)
+				return nil, err
+			}
+			fmt.Println("******************************************** GOT CONFIG FROM CONFIGURL: ==== ", config)
+
+			return &config, nil
+		} else {
+			return nil, err
+		}
 	}
 
 	return &config, nil
 }
 
-func getMapStartEndYearTitle(chartName, region string) (string, string, string) {
-	url := ""
-	if region == "World" {
-		// World chart has no region parameter
-		url = fmt.Sprintf("%s%s?time=latest", constants.OWID_BASE_URL, chartName)
-	} else {
-		url = fmt.Sprintf("%s%s?region=%s&time=latest", constants.OWID_BASE_URL, chartName, region)
-	}
+func getMapStartEndYearTitle(url string) (string, string, string) {
 	fmt.Println("Getting map start/end year + title: ", url)
 
 	l, browser := GetBrowser()
@@ -340,7 +434,7 @@ func getMapStartEndYearTitle(chartName, region string) (string, string, string) 
 	return startYear, endYear, title
 }
 
-func processRegion(user *models.User, task *models.Task, token *string, chartName, region, downloadPath string, data StartData) error {
+func processRegion(user *models.User, task *models.Task, token *string, chartName string, region, downloadPath string, data StartData) error {
 	// Get start and end years
 	// get chart title
 	// Process each year
@@ -354,12 +448,19 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 	url := ""
 	if region == "World" {
 		// World chart has no region parameter
-		url = fmt.Sprintf("%s%s", constants.OWID_BASE_URL, chartName)
+		url = fmt.Sprintf("%s%s?tab=map", constants.OWID_BASE_URL, chartName)
 	} else {
-		url = fmt.Sprintf("%s%s?region=%s", constants.OWID_BASE_URL, chartName, region)
+		url = fmt.Sprintf("%s%s?tab=map&region=%s", constants.OWID_BASE_URL, chartName, region)
 	}
+	// TODO:
+	chartParamsMap := GetChartParametersMap(url, task.ChartParameters)
 
-	startYear, endYear, title := getMapStartEndYearTitle(chartName, region)
+	if task.ChartParameters != "" {
+		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
+	}
+	url = fmt.Sprintf("%s&time=latest", url)
+
+	startYear, endYear, title := getMapStartEndYearTitle(url)
 
 	if startYear == "" || endYear == "" {
 		// utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
@@ -431,7 +532,7 @@ func processRegion(user *models.User, task *models.Task, token *string, chartNam
 			return err
 		}
 		fmt.Println("Map info: ", mapInfo.FilePath)
-		err = generateAndprocessRegionYearsNewFlow(user, task, config, *token, chartName, title, region, int(startYearInt), int(endYearInt), data, dataPath, metadataPath, mapPath)
+		err = generateAndprocessRegionYearsNewFlow(user, task, config, *token, chartName, title, region, int(startYearInt), int(endYearInt), data, dataPath, metadataPath, mapPath, chartParamsMap)
 		if err != nil {
 			return err
 		}
@@ -541,6 +642,7 @@ func downloadChartFile(url, downloadPath string) error {
 		page.MustNavigate(url)
 		page.MustWaitIdle()
 
+		page.WaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 		err := page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
 		if err != nil {
 			panic(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
@@ -567,7 +669,7 @@ func downloadChartFile(url, downloadPath string) error {
 	return err
 }
 
-func processRegionYearNewFlow(user *models.User, task *models.Task, data StartData, token, region, title, chartName, mapDir, fileMetadata string, year int) error {
+func processRegionYearNewFlow(user *models.User, task *models.Task, data StartData, token, region, title, chartName, mapDir, fileMetadata string, year int, chartParams map[string]string) error {
 	var err error
 	var taskProcess *models.TaskProcess
 	mapPath := path.Join(mapDir, strconv.Itoa(year))
@@ -602,14 +704,6 @@ func processRegionYearNewFlow(user *models.User, task *models.Task, data StartDa
 	utils.SendWSTaskProcess(task.ID, taskProcess)
 
 	// control := l.Set("--no-sandbox").Headless(false).MustLaunch()
-	url := ""
-	if region == "World" {
-		// World chart has no region parameter
-		url = fmt.Sprintf("%s%s?time=%d&tab=map", constants.OWID_BASE_URL, chartName, year)
-	} else {
-		url = fmt.Sprintf("%s%s?region=%s&time=%d&tab=map", constants.OWID_BASE_URL, chartName, region, year)
-	}
-	fmt.Println(url)
 	regionStr := region
 	if regionStr == "NorthAmerica" {
 		regionStr = "North America"
@@ -625,6 +719,7 @@ func processRegionYearNewFlow(user *models.User, task *models.Task, data StartDa
 		Year:     strconv.Itoa(year),
 		FileName: GetFileNameFromChartName(chartName),
 		Comment:  "Importing from " + data.Url,
+		Params:   chartParams,
 	}
 
 	fileInfo, err := getFileInfo(mapPath)
@@ -686,13 +781,13 @@ func processRegionYearNewFlow(user *models.User, task *models.Task, data StartDa
 	return nil
 }
 
-func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, config *owidparser.OWIDGrapherConfig, token, chartName, title, region string, startYear, endYear int, data StartData, dataPath, metadataPath, mapDir string) error {
+func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, config *owidparser.OWIDGrapherConfig, token, chartName, title, region string, startYear, endYear int, data StartData, dataPath, metadataPath, mapDir string, chartParams map[string]string) error {
 	fileinfo, err := getFileInfo(mapDir)
 	if err != nil {
 		return err
 	}
 
-	results, err := owidparser.GenerateImages(config, title, dataPath, metadataPath, fileinfo.FilePath, mapDir)
+	results, err := owidparser.GenerateImages(config, title, endYear, dataPath, metadataPath, fileinfo.FilePath, mapDir)
 	if err != nil {
 		return err
 	}
@@ -701,7 +796,7 @@ func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, 
 		if task.Status == models.TaskStatusFailed {
 			break
 		}
-		processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, "", (*results)[i].Year)
+		processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, "", (*results)[i].Year, chartParams)
 	}
 	// for year := startYear; year <= endYear; year++ {
 	// 	if task.Status == models.TaskStatusFailed {
@@ -719,7 +814,7 @@ func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, 
 		} else if metadata != "" {
 			// fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
 			fmt.Println("GOT METADATA, YAAAAAAAAAAY")
-			err := processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, metadata, startYear)
+			err := processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, metadata, startYear, chartParams)
 			if err != nil {
 				fmt.Println("Error uploading with metadata: ", err)
 			}

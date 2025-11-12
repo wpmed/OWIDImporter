@@ -1,10 +1,13 @@
-import { Box, Button, Checkbox, CircularProgress, Grid, Radio, Snackbar, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
+import { Box, Button, Checkbox, CircularProgress, Grid, InputAdornment, Radio, Snackbar, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SocketMessage, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
-import { cancelTask, createTask, fetchTaskById, retryTask } from "../request/request";
+import { cancelTask, createTask, fetchTaskById, getChartParameters, retryTask } from "../request/request";
 import { DescriptionOverwriteBehaviour, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
 import { copyText, getStatusColor, getTaskProcessStatusColor } from "../utils";
+import { useDebounce } from 'use-debounce';
 
+
+const initial_template_name = `$CHART_NAME`
 const initial_description_map = `=={{int:filedesc}}==
 {{Information
 |description={{en|1=$TITLE, $REGION}}
@@ -71,14 +74,25 @@ export interface MapImporterProps {
   taskId?: string
 }
 
+interface SelectedParameter {
+  key: string
+  keyName: string
+  value: string
+  valueName: string
+}
+
 export function MapImporter(data: MapImporterProps) {
   const [loading, setLoading] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [importCountries, setImportCountries] = useState(true);
   const [generateTemplateCommons, setGenerateTemplateCommons] = useState(true);
+  // const [chartParameters, setChartParameters] = useState<ChartParamteres[]>([]);
+  const [selectedChartParameters, setSelectedChartParameters] = useState<SelectedParameter[]>([]);
+  const [templateName, setTemplateName] = useState(initial_template_name);
 
   // Form Fields
   const [url, setUrl] = useState("");
+  const [debouncedUrl] = useDebounce(url, 1000);
   const [fileName, setFileName] = useState(initial_filename_map);
   const [description, setDescription] = useState(initial_description_map);
   const [descriptionOverwriteBehaviour, setDescriptionOverwriteBehaviour] = useState(DescriptionOverwriteBehaviour.ALL);
@@ -187,6 +201,7 @@ export function MapImporter(data: MapImporterProps) {
   const submit = useCallback(async () => {
     setLoading(true);
     try {
+      const chartParameters = selectedChartParameters.map((val) => `${val.key}=${val.value}`).join("&");
       const response = await createTask({
         url,
         fileName,
@@ -197,11 +212,14 @@ export function MapImporter(data: MapImporterProps) {
         generateTemplateCommons,
         countryFileName,
         countryDescription,
-        countryDescriptionOverwriteBehaviour
-      })
+        countryDescriptionOverwriteBehaviour,
+        chartParameters,
+        templateNameFormat: templateName,
+      });
       if (response.error) {
         return alert(response.error);
       }
+
       if (response.taskId) {
         setTaskId(response.taskId);
       }
@@ -219,7 +237,9 @@ export function MapImporter(data: MapImporterProps) {
     countryFileName,
     countryDescription,
     countryDescriptionOverwriteBehaviour,
-    setTaskId
+    setTaskId,
+    selectedChartParameters,
+    templateName
   ])
 
   const onCopy = useCallback(() => {
@@ -256,11 +276,11 @@ export function MapImporter(data: MapImporterProps) {
     if (ws) {
       function listener(event: MessageEvent<any>) {
         const info = JSON.parse(event.data) as SocketMessage;
+        const taskProcess = JSON.parse(info.msg) as TaskProcess;
         console.log("Got websocket message: ", info)
         switch (info.type) {
           case SocketMessageTypeEnum.TASK_PROCESS:
             setItems((items) => {
-              const taskProcess = JSON.parse(info.msg) as TaskProcess;
               const newItems = items.slice();
               const index = newItems.findIndex(item => item.id == taskProcess.id);
               if (index != -1) {
@@ -315,6 +335,58 @@ export function MapImporter(data: MapImporterProps) {
   }, [data.taskId])
 
 
+  useEffect(() => {
+    if (!data.taskId && debouncedUrl && debouncedUrl.includes("?")) {
+      getChartParameters(debouncedUrl)
+        .then(res => {
+          if (res.params && res.params.length > 0) {
+            console.log("Chart parameters: ", res);
+            // setChartParameters(res.params);
+            const paramsKeys = res.params.map(param => param.slug);
+            const parts = debouncedUrl.split("?").pop()?.split("&")
+            const selectedParams: SelectedParameter[] = []
+            let newInitialFilenameMap = "$NAME";
+            let newInitialFilenameChart = "$NAME";
+            let newTemplateName = "$CHART_NAME"
+            parts?.forEach(part => {
+              const [key, val] = part.split("=");
+              if (key && val && paramsKeys.includes(key)) {
+                const param = res.params.find(p => p.slug == key)
+                const choice = param?.choices.find(c => c.slug == val)
+                if (param && choice) {
+                  selectedParams.push({ key: param.slug, keyName: param.name, value: val, valueName: choice.name })
+                } else {
+                  selectedParams.push({ key, keyName: key, value: val, valueName: val })
+                }
+                newInitialFilenameMap += `, $${key.toUpperCase()}`;
+                newInitialFilenameChart += `, $${key.toUpperCase()}`;
+                newTemplateName += `, $${key.toUpperCase()}`;
+              }
+            })
+
+            newInitialFilenameMap += ", $REGION, $YEAR.svg";
+            newInitialFilenameChart += ", $START_YEAR to $END_YEAR, $REGION.svg";
+            console.log("Selected params: ", selectedParams);
+            setFileName(newInitialFilenameMap);
+            setCountryFileName(newInitialFilenameChart);
+            setSelectedChartParameters(selectedParams);
+            setTemplateName(newTemplateName);
+
+          }
+        })
+        .catch(err => {
+          console.log("Error getting chart parameters", err)
+        })
+    } else {
+      setSelectedChartParameters([]);
+      // setChartParameters([]);
+      setFileName(initial_filename_map);
+      setCountryFileName(initial_filename_chart);
+      setTemplateName(initial_template_name)
+    }
+  }, [data.taskId, debouncedUrl, setSelectedChartParameters, setFileName, setCountryFileName, setTemplateName])
+
+
   return (
     <Box textAlign={"left"}>
       <Snackbar
@@ -327,10 +399,7 @@ export function MapImporter(data: MapImporterProps) {
           <Stack sx={{ textAlign: "left" }} spacing={4}>
             <Stack spacing={2}>
               <Typography variant="h4">
-                <span>Import OWID Map</span>
-              </Typography>
-              <Typography>
-                <span dangerouslySetInnerHTML={{ __html: chart_info_map }} />
+                <span>OWID Importer</span>
               </Typography>
             </Stack>
             <Stack spacing={2}>
@@ -363,6 +432,22 @@ export function MapImporter(data: MapImporterProps) {
                   placeholder={url_placeholder}
                   disabled={disabled}
                 />
+              </Stack>
+              {selectedChartParameters.length > 0 && (
+                <Stack spacing={1}>
+                  <Typography variant="h6" >Selected parameters</Typography>
+                  {selectedChartParameters.map(param => (
+                    <Typography>{param.keyName}: {param.valueName} - You can use <strong>${param.key.toUpperCase()}</strong> in the file name as a placeholder</Typography>
+                  ))}
+                </Stack>
+              )}
+              <Stack>
+                <Typography variant="h4">
+                  <span>Map</span>
+                </Typography>
+                <Typography>
+                  <span dangerouslySetInnerHTML={{ __html: chart_info_map }} />
+                </Typography>
               </Stack>
               <Stack spacing={1}>
                 <Typography>File name</Typography>
@@ -404,10 +489,25 @@ export function MapImporter(data: MapImporterProps) {
               ))}
             </Stack>
             {!task && (
-              <Stack>
+              <Stack spacing={1}>
                 <Stack direction="row" alignItems={"center"} >
                   <Checkbox checked={generateTemplateCommons} onClick={toggleGenerateTemplateCommons} disabled={disabled} />
                   <Typography>Automatically Create Template Page On Commons</Typography>
+                </Stack>
+                <Stack spacing={1}>
+                  <Typography>Template name</Typography>
+                  <TextField
+                    size="small"
+                    value={templateName}
+                    onChange={e => setTemplateName(e.target.value)}
+                    fullWidth
+                    disabled={disabled}
+                    slotProps={{
+                      input: {
+                        startAdornment: <InputAdornment position="start">Template:OWID/</InputAdornment>,
+                      },
+                    }}
+                  />
                 </Stack>
               </Stack>
             )}
@@ -421,7 +521,7 @@ export function MapImporter(data: MapImporterProps) {
               <>
                 <Stack spacing={2}>
                   <Typography variant="h4">
-                    <span>Import OWID Country Chart</span>
+                    <span>Country Chart</span>
                   </Typography>
                   <Typography>
                     <span dangerouslySetInnerHTML={{ __html: chart_info_chart }} />

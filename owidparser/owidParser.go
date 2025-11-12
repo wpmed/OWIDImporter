@@ -85,6 +85,7 @@ type CombinedDataPoint struct {
 	CountryCode string  `json:"countryCode"`
 }
 
+// ================== START XML Handling ===================
 // Node represents either text content or a child element
 type Node struct {
 	IsText  bool
@@ -447,7 +448,7 @@ func getCountryID(entityName string) string {
 	return strings.ReplaceAll(entityName, " ", "-")
 }
 
-func GenerateImages(config *OWIDGrapherConfig, title, dataPath, metadataPath, mapPath, outPath string) (*[]WriteResult, error) {
+func GenerateImages(config *OWIDGrapherConfig, title string, titleYear int, dataPath, metadataPath, mapPath, outPath string) (*[]WriteResult, error) {
 	dataBytes, err := os.ReadFile(dataPath)
 	if err != nil {
 		return nil, err
@@ -731,19 +732,6 @@ func GenerateImages(config *OWIDGrapherConfig, title, dataPath, metadataPath, ma
 		}
 	}
 
-	// TODO: Check if we need to unshift the colors
-	// Happens when the swatches are bounded
-	// if swatchesElements[len(swatchesElements)-1].XMLName.Local != "path" && !(metadata.Type == "int" && metadata.Unit == "") {
-	// 	newFillMap := make([]FillItem, 0)
-	// 	for i, item := range fillMap {
-	// 		if i == len(fillMap) -1 {
-	// 			continue
-	// 		}
-	// 		newFillMap = append(newFillMap, FillItem{})
-	//
-	// 	}
-	// }
-	//
 	if metadata.Unit != "" {
 		sort.SliceStable(fillMap, func(a int, b int) bool {
 			return fillMap[a].Value < fillMap[b].Value
@@ -765,6 +753,8 @@ func GenerateImages(config *OWIDGrapherConfig, title, dataPath, metadataPath, ma
 
 	writeResults := make([]WriteResult, 0)
 	CleanupTextElementsPreserveStructure(&genericSVG)
+	titleYearString := fmt.Sprintf("%v", titleYear)
+	fmt.Println("================================ Title year string", titleYearString)
 
 	for year, yearData := range yearlyData {
 		fmt.Printf("Processing year: %d with %d data points\n", year, len(yearData))
@@ -780,11 +770,23 @@ func GenerateImages(config *OWIDGrapherConfig, title, dataPath, metadataPath, ma
 		if len(titleLink) > 0 {
 			titleElements := titleLink[0].GetElements()
 			if len(titleElements) > 0 {
-				titleSubElements := titleElements[0].GetElements()
-				if len(titleSubElements) > 0 {
-					titleSubElements[0].SetTextContent(fmt.Sprintf("%s, %v", title, year))
-				} else {
-					titleElements[0].SetTextContent(fmt.Sprintf("%s, %v", title, year))
+				for _, el := range titleElements {
+					titleSubElements := el.GetElements()
+					for _, subEl := range titleSubElements {
+						if strings.Contains(subEl.GetTextContent(), titleYearString) {
+							newTitleYearString := fmt.Sprintf("%v", year)
+							subEl.SetTextContent(strings.ReplaceAll(subEl.GetTextContent(), titleYearString, newTitleYearString))
+							titleYearString = newTitleYearString
+							break
+						}
+					}
+
+					// if len(titleSubElements) > 0 {
+					// 	titleSubElements[0].SetTextContent(fmt.Sprintf("%s, %v", title, year))
+					// } else {
+					// 	titleElements[0].SetTextContent(fmt.Sprintf("%s, %v", title, year))
+					// }
+
 				}
 			}
 		}
