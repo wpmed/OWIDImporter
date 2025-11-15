@@ -110,6 +110,13 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 		}
 	}()
 
+	l, browser := GetBrowser()
+	blankPage := browser.MustPage("")
+
+	defer blankPage.Close()
+	defer l.Cleanup()
+	defer browser.Close()
+
 	startTime := time.Now()
 	g, _ := errgroup.WithContext(context.Background())
 	g.SetLimit(constants.CONCURRENT_REQUESTS)
@@ -120,7 +127,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 			return func() error {
 				if task.Status != models.TaskStatusFailed {
 					params := make(map[string]string, 0)
-					processCountry(user, task, *token, chartName, country, startYear, endYear, downloadPath, data, params)
+					processCountry(browser, user, task, *token, chartName, country, startYear, endYear, downloadPath, data, params)
 				}
 				return nil
 			}
@@ -150,7 +157,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	return nil
 }
 
-func processCountry(user *models.User, task *models.Task, token, chartName, country, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
+func processCountry(browser *rod.Browser, user *models.User, task *models.Task, token, chartName, country, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
 	var err error
 	var taskProcess *models.TaskProcess
 	// Try to find existing process, otherwise create one
@@ -184,12 +191,6 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 	fmt.Println("================== Processing country: ", url)
 	// utils.SendWSTaskProcess(taskId string, taskProcess *models.TaskProcess)
 	// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
-	l := launcher.New()
-	defer l.Cleanup()
-
-	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
-	browser := rod.New().ControlURL(control).MustConnect()
-	defer browser.Close()
 	fmt.Println("Processing", url)
 
 	var page *rod.Page
@@ -197,11 +198,13 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 	// Retry 2 times
 	for i := 1; i <= constants.RETRY_COUNT; i++ {
 		timeoutDuration := time.Duration(i*constants.CHART_WAIT_TIME_SECONDS) * time.Second
-		page = browser.MustPage("")
-		page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-		page.MustNavigate(url)
-		fmt.Println("Navigated to url", url)
 		err = rod.Try(func() {
+			page = browser.MustPage("")
+			defer page.Close()
+
+			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+			page.MustNavigate(url)
+			fmt.Println("Navigated to url", url)
 			fmt.Println("Before timeline startMarker")
 			page.Timeout(timeoutDuration).MustElement(".timeline-component .startMarker")
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
@@ -298,7 +301,6 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			utils.SendWSTaskProcess(task.ID, taskProcess)
 			fmt.Println(country, "timeout waiting for start marker", err)
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:retrying", country))
-			page.Close()
 		} else {
 			err = nil
 			break

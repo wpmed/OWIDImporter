@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-rod/rod"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/utils"
 )
@@ -479,8 +480,8 @@ type TemplateElement struct {
 	Data   []FileNameAcc
 }
 
-func GetChartParametersMap(url string, selectedParams string) map[string]string {
-	chartParameters := GetChartParameters(url)
+func GetChartParametersMap(browser *rod.Browser, url string, selectedParams string) map[string]string {
+	chartParameters := GetChartParameters(browser, url)
 	chartParamsMap := make(map[string]string, 0)
 
 	for _, param := range strings.Split(selectedParams, "&") {

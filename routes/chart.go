@@ -34,7 +34,10 @@ func GetChartParameters(c *gin.Context) {
 		return
 	}
 
-	params := services.GetChartParameters(url)
+	l, browser := services.GetBrowser()
+	defer l.Cleanup()
+	defer browser.Close()
+	params := services.GetChartParameters(browser, url)
 
 	c.JSON(http.StatusOK, gin.H{"params": params})
 }
