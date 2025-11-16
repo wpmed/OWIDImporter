@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/wpmed-videowiki/OWIDImporter/constants"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
@@ -65,7 +64,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	defer os.RemoveAll(tmpDir)
 
 	// utils.SendWSMessage(session, "debug", "Fetching country list")
-	countriesList, startYear, endYear, err := GetCountryList(data.Url)
+	countriesList, title, startYear, endYear, err := GetCountryList(data.Url)
 	// utils.SendWSMessage(session, "debug", fmt.Sprintf("Fetched %d countries. Countries are %s", len(countriesList), countriesList))
 	if err != nil {
 		fmt.Println("Error fetching country list", err)
@@ -127,7 +126,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 			return func() error {
 				if task.Status != models.TaskStatusFailed {
 					params := make(map[string]string, 0)
-					processCountry(browser, user, task, *token, chartName, country, startYear, endYear, downloadPath, data, params)
+					processCountry(browser, user, task, *token, chartName, country, title, startYear, endYear, downloadPath, data, params)
 				}
 				return nil
 			}
@@ -157,7 +156,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	return nil
 }
 
-func processCountry(browser *rod.Browser, user *models.User, task *models.Task, token, chartName, country, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
+func processCountry(browser *rod.Browser, user *models.User, task *models.Task, token, chartName, country, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
 	var err error
 	var taskProcess *models.TaskProcess
 	// Try to find existing process, otherwise create one
@@ -212,10 +211,10 @@ func processCountry(browser *rod.Browser, user *models.User, task *models.Task, 
 			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 			fmt.Println("After download labesls")
 
-			title := page.MustElement("h1.header__title").MustText()
-			startYear := page.MustElement(".slider.clickable .handle.startMarker").MustAttribute("aria-valuenow")
-			endYear := page.MustElement(".slider.clickable .handle.endMarker").MustAttribute("aria-valuenow")
-			fmt.Println("After getting title/start/end years", title, *startYear, *endYear)
+			// title := page.MustElement("h1.header__title").MustText()
+			// startYear := page.MustElement(".slider.clickable .handle.startMarker").MustAttribute("aria-valuenow")
+			// endYear := page.MustElement(".slider.clickable .handle.endMarker").MustAttribute("aria-valuenow")
+			// fmt.Println("After getting title/start/end years", title, *startYear, *endYear)
 
 			// TODO: Check if need to remove
 			time.Sleep(time.Second * 1)
@@ -256,8 +255,8 @@ func processCountry(browser *rod.Browser, user *models.User, task *models.Task, 
 				Url:       data.Url,
 				Title:     title,
 				Region:    country,
-				StartYear: *startYear,
-				EndYear:   *endYear,
+				StartYear: startYear,
+				EndYear:   endYear,
 				FileName:  GetFileNameFromChartName(chartName),
 				Comment:   "Importing from " + data.Url,
 				Params:    chartParams,
@@ -325,20 +324,23 @@ func processCountry(browser *rod.Browser, user *models.User, task *models.Task, 
 	return nil
 }
 
-func GetCountryList(url string) ([]string, string, string, error) {
+func GetCountryList(url string) ([]string, string, string, string, error) {
 	// url := fmt.Sprintf("%s%s?tab=chart", constants.OWID_BASE_URL, chartName)
-	l := launcher.New()
-	defer l.Cleanup()
+	l, browser := GetBrowser()
+	blankPage := browser.MustPage("")
 
-	control := l.Set("--no-sandbox").HeadlessNew(HEADLESS).MustLaunch()
-	browser := rod.New().ControlURL(control).MustConnect()
-	defer browser.MustClose()
+	defer blankPage.Close()
+	defer l.Cleanup()
+	defer browser.Close()
+
 	page := browser.MustPage("")
-	fmt.Println("Getting  c ountry list")
+	fmt.Println("Getting  country list")
+	page.MustSetViewport(1920, 1080, 1, false)
 
 	countries := []string{}
 	startYear := ""
 	endYear := ""
+	title := ""
 
 	err := rod.Try(func() {
 		page = page.Timeout(time.Second * constants.CHART_WAIT_TIME_SECONDS)
@@ -346,6 +348,8 @@ func GetCountryList(url string) ([]string, string, string, error) {
 		fmt.Println("waiting for entity selector")
 		page.MustElement(".entity-selector__content")
 		fmt.Println("found entity selector")
+		title = page.MustElement("h1.header__title, .HeaderHTML h1").MustText()
+		title = strings.TrimSpace(title)
 		elements := page.MustElements(".entity-selector__content li")
 		for _, element := range elements {
 			label := element.MustElement(".label")
@@ -373,5 +377,5 @@ func GetCountryList(url string) ([]string, string, string, error) {
 		endYear = *marker.MustAttribute("aria-valuemax")
 	})
 
-	return countries, startYear, endYear, err
+	return countries, title, startYear, endYear, err
 }

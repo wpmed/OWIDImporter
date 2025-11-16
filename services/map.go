@@ -159,7 +159,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	}
 
 	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
-		countriesList, startYear, endYear, err := GetCountryList(url)
+		countriesList, title, startYear, endYear, err := GetCountryList(url)
 		if err != nil {
 			fmt.Println("Error fetching country list", err)
 			return err
@@ -183,7 +183,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			g.Go(func(country, downloadPath string, token *string) func() error {
 				return func() error {
 					if task.Status != models.TaskStatusFailed {
-						processCountry(browser, user, task, *token, chartName, country, startYear, endYear, downloadPath, StartData{
+						processCountry(browser, user, task, *token, chartName, country, title, startYear, endYear, downloadPath, StartData{
 							Url:                           data.Url,
 							FileName:                      task.CountryFileName,
 							Description:                   task.CountryDescription,
@@ -347,6 +347,7 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 	dataUrl := ""
 	metadataUrl := ""
 	configUrl := ""
+	pageHtml := ""
 
 	fmt.Println("DOWNLOADING MAP DATA: ", url)
 	for trials := 0; trials < 2; trials++ {
@@ -412,6 +413,7 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 				panic(fmt.Sprintf("%s %s %v", url, "File not found", err))
 			}
 			fmt.Println("Finished", url)
+			pageHtml = page.MustHTML()
 		})
 
 		if err == nil {
@@ -467,6 +469,29 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 			fmt.Println("******************************************** GOT CONFIG FROM CONFIGURL: ==== ", config)
 
 			return &config, nil
+		} else if pageHtml != "" {
+			// Try regex matching
+			re := regexp.MustCompile(`//EMBEDDED_JSON\s*([\s\S]*?)\s*//EMBEDDED_JSON`)
+
+			// Find the match
+			matches := re.FindStringSubmatch(pageHtml)
+			if len(matches) > 1 {
+				jsonString := matches[1] // The captured group
+				fmt.Println("===================== ************************* ")
+				fmt.Println("Captured JSON:")
+				fmt.Println("===================== ************************* ")
+				fmt.Println(jsonString)
+				err = json.Unmarshal([]byte(jsonString), &config)
+				if err != nil {
+					fmt.Println("Failed to parse config from page HTML", err)
+					return nil, err
+				}
+				return &config, nil
+			} else {
+				fmt.Println("No match found")
+				return nil, err
+			}
+
 		} else {
 			return nil, err
 		}
@@ -929,7 +954,7 @@ func processRegionYear(browser *rod.Browser, user *models.User, task *models.Tas
 	}
 
 	var filename string
-	for i := 1; i <= constants.RETRY_COUNT; i++ {
+	for i := 0; i <= constants.RETRY_COUNT; i++ {
 		err = rod.Try(func() {
 			if err = downloadChartFile(browser, url, downloadPath); err != nil {
 				panic(err)
