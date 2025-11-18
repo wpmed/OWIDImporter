@@ -111,6 +111,37 @@ func FindUserByUsername(username string) (*User, error) {
 	return &user, nil
 }
 
+func FindUserByID(id string) (*User, error) {
+	var user User
+	var encryptedKey, encryptedSecret string
+
+	err := db.QueryRow("SELECT id, username, resource_owner_key, resource_owner_secret FROM user WHERE id=?", id).
+		Scan(&user.ID, &user.Username, &encryptedKey, &encryptedSecret)
+	if err != nil {
+		println("Error scanning for user by id", id, err)
+		return nil, fmt.Errorf("cannot find requested record")
+	}
+
+	// Decrypt data
+	if encryptedKey != "" {
+		decryptedKey, err := encryption.Decrypt(encryptedKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt resource owner key: %w", err)
+		}
+		user.ResourceOwnerKey = decryptedKey
+	}
+
+	if encryptedSecret != "" {
+		decryptedSecret, err := encryption.Decrypt(encryptedSecret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt resource owner secret: %w", err)
+		}
+		user.ResourceOwnerSecret = decryptedSecret
+	}
+
+	return &user, nil
+}
+
 func initUserTable() {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS user (

@@ -223,6 +223,7 @@ func FindTaskByUserId(id, taskType string) (*[]Task, error) {
 		fmt.Println("Error scaning for id ", id, err)
 		return nil, fmt.Errorf("Cannot find requested record")
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var task Task
@@ -257,6 +258,11 @@ func FindStalledTasks() (*[]Task, error) {
 	tasks := make([]Task, 0)
 	timeThreshold := time.Now().Unix() - 60*5 // 5 Min threshold
 	rows, err := db.Query("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, last_operation_at, created_at FROM task where status=? AND last_operation_at <= ?", TaskStatusProcessing, timeThreshold)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
 	for rows.Next() {
 		var task Task
 		rows.Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.DescriptionOverwriteBehaviour, &task.ChartName, &task.Status, &task.Type, &task.LastOperationAt, &task.CreatedAt)
@@ -268,6 +274,62 @@ func FindStalledTasks() (*[]Task, error) {
 	}
 
 	return &tasks, nil
+}
+
+func FindProcessingTasksCount() (int, error) {
+	rows, err := db.Query("SELECT COUNT(id) FROM task where status=?", TaskStatusProcessing)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var count int
+	if rows.Next() {
+		err = rows.Scan(&count)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return count, nil
+}
+
+func FindNextTaskToProcess() (*Task, error) {
+	rows, err := db.Query("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at FROM task WHERE status=? ORDER BY created_at ASC LIMIT 1", TaskStatusQueued)
+	if err != nil {
+		fmt.Println("Error scaning for next task to process ", err)
+		return nil, fmt.Errorf("Cannot find requested record")
+	}
+	defer rows.Close()
+
+	var task Task
+	if rows.Next() {
+		rows.Scan(
+			&task.ID,
+			&task.UserId,
+			&task.URL,
+			&task.FileName,
+			&task.Description,
+			&task.DescriptionOverwriteBehaviour,
+			&task.ChartName,
+			&task.Status,
+			&task.Type,
+			&task.ImportCountries,
+			&task.CountryFileName,
+			&task.CountryDescription,
+			&task.CountryDescriptionOverwriteBehaviour,
+			&task.GenerateTemplateCommons,
+			&task.CommonsTemplateName,
+			&task.CommonsTemplateNameFormat,
+			&task.ChartParameters,
+			&task.LastOperationAt,
+			&task.CreatedAt,
+		)
+	} else {
+		return nil, nil
+	}
+
+	return &task, nil
 }
 
 func initTaskTable() {

@@ -83,6 +83,7 @@ interface SelectedParameter {
 
 export function MapImporter(data: MapImporterProps) {
   const [loading, setLoading] = useState(false);
+  const [parametersLoading, setParametersLoading] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [importCountries, setImportCountries] = useState(true);
   const [generateTemplateCommons, setGenerateTemplateCommons] = useState(true);
@@ -337,6 +338,7 @@ export function MapImporter(data: MapImporterProps) {
 
   useEffect(() => {
     if (!data.taskId && debouncedUrl && debouncedUrl.includes("?")) {
+      setParametersLoading(true);
       getChartParameters(debouncedUrl)
         .then(res => {
           if (res.params && res.params.length > 0) {
@@ -373,18 +375,24 @@ export function MapImporter(data: MapImporterProps) {
             setTemplateName(newTemplateName);
 
           }
+
+          setParametersLoading(false);
         })
         .catch(err => {
           console.log("Error getting chart parameters", err)
+          setParametersLoading(false);
         })
     } else {
-      setSelectedChartParameters([]);
-      // setChartParameters([]);
-      setFileName(initial_filename_map);
-      setCountryFileName(initial_filename_chart);
-      setTemplateName(initial_template_name)
+      if (!data.taskId) {
+        setSelectedChartParameters([]);
+        // setChartParameters([]);
+        setFileName(initial_filename_map);
+        setCountryFileName(initial_filename_chart);
+        setTemplateName(initial_template_name)
+      }
+      setParametersLoading(true);
     }
-  }, [data.taskId, debouncedUrl, setSelectedChartParameters, setFileName, setCountryFileName, setTemplateName])
+  }, [data.taskId, debouncedUrl, setSelectedChartParameters, setFileName, setCountryFileName, setTemplateName, setParametersLoading])
 
 
   return (
@@ -575,7 +583,7 @@ export function MapImporter(data: MapImporterProps) {
                   color="primary"
                   sx={{ marginRight: 2 }}
                   onClick={submit}
-                  disabled={submitDisabled || loading || disabled}
+                  disabled={submitDisabled || loading || parametersLoading || disabled}
                   loading={loading}
                 >
                   Submit

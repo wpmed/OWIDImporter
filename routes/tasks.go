@@ -2,7 +2,6 @@ package routes
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -98,38 +97,38 @@ func CreateTask(c *gin.Context) {
 		return
 	}
 
-	go func() {
-		switch task.Type {
-		case models.TaskTypeMap:
-			fmt.Println("Action message map", task)
-			err := services.StartMap(task.ID, user, services.StartData{
-				Url:                                  task.URL,
-				FileName:                             task.FileName,
-				Description:                          task.Description,
-				DescriptionOverwriteBehaviour:        task.DescriptionOverwriteBehaviour,
-				ImportCountries:                      data.ImportCountries,
-				CountryFileName:                      data.CountryFileName,
-				CountryDescription:                   data.CountryDescription,
-				CountryDescriptionOverwriteBehaviour: data.CountryDescriptionOverwriteBehaviour,
-				GenerateTemplateCommons:              data.GenerateTemplateCommons,
-				TemplateNameFormat:                   data.TemplateNameFormat,
-			})
-			if err != nil {
-				log.Println("Error starting map", err)
-			}
-		case models.TaskTypeChart:
-			fmt.Println("Action message chart", task)
-			err := services.StartChart(task.ID, user, services.StartData{
-				Url:                           task.URL,
-				FileName:                      task.FileName,
-				Description:                   task.Description,
-				DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
-			})
-			if err != nil {
-				log.Println("Error starting map", err)
-			}
-		}
-	}()
+	// go func() {
+	// 	switch task.Type {
+	// 	case models.TaskTypeMap:
+	// 		fmt.Println("Action message map", task)
+	// 		err := services.StartMap(task.ID, user, services.StartData{
+	// 			Url:                                  task.URL,
+	// 			FileName:                             task.FileName,
+	// 			Description:                          task.Description,
+	// 			DescriptionOverwriteBehaviour:        task.DescriptionOverwriteBehaviour,
+	// 			ImportCountries:                      task.ImportCountries == 1,
+	// 			CountryFileName:                      task.CountryFileName,
+	// 			CountryDescription:                   task.CountryDescription,
+	// 			CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
+	// 			GenerateTemplateCommons:              task.GenerateTemplateCommons == 1,
+	// 			TemplateNameFormat:                   task.CommonsTemplateNameFormat,
+	// 		})
+	// 		if err != nil {
+	// 			log.Println("Error starting map", err)
+	// 		}
+	// 	case models.TaskTypeChart:
+	// 		fmt.Println("Action message chart", task)
+	// 		err := services.StartChart(task.ID, user, services.StartData{
+	// 			Url:                           task.URL,
+	// 			FileName:                      task.FileName,
+	// 			Description:                   task.Description,
+	// 			DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
+	// 		})
+	// 		if err != nil {
+	// 			log.Println("Error starting map", err)
+	// 		}
+	// 	}
+	// }()
 
 	c.JSON(http.StatusOK, gin.H{"taskId": task.ID})
 }
@@ -229,40 +228,41 @@ func RetryTask(c *gin.Context) {
 	}
 	models.FailProcessingTaskProcesses(task.ID)
 	models.UpdateTaskLastOperationAt(task.ID)
-	task.Reload()
+	task.Status = models.TaskStatusQueued
+	task.Update()
 
-	go func() {
-		switch task.Type {
-		case models.TaskTypeMap:
-			fmt.Println("Action message map", task)
-			err := services.StartMap(task.ID, user, services.StartData{
-				Url:                                  task.URL,
-				FileName:                             task.FileName,
-				Description:                          task.Description,
-				DescriptionOverwriteBehaviour:        task.DescriptionOverwriteBehaviour,
-				ImportCountries:                      task.ImportCountries == 1,
-				CountryFileName:                      task.CountryFileName,
-				CountryDescription:                   task.CountryDescription,
-				CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-				GenerateTemplateCommons:              task.GenerateTemplateCommons == 1,
-				TemplateNameFormat:                   task.CommonsTemplateNameFormat,
-			})
-			if err != nil {
-				log.Println("Error starting map", err)
-			}
-		case models.TaskTypeChart:
-			fmt.Println("Action message chart", task)
-			err := services.StartChart(task.ID, user, services.StartData{
-				Url:                           task.URL,
-				FileName:                      task.FileName,
-				Description:                   task.Description,
-				DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
-			})
-			if err != nil {
-				log.Println("Error starting map", err)
-			}
-		}
-	}()
+	// go func() {
+	// 	switch task.Type {
+	// 	case models.TaskTypeMap:
+	// 		fmt.Println("Action message map", task)
+	// 		err := services.StartMap(task.ID, user, services.StartData{
+	// 			Url:                                  task.URL,
+	// 			FileName:                             task.FileName,
+	// 			Description:                          task.Description,
+	// 			DescriptionOverwriteBehaviour:        task.DescriptionOverwriteBehaviour,
+	// 			ImportCountries:                      task.ImportCountries == 1,
+	// 			CountryFileName:                      task.CountryFileName,
+	// 			CountryDescription:                   task.CountryDescription,
+	// 			CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
+	// 			GenerateTemplateCommons:              task.GenerateTemplateCommons == 1,
+	// 			TemplateNameFormat:                   task.CommonsTemplateNameFormat,
+	// 		})
+	// 		if err != nil {
+	// 			log.Println("Error starting map", err)
+	// 		}
+	// 	case models.TaskTypeChart:
+	// 		fmt.Println("Action message chart", task)
+	// 		err := services.StartChart(task.ID, user, services.StartData{
+	// 			Url:                           task.URL,
+	// 			FileName:                      task.FileName,
+	// 			Description:                   task.Description,
+	// 			DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
+	// 		})
+	// 		if err != nil {
+	// 			log.Println("Error starting map", err)
+	// 		}
+	// 	}
+	// }()
 
 	c.JSON(http.StatusOK, gin.H{"taskId": task.ID})
 }

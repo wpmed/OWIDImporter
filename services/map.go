@@ -64,6 +64,8 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		return err
 	}
 
+	models.UpdateTaskLastOperationAt(task.ID)
+
 	task.ChartName = chartName
 	task.Status = models.TaskStatusProcessing
 	if err := task.Update(); err != nil {
@@ -569,7 +571,15 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, t
 	dataPath := path.Join(downloadPath, "data.json")
 	metadataPath := path.Join(downloadPath, "metadata.json")
 	mapPath := path.Join(downloadPath, "map")
-	config, err := downloadMapData(browser, url, dataPath, metadataPath, mapPath)
+
+	var config *owidparser.OWIDGrapherConfig
+	var err error
+	for i := 0; i < constants.RETRY_COUNT; i++ {
+		config, err = downloadMapData(browser, url, dataPath, metadataPath, mapPath)
+		if err == nil && config != nil {
+			break
+		}
+	}
 
 	// fmt.Println("CONFIG IS: ==================", config)
 	// Fallback to the old flow of getting each image individually

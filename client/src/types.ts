@@ -42,6 +42,7 @@ export interface Task {
   url: string,
   filename: string,
   description: string,
+  commonsTemplateNameFormat?: string
   descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour,
   countryFileName?: string,
   countryDescription?: string,
