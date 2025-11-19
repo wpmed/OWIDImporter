@@ -78,7 +78,7 @@ func monitorQueuedTasks() {
 
 			}
 			if task == nil {
-				fmt.Println("No next task to process")
+				// fmt.Println("No next task to process")
 				continue
 			}
 			fmt.Println("Next task: ", task.URL, task.ID)
