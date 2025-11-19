@@ -390,7 +390,7 @@ export function MapImporter(data: MapImporterProps) {
         setCountryFileName(initial_filename_chart);
         setTemplateName(initial_template_name)
       }
-      setParametersLoading(true);
+      setParametersLoading(false);
     }
   }, [data.taskId, debouncedUrl, setSelectedChartParameters, setFileName, setCountryFileName, setTemplateName, setParametersLoading])
 
