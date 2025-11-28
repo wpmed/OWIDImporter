@@ -14,7 +14,6 @@ import (
 
 func Websocket(c *gin.Context) {
 	queryParams := c.Request.URL.Query()
-	fmt.Println("QUERY PARAMS: ", queryParams)
 
 	sessionId := queryParams.Get("sessionId")
 	if sessionId == "" {

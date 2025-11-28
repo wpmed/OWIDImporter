@@ -109,13 +109,6 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 		}
 	}()
 
-	l, browser := GetBrowser()
-	blankPage := browser.MustPage("")
-
-	defer blankPage.Close()
-	defer l.Cleanup()
-	defer browser.Close()
-
 	startTime := time.Now()
 	g, _ := errgroup.WithContext(context.Background())
 	g.SetLimit(constants.CONCURRENT_REQUESTS)
@@ -126,7 +119,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 			return func() error {
 				if task.Status != models.TaskStatusFailed {
 					params := make(map[string]string, 0)
-					processCountry(browser, user, task, *token, chartName, country, title, startYear, endYear, downloadPath, data, params)
+					processCountry(user, task, *token, chartName, country, title, startYear, endYear, downloadPath, data, params)
 				}
 				return nil
 			}
@@ -156,7 +149,14 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	return nil
 }
 
-func processCountry(browser *rod.Browser, user *models.User, task *models.Task, token, chartName, country, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
+func processCountry(user *models.User, task *models.Task, token, chartName, country, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
+	l, browser := GetBrowser()
+	blankPage := browser.MustPage("")
+
+	defer blankPage.Close()
+	defer l.Cleanup()
+	defer browser.Close()
+
 	var err error
 	var taskProcess *models.TaskProcess
 	// Try to find existing process, otherwise create one

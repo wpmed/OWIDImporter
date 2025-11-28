@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/input"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/wpmed-videowiki/OWIDImporter/constants"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
@@ -115,11 +116,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	}()
 
 	l, browser := GetBrowser()
-	blankPage := browser.MustPage("")
-
-	defer blankPage.Close()
-	defer l.Cleanup()
-	defer browser.Close()
+	_ = browser.MustPage("")
 
 	url := fmt.Sprintf("%s%s?tab=map", constants.OWID_BASE_URL, chartName)
 	if task.ChartParameters != "" {
@@ -131,6 +128,8 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	task.Update()
 
 	startYear, endYear, title := getMapStartEndYearTitle(browser, url)
+	browser.Close()
+	l.Cleanup()
 
 	if startYear == "" || endYear == "" {
 		// utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
@@ -148,61 +147,86 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		return fmt.Errorf("failed to parse end year: %v", err)
 	}
 
+	regionGroup, _ := errgroup.WithContext(context.Background())
+	regionGroup.SetLimit(constants.CONCURRENT_REQUESTS)
+
 	for _, region := range constants.REGIONS {
 		if task.Status == models.TaskStatusFailed {
 			break
 		}
 		region := region
-		err := processRegion(browser, user, task, &token, chartName, region, filepath.Join(tmpDir, region), chartParamsMap, startYearInt, endYearInt, title, data)
-		if err != nil {
-			fmt.Println("Error in processing some of the region", region)
-			fmt.Println(err)
-		}
-	}
-
-	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
-		countriesList, title, startYear, endYear, err := GetCountryList(url)
-		if err != nil {
-			fmt.Println("Error fetching country list", err)
-			return err
-		}
-		fmt.Println("Countries:====================== ", countriesList)
-
-		startTime := time.Now()
-		g, _ := errgroup.WithContext(context.Background())
-		g.SetLimit(constants.CONCURRENT_REQUESTS)
-
-		fmt.Println("================================================")
-		fmt.Println("================================================")
-
-		fmt.Println(url)
-		fmt.Println(chartParamsMap)
-		fmt.Println("================================================")
-		fmt.Println("================================================")
-		fmt.Println("================================================")
-		for _, country := range countriesList {
-			country := country
-			g.Go(func(country, downloadPath string, token *string) func() error {
-				return func() error {
-					if task.Status != models.TaskStatusFailed {
-						processCountry(browser, user, task, *token, chartName, country, title, startYear, endYear, downloadPath, StartData{
-							Url:                           data.Url,
-							FileName:                      task.CountryFileName,
-							Description:                   task.CountryDescription,
-							DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-						}, chartParamsMap)
-					}
+		regionGroup.Go(func(region string) func() error {
+			return func() error {
+				if task.Status == models.TaskStatusFailed {
 					return nil
 				}
-			}(country, filepath.Join(tmpDir, country), &token))
-		}
+				l, browser := GetBrowser()
+				blankPage := browser.MustPage("")
 
-		fmt.Println("Started in", time.Since(startTime).String())
-		err = g.Wait()
-		elapsedTime := time.Since(startTime)
-		fmt.Println("Finished in", elapsedTime.String())
-		if err != nil {
-			fmt.Println("Error processing countries", err)
+				defer blankPage.Close()
+				defer l.Cleanup()
+				defer browser.Close()
+				err := processRegion(browser, user, task, &token, chartName, region, filepath.Join(tmpDir, region), chartParamsMap, startYearInt, endYearInt, title, data)
+				if err != nil {
+					fmt.Println("Error in processing some of the region", region)
+					fmt.Println(err)
+				}
+				return nil
+			}
+		}(region))
+	}
+	regionGroup.Wait()
+
+	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
+		result := func() error {
+			countriesList, title, startYear, endYear, err := GetCountryList(url)
+			if err != nil {
+				fmt.Println("Error fetching country list", err)
+				return err
+			}
+			fmt.Println("Countries:====================== ", countriesList)
+
+			startTime := time.Now()
+			g, _ := errgroup.WithContext(context.Background())
+			g.SetLimit(constants.CONCURRENT_REQUESTS)
+
+			fmt.Println("================================================")
+			fmt.Println("================================================")
+
+			fmt.Println(url)
+			fmt.Println(chartParamsMap)
+			fmt.Println("================================================")
+			fmt.Println("================================================")
+			fmt.Println("================================================")
+			for _, country := range countriesList {
+				country := country
+				g.Go(func(country, downloadPath string, token *string) func() error {
+					return func() error {
+						if task.Status != models.TaskStatusFailed {
+							processCountry(user, task, *token, chartName, country, title, startYear, endYear, downloadPath, StartData{
+								Url:                           data.Url,
+								FileName:                      task.CountryFileName,
+								Description:                   task.CountryDescription,
+								DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
+							}, chartParamsMap)
+						}
+						return nil
+					}
+				}(country, filepath.Join(tmpDir, country), &token))
+			}
+
+			fmt.Println("Started in", time.Since(startTime).String())
+			err = g.Wait()
+			elapsedTime := time.Since(startTime)
+			fmt.Println("Finished in", elapsedTime.String())
+			if err != nil {
+				fmt.Println("Error processing countries", err)
+				return err
+			}
+			return nil
+		}()
+
+		if result != nil {
 			return err
 		}
 	}
@@ -340,6 +364,229 @@ func GetChartParameters(browser *rod.Browser, url string) *[]ChartParameter {
 	}
 
 	return &params
+}
+
+func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartData, user *models.User, chartParams map[string]string, token *string, chartName, title, region, url, downloadPath string) {
+	regionStr := region
+	if regionStr == "NorthAmerica" {
+		regionStr = "North America"
+	}
+	if regionStr == "SouthAmerica" {
+		regionStr = "South America"
+	}
+
+	page := browser.MustPage("")
+	defer page.Close()
+	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+
+	fmt.Println("Before navigate")
+	page.MustNavigate(url)
+	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+	fmt.Println("FOUND ELEMENT")
+
+	fmt.Println("DOWNLOADING MAP FILE")
+	page.WaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+	// TODO: REMVOE THIS, just trying to scroll along
+	startMarker := page.MustElement(".startMarker")
+	endMarker := page.MustElement(".endMarker")
+	if startMarker != nil || endMarker != nil {
+		startYear := ""
+		endYear := ""
+		if startMarker != nil {
+			startYear = *startMarker.MustAttribute("aria-valuemin")
+			endYear = *startMarker.MustAttribute("aria-valuemax")
+		} else if endMarker != nil {
+			startYear = *endMarker.MustAttribute("aria-valuemin")
+			endYear = *endMarker.MustAttribute("aria-valuemax")
+		}
+
+		fmt.Println("00000000000000000000000000 GOT START MARKER 00000000000000000000000000000", startYear, endYear)
+
+		for task.Status != models.TaskStatusFailed {
+
+			currentYear := ""
+			if startMarker != nil {
+				currentYear = *startMarker.MustAttribute("aria-valuenow")
+			}
+
+			if endMarker != nil {
+				currentYear = *endMarker.MustAttribute("aria-valuenow")
+			}
+
+			int64Year, err := strconv.ParseInt(currentYear, 10, 32)
+			if err != nil {
+				// TODO: Check breaking here
+				fmt.Println("Error converting current year to int", currentYear, err)
+				break
+			}
+
+			year := int(int64Year)
+
+			var taskProcess *models.TaskProcess
+
+			existingTB, err := models.FindTaskProcessByTaskRegionYear(region, year, task.ID)
+			if existingTB != nil {
+				if existingTB.Status != models.TaskProcessStatusFailed {
+					if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
+						continue
+					} else {
+						break
+					}
+				}
+
+				existingTB.Status = models.TaskProcessStatusProcessing
+				if err := existingTB.Update(); err != nil {
+					fmt.Println("Error updating task process to processing")
+				}
+				taskProcess = existingTB
+			} else {
+				taskProcess, err = models.NewTaskProcess(region, year, "", models.TaskProcessStatusProcessing, models.TaskProcessTypeMap, task.ID)
+				if err != nil {
+					// TODO: Check this
+					break
+				}
+			}
+
+			mapPath := filepath.Join(downloadPath, currentYear)
+			err = page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
+			if err != nil {
+				panic(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
+			}
+			// TODO:  Check if need to remove
+			wait := page.Browser().WaitDownload(mapPath)
+
+			downloadSelector := "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
+			page.MustWaitElementsMoreThan(downloadSelector, 0)
+			err = page.MustElements(downloadSelector)[0].Click(proto.InputMouseButtonLeft, 1)
+			if err != nil {
+				// utils.SendWSProgress(session, taskProcess)
+				fmt.Printf("%s, %s, %v", url, "Error clicking download svg button", err)
+				break
+			}
+
+			wait()
+			time.Sleep(time.Millisecond * 100)
+			if _, err = os.Stat(mapPath); os.IsNotExist(err) {
+				// TODO: Check this
+				// panic(fmt.Sprintf("%s %s %v", url, "File not found", err))
+				break
+			}
+			fmt.Println("================= DOWNLOADED IN: ", mapPath)
+
+			// Close download modal
+			closeBtn := page.MustElement("div.download-modal-content button.close-button")
+			if closeBtn != nil {
+				closeBtn.Click(proto.InputMouseButtonLeft, 1)
+			}
+
+			// TODO: DOWNLOAD FILE AND UPLOAD
+			replaceData := ReplaceVarsData{
+				Url:      data.Url,
+				Title:    title,
+				Region:   regionStr,
+				Year:     currentYear,
+				FileName: GetFileNameFromChartName(chartName),
+				Comment:  "Importing from " + data.Url,
+				Params:   chartParams,
+			}
+
+			fileInfo, err := getFileInfo(mapPath)
+			if err != nil {
+				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
+					continue
+				} else {
+					break
+				}
+			}
+
+			lowerCaseContent := strings.ToLower(string(fileInfo.File))
+			if strings.Contains(lowerCaseContent, "missing map column") {
+				os.Remove(fileInfo.FilePath)
+				fmt.Printf("Missing map column %s %s %s, retrying", replaceData.Region, replaceData.Year, replaceData.FileName)
+				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
+					continue
+				} else {
+					break
+				}
+			}
+
+			Filename, status, err := uploadMapFile(user, *token, replaceData, mapPath, data)
+			if err != nil {
+				fmt.Println("Error processing", region, year)
+				panic(err)
+			}
+			taskProcess.FileName = Filename
+			taskProcess.Update()
+
+			// Save the countries fill data
+			countryFlls, err := svgprocessor.ExtractCountryFills(fileInfo.FilePath)
+			if err != nil {
+				fmt.Println("Error extracting country fills ", err)
+			} else {
+				jsonStr, err := svgprocessor.ConvertToJSON(countryFlls)
+				if jsonStr != "" && err == nil {
+					taskProcess.FillData = jsonStr
+					taskProcess.Update()
+				}
+			}
+
+			switch status {
+			case "skipped":
+				taskProcess.Status = models.TaskProcessStatusSkipped
+				taskProcess.Update()
+				utils.SendWSTaskProcess(task.ID, taskProcess)
+			case "description_updated":
+				taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
+				taskProcess.Update()
+				utils.SendWSTaskProcess(task.ID, taskProcess)
+			case "overwritten":
+				taskProcess.Status = models.TaskProcessStatusOverwritten
+				taskProcess.Update()
+				utils.SendWSTaskProcess(task.ID, taskProcess)
+			case "uploaded":
+				taskProcess.Status = models.TaskProcessStatusUploaded
+				taskProcess.Update()
+				utils.SendWSTaskProcess(task.ID, taskProcess)
+			}
+
+			if !moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
+				break
+			}
+		}
+	}
+}
+
+func moveToNextYear(page *rod.Page, startMarker, endMarker *rod.Element, currentYear, startYear string) bool {
+	if (startMarker != nil && *startMarker.MustAttribute("aria-valuenow") == startYear) || (endMarker != nil && *endMarker.MustAttribute("aria-valuenow") == startYear) {
+		fmt.Println("REACHING END YEAR")
+		return false
+	}
+	if startMarker != nil {
+		fmt.Println("Start marker value now: ", currentYear)
+		time.Sleep(time.Millisecond * 100)
+		startMarker.Focus()
+		fmt.Println("CLicking left on start")
+		time.Sleep(time.Millisecond * 100)
+		page.Keyboard.Press(input.ArrowLeft)
+		fmt.Println("Clicked left on start")
+		time.Sleep(time.Millisecond * 100)
+		startMarker.Blur()
+		time.Sleep(time.Millisecond * 100)
+	}
+
+	if endMarker != nil {
+		fmt.Println("End marker value now: ", currentYear)
+		fmt.Println("CLicking left on end")
+		endMarker.Focus()
+		time.Sleep(time.Millisecond * 100)
+		page.Keyboard.Press(input.ArrowLeft)
+		time.Sleep(time.Millisecond * 100)
+		endMarker.Blur()
+		fmt.Println("Clicked left on start")
+		fmt.Println("============ STEP DONE ===============")
+	}
+
+	return true
 }
 
 func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath string) (*owidparser.OWIDGrapherConfig, error) {
@@ -566,74 +813,94 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, t
 		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
 	}
 	url = fmt.Sprintf("%s&time=latest", url)
-
-	// try to get JSON data
-	dataPath := path.Join(downloadPath, "data.json")
-	metadataPath := path.Join(downloadPath, "metadata.json")
-	mapPath := path.Join(downloadPath, "map")
-
-	var config *owidparser.OWIDGrapherConfig
-	var err error
-	for i := 0; i < constants.RETRY_COUNT; i++ {
-		config, err = downloadMapData(browser, url, dataPath, metadataPath, mapPath)
-		if err == nil && config != nil {
-			break
-		}
-	}
-
-	// fmt.Println("CONFIG IS: ==================", config)
-	// Fallback to the old flow of getting each image individually
-	if err != nil {
-		fmt.Println("ERROR GETTING CHART JSON DATA", err)
-
-		g, _ := errgroup.WithContext(context.Background())
-		g.SetLimit(constants.CONCURRENT_REQUESTS)
-
-		// var filename string
-		for year := startYearInt; year <= endYearInt; year++ {
-			year := year
-			g.Go(func(region string, year int, downloadPath string) func() error {
-				return func() error {
-					if task.Status != models.TaskStatusFailed {
-						err := processRegionYear(browser, user, task, *token, chartName, title, region, downloadPath, year, data, "")
-						return err
-					}
-					return nil
-				}
-			}(region, int(year), filepath.Join(downloadPath, strconv.FormatInt(year, 10))))
-		}
-
-		if err := g.Wait(); err != nil {
-			return err
-		}
-
-		task.Reload()
-		if task.Status != models.TaskStatusFailed {
-			// Attach country data to the first file metadata on commons
-			metadata, err := getRegionFileMetadata(task, region)
+	traverseDownloadRegion(browser, task, data, user, chartParamsMap, token, chartName, title, region, url, downloadPath)
+	task.Reload()
+	if task.Status != models.TaskStatusFailed {
+		// Attach country data to the first file metadata on commons
+		metadata, err := getRegionFileMetadata(task, region)
+		if err != nil {
+			fmt.Println("Error generating metadata: ", err)
+		} else if metadata != "" {
+			// fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
+			fmt.Println("GOT METADATA, YAAAAAAAAAAY")
+			err := processRegionYear(browser, user, task, *token, chartName, title, region, chartParamsMap, filepath.Join(downloadPath, strconv.FormatInt(startYearInt, 10)+"_final"), int(startYearInt), data, metadata)
 			if err != nil {
-				fmt.Println("Error generating metadata: ", err)
-			} else if metadata != "" {
-				// fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
-				fmt.Println("GOT METADATA, YAAAAAAAAAAY")
-				err := processRegionYear(browser, user, task, *token, chartName, title, region, filepath.Join(downloadPath, strconv.FormatInt(startYearInt, 10)+"_final"), int(startYearInt), data, metadata)
-				if err != nil {
-					fmt.Println("Error uploading with metadata: ", err)
-				}
+				fmt.Println("Error uploading with metadata: ", err)
 			}
 		}
-	} else {
-		fmt.Println("DOWNLOADED CHART DATA", dataPath, downloadPath)
-		mapInfo, err := getFileInfo(mapPath)
-		if err != nil {
-			return err
-		}
-		fmt.Println("Map info: ", mapInfo.FilePath)
-		err = generateAndprocessRegionYearsNewFlow(user, task, config, *token, chartName, title, region, int(startYearInt), int(endYearInt), data, dataPath, metadataPath, mapPath, chartParamsMap)
-		if err != nil {
-			return err
-		}
 	}
+
+	// START OLD FLOW
+
+	// // try to get JSON data
+	// dataPath := path.Join(downloadPath, "data.json")
+	// metadataPath := path.Join(downloadPath, "metadata.json")
+	// mapPath := path.Join(downloadPath, "map")
+	//
+	// var config *owidparser.OWIDGrapherConfig
+	// var err error
+	// for i := 0; i < constants.RETRY_COUNT; i++ {
+	// 	config, err = downloadMapData(browser, url, dataPath, metadataPath, mapPath)
+	// 	if err == nil && config != nil {
+	// 		break
+	// 	}
+	// }
+	//
+	// // fmt.Println("CONFIG IS: ==================", config)
+	// // Fallback to the old flow of getting each image individually
+	// if err != nil {
+	// 	fmt.Println("ERROR GETTING CHART JSON DATA", err)
+	//
+	// 	g, _ := errgroup.WithContext(context.Background())
+	// 	g.SetLimit(constants.CONCURRENT_REQUESTS)
+	//
+	// 	// var filename string
+	// 	for year := startYearInt; year <= endYearInt; year++ {
+	// 		year := year
+	// 		g.Go(func(region string, year int, downloadPath string) func() error {
+	// 			return func() error {
+	// 				if task.Status != models.TaskStatusFailed {
+	// 					err := processRegionYear(browser, user, task, *token, chartName, title, region, downloadPath, year, data, "")
+	// 					return err
+	// 				}
+	// 				return nil
+	// 			}
+	// 		}(region, int(year), filepath.Join(downloadPath, strconv.FormatInt(year, 10))))
+	// 	}
+	//
+	// 	if err := g.Wait(); err != nil {
+	// 		return err
+	// 	}
+	//
+	// 	task.Reload()
+	// 	if task.Status != models.TaskStatusFailed {
+	// 		// Attach country data to the first file metadata on commons
+	// 		metadata, err := getRegionFileMetadata(task, region)
+	// 		if err != nil {
+	// 			fmt.Println("Error generating metadata: ", err)
+	// 		} else if metadata != "" {
+	// 			// fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
+	// 			fmt.Println("GOT METADATA, YAAAAAAAAAAY")
+	// 			err := processRegionYear(browser, user, task, *token, chartName, title, region, filepath.Join(downloadPath, strconv.FormatInt(startYearInt, 10)+"_final"), int(startYearInt), data, metadata)
+	// 			if err != nil {
+	// 				fmt.Println("Error uploading with metadata: ", err)
+	// 			}
+	// 		}
+	// 	}
+	// } else {
+	// 	fmt.Println("DOWNLOADED CHART DATA", dataPath, downloadPath)
+	// 	mapInfo, err := getFileInfo(mapPath)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	fmt.Println("Map info: ", mapInfo.FilePath)
+	// 	err = generateAndprocessRegionYearsNewFlow(user, task, config, *token, chartName, title, region, int(startYearInt), int(endYearInt), data, dataPath, metadataPath, mapPath, chartParamsMap)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// }
+
+	// END OLD FLOW
 
 	return nil
 }
@@ -918,7 +1185,7 @@ func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, 
 	return nil
 }
 
-func processRegionYear(browser *rod.Browser, user *models.User, task *models.Task, token, chartName, title, region, downloadPath string, year int, data StartData, fileMetadata string) error {
+func processRegionYear(browser *rod.Browser, user *models.User, task *models.Task, token, chartName, title, region string, chartParams map[string]string, downloadPath string, year int, data StartData, fileMetadata string) error {
 	var err error
 	var taskProcess *models.TaskProcess
 	// Try to find existing process, otherwise create one
@@ -954,6 +1221,10 @@ func processRegionYear(browser *rod.Browser, user *models.User, task *models.Tas
 	} else {
 		url = fmt.Sprintf("%s%s?region=%s&time=%d&tab=map", constants.OWID_BASE_URL, chartName, region, year)
 	}
+	if task.ChartParameters != "" {
+		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
+	}
+
 	fmt.Println(url)
 	regionStr := region
 	if regionStr == "NorthAmerica" {
@@ -978,6 +1249,7 @@ func processRegionYear(browser *rod.Browser, user *models.User, task *models.Tas
 				Year:     strconv.Itoa(year),
 				FileName: GetFileNameFromChartName(chartName),
 				Comment:  "Importing from " + data.Url,
+				Params:   chartParams,
 			}
 
 			fileInfo, err := getFileInfo(downloadPath)
