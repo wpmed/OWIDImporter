@@ -4,7 +4,7 @@ const (
 	OWID_BASE_URL           = "https://ourworldindata.org/grapher/"
 	RETRY_COUNT             = 3
 	CHART_WAIT_TIME_SECONDS = 15
-	CONCURRENT_REQUESTS     = 3
+	CONCURRENT_REQUESTS     = 2
 )
 
 var COUNTRY_CODES = map[string]string{

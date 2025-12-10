@@ -403,6 +403,7 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 		fmt.Println("00000000000000000000000000 GOT START MARKER 00000000000000000000000000000", startYear, endYear)
 
 		for task.Status != models.TaskStatusFailed {
+			models.UpdateTaskLastOperationAt(task.ID)
 
 			currentYear := ""
 			if startMarker != nil {
@@ -513,40 +514,43 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			Filename, status, err := uploadMapFile(user, *token, replaceData, mapPath, data)
 			if err != nil {
 				fmt.Println("Error processing", region, year)
-				panic(err)
-			}
-			taskProcess.FileName = Filename
-			taskProcess.Update()
-
-			// Save the countries fill data
-			countryFlls, err := svgprocessor.ExtractCountryFills(fileInfo.FilePath)
-			if err != nil {
-				fmt.Println("Error extracting country fills ", err)
+				taskProcess.Status = models.TaskProcessStatusFailed
+				taskProcess.Update()
+				utils.SendWSTaskProcess(task.ID, taskProcess)
 			} else {
-				jsonStr, err := svgprocessor.ConvertToJSON(countryFlls)
-				if jsonStr != "" && err == nil {
-					taskProcess.FillData = jsonStr
-					taskProcess.Update()
-				}
-			}
+				taskProcess.FileName = Filename
+				taskProcess.Update()
 
-			switch status {
-			case "skipped":
-				taskProcess.Status = models.TaskProcessStatusSkipped
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
-			case "description_updated":
-				taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
-			case "overwritten":
-				taskProcess.Status = models.TaskProcessStatusOverwritten
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
-			case "uploaded":
-				taskProcess.Status = models.TaskProcessStatusUploaded
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
+				// Save the countries fill data
+				countryFlls, err := svgprocessor.ExtractCountryFills(fileInfo.FilePath)
+				if err != nil {
+					fmt.Println("Error extracting country fills ", err)
+				} else {
+					jsonStr, err := svgprocessor.ConvertToJSON(countryFlls)
+					if jsonStr != "" && err == nil {
+						taskProcess.FillData = jsonStr
+						taskProcess.Update()
+					}
+				}
+
+				switch status {
+				case "skipped":
+					taskProcess.Status = models.TaskProcessStatusSkipped
+					taskProcess.Update()
+					utils.SendWSTaskProcess(task.ID, taskProcess)
+				case "description_updated":
+					taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
+					taskProcess.Update()
+					utils.SendWSTaskProcess(task.ID, taskProcess)
+				case "overwritten":
+					taskProcess.Status = models.TaskProcessStatusOverwritten
+					taskProcess.Update()
+					utils.SendWSTaskProcess(task.ID, taskProcess)
+				case "uploaded":
+					taskProcess.Status = models.TaskProcessStatusUploaded
+					taskProcess.Update()
+					utils.SendWSTaskProcess(task.ID, taskProcess)
+				}
 			}
 
 			if !moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
