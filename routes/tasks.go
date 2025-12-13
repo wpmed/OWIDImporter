@@ -226,6 +226,12 @@ func RetryTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrying task"})
 		return
 	}
+
+	if task.Status != models.TaskStatusFailed && task.Status != models.TaskStatusDone {
+		fmt.Println("Error retrying task: task with status ", task.Status)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrying task"})
+		return
+	}
 	models.FailProcessingTaskProcesses(task.ID)
 	models.UpdateTaskLastOperationAt(task.ID)
 	task.Status = models.TaskStatusQueued
