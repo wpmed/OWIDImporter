@@ -550,7 +550,7 @@ func GetMapTemplate(taskId string) (string, error) {
 	for key := range regions {
 		items := make([]FileNameAcc, 0)
 		for _, tp := range taskProcesses {
-			if tp.Status != models.TaskProcessStatusFailed && tp.Region == key && tp.Type == models.TaskProcessTypeMap {
+			if tp.Status != models.TaskProcessStatusFailed && tp.Region == key && tp.Type == models.TaskProcessTypeMap && tp.FileName != "" {
 				items = append(items, FileNameAcc{
 					Year:     int64(tp.Year),
 					Region:   tp.Region,
@@ -568,7 +568,7 @@ func GetMapTemplate(taskId string) (string, error) {
 	}
 
 	for _, tp := range taskProcesses {
-		if tp.Type == models.TaskProcessTypeCountry && tp.Status != models.TaskProcessStatusFailed {
+		if tp.Type == models.TaskProcessTypeCountry && tp.Status != models.TaskProcessStatusFailed && tp.FileName != "" {
 			countriesData = append(countriesData, CountryTemplateDataItem{
 				Country:  tp.Region,
 				FileName: tp.FileName,
