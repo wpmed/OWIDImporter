@@ -404,6 +404,8 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 
 		for task.Status != models.TaskStatusFailed {
 			models.UpdateTaskLastOperationAt(task.ID)
+			startMarker = page.MustElement(".startMarker")
+			endMarker = page.MustElement(".endMarker")
 
 			currentYear := ""
 			if startMarker != nil {
@@ -570,7 +572,7 @@ func moveToNextYear(page *rod.Page, startMarker, endMarker *rod.Element, current
 		time.Sleep(time.Millisecond * 100)
 		startMarker.Focus()
 		fmt.Println("CLicking left on start")
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 200)
 		page.Keyboard.Press(input.ArrowLeft)
 		fmt.Println("Clicked left on start")
 		time.Sleep(time.Millisecond * 100)
@@ -582,13 +584,14 @@ func moveToNextYear(page *rod.Page, startMarker, endMarker *rod.Element, current
 		fmt.Println("End marker value now: ", currentYear)
 		fmt.Println("CLicking left on end")
 		endMarker.Focus()
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 200)
 		page.Keyboard.Press(input.ArrowLeft)
 		time.Sleep(time.Millisecond * 100)
 		endMarker.Blur()
 		fmt.Println("Clicked left on start")
 		fmt.Println("============ STEP DONE ===============")
 	}
+	time.Sleep(time.Millisecond * 200)
 
 	return true
 }
