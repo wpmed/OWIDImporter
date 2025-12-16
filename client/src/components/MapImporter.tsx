@@ -38,7 +38,6 @@ const initial_description_chart = `=={{int:filedesc}}==
 |permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
 |other versions =
 }}
-{{Map showing old data|year=$START_YEAR-$END_YEAR}}
 =={{int:license-header}}==
 {{cc-by-4.0}}
 [[Category:Uploaded by OWID importer tool]]
