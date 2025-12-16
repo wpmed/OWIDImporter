@@ -115,35 +115,59 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		}
 	}()
 
-	l, browser := GetBrowser()
-	_ = browser.MustPage("")
-
 	url := fmt.Sprintf("%s%s?tab=map", constants.OWID_BASE_URL, chartName)
 	if task.ChartParameters != "" {
 		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
 	}
-	chartParamsMap := GetChartParametersMap(browser, url, task.ChartParameters)
+
+	l, browser := GetBrowser()
+	_ = browser.MustPage("")
+	chartInfo, err := GetChartInfo(browser, url, task.ChartParameters)
+	if err != nil {
+		fmt.Println("Error getting chart info: ", err)
+		task.Status = models.TaskStatusFailed
+		task.Update()
+		utils.SendWSTask(task)
+		return fmt.Errorf("Error getting chart info")
+	}
+
+	chartParamsMap := chartInfo.ParamsMap
 	templateName := GenerateTemplateCommonsName(data.TemplateNameFormat, task.ChartName, chartParamsMap)
 	task.CommonsTemplateName = templateName
 	task.Update()
 
-	startYear, endYear, title := getMapStartEndYearTitle(browser, url)
+	startYear := chartInfo.StartYear
+	endYear := chartInfo.EndYear
+	title := chartInfo.Title
 	browser.Close()
 	l.Cleanup()
 
+	fmt.Println("Got start/end year: ", startYear, endYear, title)
+	fmt.Println("Got params: ", chartParamsMap)
+	fmt.Print("Has countries: ", chartInfo.HasCountries)
+
 	if startYear == "" || endYear == "" {
 		// utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
+		task.Status = models.TaskStatusFailed
+		task.Update()
+		utils.SendWSTask(task)
 		return fmt.Errorf("failed to get start and end years")
 	}
 
 	startYearInt, err := strconv.ParseInt(startYear, 10, 64)
 	if err != nil {
 		// utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
+		task.Status = models.TaskStatusFailed
+		task.Update()
+		utils.SendWSTask(task)
 		return fmt.Errorf("failed to parse start year: %v", err)
 	}
 	endYearInt, err := strconv.ParseInt(endYear, 10, 64)
 	if err != nil {
 		// utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
+		task.Status = models.TaskStatusFailed
+		task.Update()
+		utils.SendWSTask(task)
 		return fmt.Errorf("failed to parse end year: %v", err)
 	}
 
@@ -167,6 +191,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				defer l.Cleanup()
 				defer browser.Close()
 				err := processRegion(browser, user, task, &token, chartName, region, filepath.Join(tmpDir, region), chartParamsMap, startYearInt, endYearInt, title, data)
+				fmt.Print("============= FINISHED PROCESSING REGION: ", region)
 				if err != nil {
 					fmt.Println("Error in processing some of the region", region)
 					fmt.Println(err)
@@ -177,7 +202,8 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	}
 	regionGroup.Wait()
 
-	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
+	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing && chartInfo.HasCountries {
+		fmt.Print("================= STARTED IMPORTING COUNTRIES")
 		result := func() error {
 			countriesList, title, startYear, endYear, err := GetCountryList(url)
 			if err != nil {
@@ -227,6 +253,10 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		}()
 
 		if result != nil {
+			fmt.Print("================== ERROR IMPORTING COUNTRIES: ", err)
+			task.Status = models.TaskStatusFailed
+			task.Update()
+			utils.SendWSTask(task)
 			return err
 		}
 	}
@@ -234,11 +264,13 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	if task.Status == models.TaskStatusProcessing {
 		if data.GenerateTemplateCommons {
 			// Create template page in commons
+			fmt.Print("============= GENERTING COMMONS TEMPLATE")
 			wikiText, err := GetMapTemplate(task.ID)
 			if err == nil {
 				title, err := createCommonsTemplatePage(user, token, task.CommonsTemplateName, wikiText)
 				if err == nil {
 					task.CommonsTemplateName = title
+					fmt.Print("=============== DONE CREATING COMMONS TEMPLATE")
 				} else {
 					fmt.Println("Error creating commons template page: ", err)
 				}
@@ -271,54 +303,77 @@ type ChartParameterChoice struct {
 }
 
 type ChartInfo struct {
-	params *[]ChartParameter
+	Params       *[]ChartParameter
+	ParamsMap    map[string]string
+	StartYear    string
+	EndYear      string
+	Title        string
+	HasCountries bool
 }
 
-// func GetChartInfo(browser *rod.Browser, url string ) *ChartInfo {
-// 	configJSON := ""
-//
-// 	var err error
-// 	params := make([]ChartParameter, 0)
-//
-// 	for trials := 0; trials < 2; trials++ {
-// 		err = rod.Try(func() {
-// 			page := browser.MustPage("")
-// 			defer page.Close()
-// 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-// 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
-//
-// 			fmt.Println("Before navigate")
-// 			page.MustNavigate(url)
-// 			page.MustWaitIdle()
-// 			page.MustWaitLoad()
-// 			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-// 			fmt.Println("FOUND ELEMENT")
-// 			configJSON = page.MustEval(`() => {
-// 				if (window._OWID_MULTI_DIM_PROPS) {
-// 					return JSON.stringify(window._OWID_MULTI_DIM_PROPS.configObj.dimensions);
-//
-// 				}
-// 				return JSON.stringify([]);
-// 			}`).String()
-// 		})
-//
-// 		if err == nil {
-// 			break
-// 		}
-// 	}
-//
-// 	if err != nil {
-// 		fmt.Println("Error getting chart parameters: ", err)
-// 		return nil
-// 	}
-//
-// 	err = json.Unmarshal([]byte(configJSON), &params)
-// 	if err != nil {
-// 		fmt.Println("Error parsing configObj.dimensions: ", err)
-// 		return nil
-// 	}
-//
-// }
+/*
+* Chart title
+* start/end year
+* params // :DONE
+* HasCountries
+ */
+
+func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo, error) {
+	chartInfo := ChartInfo{}
+	err := rod.Try(func() {
+		page := browser.MustPage("")
+		defer page.Close()
+		page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+		page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
+
+		fmt.Println("Before navigate")
+		page.MustNavigate(url)
+		page.MustWaitIdle()
+		page.MustWaitLoad()
+		page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+		time.Sleep(time.Millisecond * 500)
+
+		chartInfo.Params = GetChartParametersFromPage(page)
+		fmt.Println("Got chart params")
+		chartInfo.ParamsMap = GetChartParametersMapFromPage(page, selectedParams)
+		fmt.Println("Got chart params map")
+
+		startYear, endYear, title := getMapStartEndYearTitleFromPage(page)
+		fmt.Println("start/end year title")
+		chartInfo.StartYear = startYear
+		chartInfo.EndYear = endYear
+		chartInfo.Title = title
+		chartInfo.HasCountries = getMapHasCountriesFromPage(page)
+		fmt.Println("Got has countries")
+
+		fmt.Println("============= CHART INTO ***************************************** ", chartInfo)
+	})
+
+	return &chartInfo, err
+}
+
+func GetChartParametersFromPage(page *rod.Page) *[]ChartParameter {
+	configJSON := ""
+
+	var err error
+	params := make([]ChartParameter, 0)
+
+	configJSON = page.MustEval(`() => {
+				if (window._OWID_MULTI_DIM_PROPS) {
+					return JSON.stringify(window._OWID_MULTI_DIM_PROPS.configObj.dimensions);
+ 
+				}
+				return JSON.stringify([]);
+			}`).String()
+
+	err = json.Unmarshal([]byte(configJSON), &params)
+	if err != nil {
+		fmt.Println("Error parsing configObj.dimensions: ", err)
+		return nil
+	}
+
+	return &params
+}
 
 func GetChartParameters(browser *rod.Browser, url string) *[]ChartParameter {
 	configJSON := ""
@@ -572,26 +627,25 @@ func moveToNextYear(page *rod.Page, startMarker, endMarker *rod.Element, current
 		time.Sleep(time.Millisecond * 100)
 		startMarker.Focus()
 		fmt.Println("CLicking left on start")
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 100)
 		page.Keyboard.Press(input.ArrowLeft)
 		fmt.Println("Clicked left on start")
 		time.Sleep(time.Millisecond * 100)
 		startMarker.Blur()
-		time.Sleep(time.Millisecond * 100)
 	}
 
 	if endMarker != nil {
 		fmt.Println("End marker value now: ", currentYear)
+		time.Sleep(time.Millisecond * 100)
 		fmt.Println("CLicking left on end")
 		endMarker.Focus()
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 100)
 		page.Keyboard.Press(input.ArrowLeft)
 		time.Sleep(time.Millisecond * 100)
 		endMarker.Blur()
 		fmt.Println("Clicked left on start")
 		fmt.Println("============ STEP DONE ===============")
 	}
-	time.Sleep(time.Millisecond * 200)
 
 	return true
 }
@@ -754,6 +808,53 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 	}
 
 	return &config, nil
+}
+
+func getMapHasCountriesFromPage(page *rod.Page) bool {
+	fmt.Println("Getting map start/end year + title: ", page.MustInfo().URL)
+
+	lineElements := page.MustElements("figure.chart ContentSwitchers__Container div.Tabs div.Tabs__Tab label")
+	hasLines := false
+
+	for _, el := range lineElements {
+		text, err := el.Text()
+		if err != nil {
+			fmt.Println("Error parsing line text", err)
+			continue
+		}
+
+		text = strings.ToLower(text)
+		if text == "line" {
+			hasLines = true
+			break
+		}
+	}
+
+	return hasLines
+}
+
+func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
+	fmt.Println("Getting map start/end year + title: ", page.MustInfo().URL)
+
+	startYear := ""
+	endYear := ""
+	title := ""
+
+	marker := page.MustElement(".handle.startMarker")
+	fmt.Println("Got marker", marker)
+	startYear = *marker.MustAttribute("aria-valuemin")
+	endYear = *marker.MustAttribute("aria-valuemax")
+	fmt.Println("Got start/end")
+	title = page.MustElement("h1.header__title, .HeaderHTML h1").MustText()
+	title = strings.TrimSpace(title)
+	fmt.Println("Got start/end title")
+	suffix := ", " + endYear
+	if strings.HasSuffix(title, suffix) {
+		title = strings.ReplaceAll(title, suffix, "")
+	}
+
+	fmt.Println("Start: ", startYear, " End: ", endYear, " Title: ", title)
+	return startYear, endYear, title
 }
 
 func getMapStartEndYearTitle(browser *rod.Browser, url string) (string, string, string) {

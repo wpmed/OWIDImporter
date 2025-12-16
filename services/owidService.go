@@ -480,6 +480,33 @@ type TemplateElement struct {
 	Data   []FileNameAcc
 }
 
+func GetChartParametersMapFromPage(page *rod.Page, selectedParams string) map[string]string {
+	chartParameters := GetChartParametersFromPage(page)
+	chartParamsMap := make(map[string]string, 0)
+
+	for _, param := range strings.Split(selectedParams, "&") {
+		parts := strings.Split(param, "=")
+		if len(parts) == 2 {
+			// Find it within all options
+			for _, chartParam := range *chartParameters {
+				if chartParam.Slug == parts[0] {
+					// Find in choices
+					for _, choice := range chartParam.Choices {
+						if choice.Slug == parts[1] {
+							chartParamsMap[strings.ToUpper(chartParam.Slug)] = choice.Name
+							break
+						}
+					}
+					break
+				}
+			}
+		}
+	}
+
+	fmt.Println("================= GOT CHART PARAMETERS MAP: ==============", chartParamsMap)
+	return chartParamsMap
+}
+
 func GetChartParametersMap(browser *rod.Browser, url string, selectedParams string) map[string]string {
 	chartParameters := GetChartParameters(browser, url)
 	chartParamsMap := make(map[string]string, 0)
