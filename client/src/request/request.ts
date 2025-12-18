@@ -11,9 +11,10 @@ export interface VerifySessionResponse {
   username: string
 }
 
+const API_BASE = import.meta.env.VITE_BASE_URL;
 
 export async function replaceSession(sessionId: string) {
-  const response = await fetch(import.meta.env.VITE_BASE_URL + "/session/replace", {
+  const response = await fetch(API_BASE + "/session/replace", {
     method: "POST",
     body: JSON.stringify({ sessionId }),
     headers: {
@@ -27,7 +28,7 @@ export async function replaceSession(sessionId: string) {
 }
 
 export async function verifySession(sessionId: string) {
-  const response = await fetch(import.meta.env.VITE_BASE_URL + "/session/verify", {
+  const response = await fetch(API_BASE + "/session/verify", {
     method: "POST",
     body: JSON.stringify({ sessionId }),
     headers: {
@@ -43,7 +44,7 @@ export async function verifySession(sessionId: string) {
 export async function logout() {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
 
-  await fetch(`${import.meta.env.VITE_BASE_URL}/logout`, {
+  await fetch(`${API_BASE}/logout`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -76,7 +77,7 @@ export interface CreateTaskResponse {
 
 export async function createTask(data: CreateTaskData) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
-  const response = await fetch(import.meta.env.VITE_BASE_URL + "/task", {
+  const response = await fetch(API_BASE + "/task", {
     method: "POST",
     body: JSON.stringify(data),
     headers: {
@@ -92,7 +93,7 @@ export async function createTask(data: CreateTaskData) {
 
 export async function retryTask(id: string) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
-  const response = await fetch(`${import.meta.env.VITE_BASE_URL}/task/${id}/retry`, {
+  const response = await fetch(`${API_BASE}/task/${id}/retry`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -107,7 +108,7 @@ export async function retryTask(id: string) {
 
 export async function cancelTask(id: string) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
-  const response = await fetch(`${import.meta.env.VITE_BASE_URL}/task/${id}/cancel`, {
+  const response = await fetch(`${API_BASE}/task/${id}/cancel`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -126,7 +127,7 @@ interface FetchTasksResopnse {
 }
 export async function fetchTasks(taskType: TaskTypeEnum) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
-  const response = await fetch(`${import.meta.env.VITE_BASE_URL}/task?taskType=${taskType}`, {
+  const response = await fetch(`${API_BASE}/task?taskType=${taskType}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -150,7 +151,7 @@ export interface FetchTaskByIdResponse {
 export async function fetchTaskById(id: string) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
 
-  const response = await fetch(`${import.meta.env.VITE_BASE_URL}/task/${id}`, {
+  const response = await fetch(`${API_BASE}/task/${id}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -184,7 +185,7 @@ export interface ChartParamteresChoice {
 export async function getChartParameters(url: string) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
 
-  const response = await fetch(`${import.meta.env.VITE_BASE_URL}/chart/parameters?url=${url}`, {
+  const response = await fetch(`${API_BASE}/chart/parameters?url=${url}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -198,5 +199,3 @@ export async function getChartParameters(url: string) {
 
   return responseData;
 }
-
-

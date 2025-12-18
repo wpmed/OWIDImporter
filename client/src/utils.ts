@@ -102,3 +102,19 @@ function copyExecCommand(text: string) {
 
   return false;
 }
+
+export function extractAndReplaceCategoriesFromDescription(description: string) {
+  const matches = [...description.matchAll(/\[\[Category:([^\]]+)\]\]/g)];
+  const categories: string[] = [];
+
+  matches.forEach(match => {
+    description = description.replace(match[0], "");
+    categories.push(match[1]);
+  })
+
+  description = description.trim()
+  return {
+    description,
+    categories
+  }
+}

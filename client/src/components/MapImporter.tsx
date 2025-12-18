@@ -3,8 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SocketMessage, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
 import { cancelTask, createTask, fetchTaskById, getChartParameters, retryTask } from "../request/request";
 import { DescriptionOverwriteBehaviour, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
-import { copyText, getStatusColor, getTaskProcessStatusColor } from "../utils";
+import { copyText, extractAndReplaceCategoriesFromDescription, getStatusColor, getTaskProcessStatusColor } from "../utils";
 import { useDebounce } from 'use-debounce';
+import { CategoriesSearchInput } from "./CategoriesSearchInput";
 
 
 const initial_template_name = `$CHART_NAME`
@@ -20,10 +21,12 @@ const initial_description_map = `=={{int:filedesc}}==
 {{Map showing old data|year=$YEAR}}
 =={{int:license-header}}==
 {{cc-by-4.0}}
-[[Category:$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}]]
-[[Category:SVG maps by Our World in Data]]
-[[Category:Uploaded by OWID importer tool]]
 `;
+const initial_categories_map = [
+  "$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}",
+  "SVG maps by Our World in Data",
+  "Uploaded by OWID importer tool"
+]
 
 const chart_info_map = `You can use $NAME (filename without extension), $YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders. This only works for graphs that are maps with data over multiple years.`;
 const initial_filename_map = `$NAME, $REGION, $YEAR.svg`;
@@ -40,8 +43,9 @@ const initial_description_chart = `=={{int:filedesc}}==
 }}
 =={{int:license-header}}==
 {{cc-by-4.0}}
-[[Category:Uploaded by OWID importer tool]]
 `;
+// [[Category:Uploaded by OWID importer tool]]
+const initial_categories_chart = ["Uploaded by OWID importer tool"]
 const initial_filename_chart = `$NAME, $START_YEAR to $END_YEAR, $REGION.svg`;
 const chart_info_chart = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders`;
 
@@ -95,11 +99,13 @@ export function MapImporter(data: MapImporterProps) {
   const [debouncedUrl] = useDebounce(url, 1000);
   const [fileName, setFileName] = useState(initial_filename_map);
   const [description, setDescription] = useState(initial_description_map);
+  const [categories, setCategories] = useState<string[]>(initial_categories_map);
   const [descriptionOverwriteBehaviour, setDescriptionOverwriteBehaviour] = useState(DescriptionOverwriteBehaviour.ALL);
 
 
   const [countryFileName, setCountryFileName] = useState(initial_filename_chart);
   const [countryDescription, setCountryDescription] = useState(initial_description_chart);
+  const [countryCategories, setCountryCategories] = useState<string[]>(initial_categories_chart);
   const [countryDescriptionOverwriteBehaviour, setCountryDescriptionOverwriteBehaviour] = useState(DescriptionOverwriteBehaviour.ALL);
 
   const { ws, connect, disconnect } = useWebsocket();
@@ -140,15 +146,19 @@ export function MapImporter(data: MapImporterProps) {
   const getTask = useCallback((taskId: string, updateItems?: boolean) => {
     fetchTaskById(taskId)
       .then(res => {
+        const { description, categories } = extractAndReplaceCategoriesFromDescription(res.task.description)
         setFileName(res.task.filename);
-        setDescription(res.task.description)
+        setDescription(description)
+        setCategories(categories)
         setUrl(res.task.url);
         setDescriptionOverwriteBehaviour(res.task.descriptionOverwriteBehaviour)
         setTask(res.task);
-        if (res.task.importCountries) {
+        if (res.task.importCountries && res.task.countryDescription) {
+          const { description, categories } = extractAndReplaceCategoriesFromDescription(res.task.countryDescription)
+          setCountryDescription(description || "");
+          setCountryCategories(categories);
           setImportCountries(!!res.task.importCountries);
           setCountryFileName(res.task.countryFileName || "");
-          setCountryDescription(res.task.countryDescription || "");
           setCountryDescriptionOverwriteBehaviour(res.task.countryDescriptionOverwriteBehaviour || DescriptionOverwriteBehaviour.ALL);
         }
 
@@ -176,6 +186,7 @@ export function MapImporter(data: MapImporterProps) {
   const toggleImportCountries = useCallback(() => {
     setCountryFileName(initial_filename_chart)
     setCountryDescription(initial_description_chart)
+    setCountryCategories(initial_categories_chart)
     setCountryDescriptionOverwriteBehaviour(DescriptionOverwriteBehaviour.ALL)
 
     setImportCountries(!importCountries)
@@ -201,17 +212,27 @@ export function MapImporter(data: MapImporterProps) {
   const submit = useCallback(async () => {
     setLoading(true);
     try {
+      let finalDescription = description.trim();
+      if (categories.length > 0) {
+        finalDescription += `\n${categories.map(category => `[[Category:${category}]]`).join("\n")}`;
+      }
+
+      let finalCountryDescription = countryDescription.trim()
+      if (countryCategories.length > 0) {
+        finalCountryDescription += `\n${countryCategories.map(category => `[[Category:${category}]]`).join("\n")}`;
+      }
+
       const chartParameters = selectedChartParameters.map((val) => `${val.key}=${val.value}`).join("&");
       const response = await createTask({
         url,
         fileName,
-        description,
+        description: finalDescription,
         action: "startMap",
         descriptionOverwriteBehaviour,
         importCountries,
         generateTemplateCommons,
         countryFileName,
-        countryDescription,
+        countryDescription: finalCountryDescription,
         countryDescriptionOverwriteBehaviour,
         chartParameters,
         templateNameFormat: templateName,
@@ -239,7 +260,9 @@ export function MapImporter(data: MapImporterProps) {
     countryDescriptionOverwriteBehaviour,
     setTaskId,
     selectedChartParameters,
-    templateName
+    templateName,
+    categories,
+    countryCategories
   ])
 
   const onCopy = useCallback(() => {
@@ -341,7 +364,6 @@ export function MapImporter(data: MapImporterProps) {
       getChartParameters(debouncedUrl)
         .then(res => {
           if (res.params && res.params.length > 0) {
-            console.log("Chart parameters: ", res);
             // setChartParameters(res.params);
             const paramsKeys = res.params.map(param => param.slug);
             const parts = debouncedUrl.split("?").pop()?.split("&")
@@ -367,12 +389,10 @@ export function MapImporter(data: MapImporterProps) {
 
             newInitialFilenameMap += ", $REGION, $YEAR.svg";
             newInitialFilenameChart += ", $START_YEAR to $END_YEAR, $REGION.svg";
-            console.log("Selected params: ", selectedParams);
             setFileName(newInitialFilenameMap);
             setCountryFileName(newInitialFilenameChart);
             setSelectedChartParameters(selectedParams);
             setTemplateName(newTemplateName);
-
           }
 
           setParametersLoading(false);
@@ -385,6 +405,8 @@ export function MapImporter(data: MapImporterProps) {
       if (!data.taskId) {
         setSelectedChartParameters([]);
         // setChartParameters([]);
+        setCategories(initial_categories_map);
+        setCountryCategories(initial_categories_chart);
         setFileName(initial_filename_map);
         setCountryFileName(initial_filename_chart);
         setTemplateName(initial_template_name)
@@ -476,6 +498,13 @@ export function MapImporter(data: MapImporterProps) {
                   disabled={disabled}
                 />
               </Stack>
+              <Stack spacing={1}>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography>Categories</Typography>
+                  <Button onClick={() => setCategories(initial_categories_map)} >Reset</Button>
+                </Stack>
+                <CategoriesSearchInput value={categories} onChange={(newCategories) => setCategories(newCategories)} disabled={disabled} />
+              </Stack>
             </Stack>
             <Stack spacing={1}>
               <Typography>
@@ -554,7 +583,13 @@ export function MapImporter(data: MapImporterProps) {
                     disabled={disabled}
                   />
                 </Stack>
-
+                <Stack spacing={1}>
+                  <Stack direction="row" justifyContent="space-between">
+                    <Typography>Categories</Typography>
+                    <Button onClick={() => setCountryCategories(initial_categories_chart)} >Reset</Button>
+                  </Stack>
+                  <CategoriesSearchInput value={countryCategories} onChange={(newCategories) => setCountryCategories(newCategories)} disabled={disabled} />
+                </Stack>
                 <Stack spacing={1}>
                   <Typography>
                     If a file with the same name exists:
