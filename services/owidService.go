@@ -150,8 +150,10 @@ type ContentSlot struct {
 }
 
 const (
-	DOWNLOAD_BUTTON_SELECTOR = `figure div[data-track-note="chart_click_download"] button`
-	HEADLESS                 = true
+	DOWNLOAD_BUTTON_SELECTOR   = `figure div[data-track-note="chart_click_download"] button`
+	DOWNLOAD_SVG_SELECTOR      = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
+	DOWNLOAD_SVG_ICON_SELECTOR = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2) .download-modal__download-preview-img"
+	HEADLESS                   = true
 )
 
 func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[string]string) string {

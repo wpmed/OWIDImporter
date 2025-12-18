@@ -347,9 +347,35 @@ func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo,
 		fmt.Println("Got has countries")
 
 		fmt.Println("============= CHART INTO ***************************************** ", chartInfo)
+		_, err := GetPageCanDownload(page)
+		if err != nil {
+			panic(err)
+		}
 	})
 
 	return &chartInfo, err
+}
+
+func GetPageCanDownload(page *rod.Page) (bool, error) {
+	startMarker := page.MustElement(".startMarker")
+	endMarker := page.MustElement(".endMarker")
+	if startMarker == nil && endMarker == nil {
+		return false, fmt.Errorf("No start & end markers")
+	}
+
+	err := page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
+	if err != nil {
+		fmt.Println(err)
+		return false, fmt.Errorf("Cannot find/click on download button")
+	}
+
+	page.MustWaitElementsMoreThan(DOWNLOAD_SVG_SELECTOR, 0)
+	downloadIcon := page.MustElement(DOWNLOAD_SVG_ICON_SELECTOR)
+	if downloadIcon == nil {
+		return false, fmt.Errorf("SVG Download icon not found")
+	}
+
+	return true, nil
 }
 
 func GetChartParametersFromPage(page *rod.Page) *[]ChartParameter {
