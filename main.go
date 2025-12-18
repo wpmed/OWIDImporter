@@ -70,7 +70,7 @@ func monitorQueuedTasks() {
 			fmt.Println("Error finding processing tasks count", err)
 			continue
 		}
-		if count == 0 {
+		if count < 2 {
 			task, err := models.FindNextTaskToProcess()
 			if err != nil {
 				fmt.Println("Error finding next task to process", err)
@@ -97,36 +97,38 @@ func monitorQueuedTasks() {
 				continue
 			}
 
-			switch task.Type {
-			case models.TaskTypeMap:
-				fmt.Println("Action message map", task)
-				err := services.StartMap(task.ID, user, services.StartData{
-					Url:                                  task.URL,
-					FileName:                             task.FileName,
-					Description:                          task.Description,
-					DescriptionOverwriteBehaviour:        task.DescriptionOverwriteBehaviour,
-					ImportCountries:                      task.ImportCountries == 1,
-					CountryFileName:                      task.CountryFileName,
-					CountryDescription:                   task.CountryDescription,
-					CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-					GenerateTemplateCommons:              task.GenerateTemplateCommons == 1,
-					TemplateNameFormat:                   task.CommonsTemplateNameFormat,
-				})
-				if err != nil {
-					log.Println("Error starting map", err)
+			go func() {
+				switch task.Type {
+				case models.TaskTypeMap:
+					fmt.Println("Action message map", task)
+					err := services.StartMap(task.ID, user, services.StartData{
+						Url:                                  task.URL,
+						FileName:                             task.FileName,
+						Description:                          task.Description,
+						DescriptionOverwriteBehaviour:        task.DescriptionOverwriteBehaviour,
+						ImportCountries:                      task.ImportCountries == 1,
+						CountryFileName:                      task.CountryFileName,
+						CountryDescription:                   task.CountryDescription,
+						CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
+						GenerateTemplateCommons:              task.GenerateTemplateCommons == 1,
+						TemplateNameFormat:                   task.CommonsTemplateNameFormat,
+					})
+					if err != nil {
+						log.Println("Error starting map", err)
+					}
+				case models.TaskTypeChart:
+					fmt.Println("Action message chart", task)
+					err := services.StartChart(task.ID, user, services.StartData{
+						Url:                           task.URL,
+						FileName:                      task.FileName,
+						Description:                   task.Description,
+						DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
+					})
+					if err != nil {
+						log.Println("Error starting map", err)
+					}
 				}
-			case models.TaskTypeChart:
-				fmt.Println("Action message chart", task)
-				err := services.StartChart(task.ID, user, services.StartData{
-					Url:                           task.URL,
-					FileName:                      task.FileName,
-					Description:                   task.Description,
-					DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
-				})
-				if err != nil {
-					log.Println("Error starting map", err)
-				}
-			}
+			}()
 		}
 
 	}
