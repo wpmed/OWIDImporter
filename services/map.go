@@ -839,7 +839,7 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 func getMapHasCountriesFromPage(page *rod.Page) bool {
 	fmt.Println("Getting map start/end year + title: ", page.MustInfo().URL)
 
-	lineElements := page.MustElements("figure.chart ContentSwitchers__Container div.Tabs div.Tabs__Tab label")
+	lineElements := page.MustElements("figure.chart .ContentSwitchers__Container div.Tabs div.Tabs__Tab .label")
 	hasLines := false
 
 	for _, el := range lineElements {
