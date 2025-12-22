@@ -48,6 +48,7 @@ export interface Task {
   countryDescription?: string,
   countryDescriptionOverwriteBehaviour?: DescriptionOverwriteBehaviour,
   importCountries: number,
+  generateTemplateCommons: number,
   chartName: string,
   commonsTemplateName?: string,
   status: TaskStatusEnum,

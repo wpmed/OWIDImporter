@@ -43,7 +43,7 @@ export function TaskList({ tasks, taskType, onTaskClick, onNew }: TaskListProps)
                         URL:
                       </Typography>
                     </Grid>
-                    <Grid>
+                    <Grid onClick={(e) => e.stopPropagation()}>
                       <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 14 }}>
                         <a href={task.url} target="_blank">
                           {task.url}
@@ -51,6 +51,22 @@ export function TaskList({ tasks, taskType, onTaskClick, onNew }: TaskListProps)
                       </Typography>
                     </Grid>
                   </Grid>
+                  {task.generateTemplateCommons == 1 && task.commonsTemplateName ? (
+                    <Grid container spacing={1}>
+                      <Grid size={3}>
+                        <Typography variant="body2">
+                          Commons Template:
+                        </Typography>
+                      </Grid>
+                      <Grid onClick={(e) => e.stopPropagation()}>
+                        <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 14 }}>
+                          <a href={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`} target="_blank">
+                            {task.commonsTemplateName}
+                          </a>
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                  ) : null}
                   <Grid container spacing={1}>
                     <Grid size={3}>
                       <Typography variant="body2">
