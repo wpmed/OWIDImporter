@@ -57,3 +57,13 @@ export interface Task {
   createdAt: number,
 }
 
+
+
+// Others
+export interface SelectedParameter {
+  key: string
+  keyName: string
+  value: string
+  valueName: string
+}
+

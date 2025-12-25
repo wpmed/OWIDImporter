@@ -6,7 +6,7 @@ interface TaskListProps {
   tasks: Task[],
   taskType: TaskTypeEnum
   onTaskClick: (task: Task) => void
-  onNew: () => void
+  onNew: () => void,
 }
 
 export function TaskList({ tasks, taskType, onTaskClick, onNew }: TaskListProps) {

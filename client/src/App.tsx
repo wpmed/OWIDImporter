@@ -17,7 +17,7 @@ import { Login } from './components/Login';
 import { useReplaceSession } from './hooks/useReplaceSession';
 import { SESSION_ID_KEY, USERNAME_KEY } from './constants';
 import { Logout } from '@mui/icons-material';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Task, TaskTypeEnum } from './types';
 import { fetchTasks, logout } from './request/request';
 import { TaskList } from './components/TaskList';
@@ -92,6 +92,11 @@ export default function App() {
     }
   }
 
+  const onNavigateToList = useCallback(() => {
+    setTab(TABS.MAP_LSIT);
+    window.scrollTo({ left: 0, top: 0 })
+  }, [setTab])
+
   useEffect(() => {
     if (sessionId && [TABS.MAP_LSIT, TABS.CHART_LIST].includes(tab)) {
       console.log("SHould get task list");
@@ -159,7 +164,7 @@ export default function App() {
             ) : (
               <>
                 {selectedTaskType == TaskTypeEnum.MAP ? (
-                  <MapImporter taskId={selectedTaskId} />
+                  <MapImporter taskId={selectedTaskId} onNavigateToList={onNavigateToList} />
                 ) : (
                   <ChartImporter taskId={selectedTaskId} />
                 )}

@@ -1,11 +1,11 @@
-import { Box, Button, Checkbox, CircularProgress, Grid, InputAdornment, Radio, Snackbar, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
+import { Accordion, AccordionDetails, AccordionSummary, Box, Button, CircularProgress, Grid, Snackbar, Stack, Typography } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SocketMessage, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
-import { cancelTask, createTask, fetchTaskById, getChartParameters, retryTask } from "../request/request";
+import { cancelTask, createTask, fetchTaskById, retryTask } from "../request/request";
 import { DescriptionOverwriteBehaviour, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
 import { copyText, extractAndReplaceCategoriesFromDescription, getStatusColor, getTaskProcessStatusColor } from "../utils";
-import { useDebounce } from 'use-debounce';
-import { CategoriesSearchInput } from "./CategoriesSearchInput";
+import { MapImporterForm, MapImporterFormItem } from "./MapImporterForm";
+import { Add, ExpandMore } from "@mui/icons-material";
 
 
 const initial_template_name = `$CHART_NAME`
@@ -28,9 +28,7 @@ const initial_categories_map = [
   "Uploaded by OWID importer tool"
 ]
 
-const chart_info_map = `You can use $NAME (filename without extension), $YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders. This only works for graphs that are maps with data over multiple years.`;
 const initial_filename_map = `$NAME, $REGION, $YEAR.svg`;
-const url_placeholder = `https://ourworldindata.org/grapher/<NAME OF GRAPH>`;
 
 const initial_description_chart = `=={{int:filedesc}}==
 {{Information
@@ -47,25 +45,7 @@ const initial_description_chart = `=={{int:filedesc}}==
 // [[Category:Uploaded by OWID importer tool]]
 const initial_categories_chart = ["Uploaded by OWID importer tool"]
 const initial_filename_chart = `$NAME, $START_YEAR to $END_YEAR, $REGION.svg`;
-const chart_info_chart = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders`;
 
-const DESCRIPTION_OVERWRITE_OPTIONS = [
-  {
-    value: DescriptionOverwriteBehaviour.ALL,
-    title: "Overwrite full description",
-    description: "Overwrite the full description of the file (if already exists) with the new description.",
-  },
-  {
-    value: DescriptionOverwriteBehaviour.ALL_EXCEPT_CATEGORIES,
-    title: "Overwrite description except the categories",
-    description: "Old categories are retained, any new categories in the new description are discarded/skipped. If the file doesn't already exist, categories in the new description are added.",
-  },
-  {
-    value: DescriptionOverwriteBehaviour.ONLY_FILE,
-    title: "Only upload file",
-    description: "Don't update the description, only upload the file.",
-  }
-]
 
 export interface MapImporterSubmitData {
   url: string,
@@ -75,38 +55,36 @@ export interface MapImporterSubmitData {
 
 export interface MapImporterProps {
   taskId?: string
+  onNavigateToList: () => void
 }
 
-interface SelectedParameter {
-  key: string
-  keyName: string
-  value: string
-  valueName: string
+const initialImport: MapImporterFormItem = {
+  id: Date.now().toString(),
+  url: "",
+  fileName: initial_filename_map,
+  description: initial_description_map,
+  categories: initial_categories_map,
+  descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour.ALL,
+  importCountries: true,
+  generateTemplateCommons: true,
+  selectedChartParameters: [],
+  templateNameFormat: initial_template_name,
+
+  // Country
+  countryFileName: initial_filename_chart,
+  countryDescription: initial_description_chart,
+  countryCategories: initial_categories_chart,
+  countryDescriptionOverwriteBehaviour: DescriptionOverwriteBehaviour.ALL,
 }
 
-export function MapImporter(data: MapImporterProps) {
+export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImporterProps) {
   const [loading, setLoading] = useState(false);
   const [parametersLoading, setParametersLoading] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [importCountries, setImportCountries] = useState(true);
-  const [generateTemplateCommons, setGenerateTemplateCommons] = useState(true);
   // const [chartParameters, setChartParameters] = useState<ChartParamteres[]>([]);
-  const [selectedChartParameters, setSelectedChartParameters] = useState<SelectedParameter[]>([]);
-  const [templateName, setTemplateName] = useState(initial_template_name);
+  const [imports, setImports] = useState([{ ...initialImport, id: Date.now().toString() }]);
+  const [expanded, setExpanded] = useState<string | false>(imports[0].id);
 
-  // Form Fields
-  const [url, setUrl] = useState("");
-  const [debouncedUrl] = useDebounce(url, 1000);
-  const [fileName, setFileName] = useState(initial_filename_map);
-  const [description, setDescription] = useState(initial_description_map);
-  const [categories, setCategories] = useState<string[]>(initial_categories_map);
-  const [descriptionOverwriteBehaviour, setDescriptionOverwriteBehaviour] = useState(DescriptionOverwriteBehaviour.ALL);
-
-
-  const [countryFileName, setCountryFileName] = useState(initial_filename_chart);
-  const [countryDescription, setCountryDescription] = useState(initial_description_chart);
-  const [countryCategories, setCountryCategories] = useState<string[]>(initial_categories_chart);
-  const [countryDescriptionOverwriteBehaviour, setCountryDescriptionOverwriteBehaviour] = useState(DescriptionOverwriteBehaviour.ALL);
 
   const { ws, connect, disconnect } = useWebsocket();
   const [taskId, setTaskId] = useState("");
@@ -119,11 +97,11 @@ export function MapImporter(data: MapImporterProps) {
   const [wikiText, setWikiText] = useState("");
 
   const disabled = useMemo(() => {
-    return !!taskId || !!data.taskId || !!task
-  }, [taskId, data.taskId, task])
+    return !!taskId || !!incomingTaskId || !!task
+  }, [taskId, incomingTaskId, task])
 
   const cancelDisabled = useMemo(() => {
-    return !task || (task && task.status !== TaskStatusEnum.Processing)
+    return !task || (task && ![TaskStatusEnum.Processing, TaskStatusEnum.Queued].includes(task.status))
   }, [task])
 
   const onRetry = () => {
@@ -146,21 +124,29 @@ export function MapImporter(data: MapImporterProps) {
   const getTask = useCallback((taskId: string, updateItems?: boolean) => {
     fetchTaskById(taskId)
       .then(res => {
+        const task = res.task;
+        setTask(task);
+
         const { description, categories } = extractAndReplaceCategoriesFromDescription(res.task.description)
-        setFileName(res.task.filename);
-        setDescription(description)
-        setCategories(categories)
-        setUrl(res.task.url);
-        setDescriptionOverwriteBehaviour(res.task.descriptionOverwriteBehaviour)
-        setTask(res.task);
+        const importItem: MapImporterFormItem = {
+          ...initialImport,
+          id: Date.now().toString(),
+          description,
+          categories,
+          url: task.url,
+          fileName: task.filename,
+          descriptionOverwriteBehaviour: task.descriptionOverwriteBehaviour,
+        };
+
         if (res.task.importCountries && res.task.countryDescription) {
           const { description, categories } = extractAndReplaceCategoriesFromDescription(res.task.countryDescription)
-          setCountryDescription(description || "");
-          setCountryCategories(categories);
-          setImportCountries(!!res.task.importCountries);
-          setCountryFileName(res.task.countryFileName || "");
-          setCountryDescriptionOverwriteBehaviour(res.task.countryDescriptionOverwriteBehaviour || DescriptionOverwriteBehaviour.ALL);
+          importItem.countryDescription = description || "";
+          importItem.countryCategories = categories;
+          importItem.importCountries = !!task.importCountries;
+          importItem.countryFileName = task.countryFileName || "";
+          importItem.countryDescriptionOverwriteBehaviour = task.countryDescriptionOverwriteBehaviour || DescriptionOverwriteBehaviour.ALL;
         }
+        setImports([importItem])
 
         if (updateItems) {
           setItems(res.processes);
@@ -176,21 +162,13 @@ export function MapImporter(data: MapImporterProps) {
       .finally(() => {
         setLoading(false)
       })
-  }, [setLoading, setItems, setDescription, setDescriptionOverwriteBehaviour, setUrl, setFileName, setWikiText])
+  }, [setLoading, setItems])
 
-  const toggleGenerateTemplateCommons = useCallback(() => {
-
-    setGenerateTemplateCommons(!generateTemplateCommons);
-  }, [setGenerateTemplateCommons, generateTemplateCommons])
-
-  const toggleImportCountries = useCallback(() => {
-    setCountryFileName(initial_filename_chart)
-    setCountryDescription(initial_description_chart)
-    setCountryCategories(initial_categories_chart)
-    setCountryDescriptionOverwriteBehaviour(DescriptionOverwriteBehaviour.ALL)
-
-    setImportCountries(!importCountries)
-  }, [importCountries, setImportCountries])
+  const onMapFormChange = useCallback((index: number) => (value: MapImporterFormItem) => setImports(oldImports => {
+    const newImports = oldImports.slice()
+    newImports[index] = value;
+    return newImports;
+  }), [setImports])
 
   const onCancel = useCallback(() => {
     if (task) {
@@ -212,57 +190,56 @@ export function MapImporter(data: MapImporterProps) {
   const submit = useCallback(async () => {
     setLoading(true);
     try {
-      let finalDescription = description.trim();
-      if (categories.length > 0) {
-        finalDescription += `\n${categories.map(category => `[[Category:${category}]]`).join("\n")}`;
+      let taskId = ""
+      await Promise.all(imports.map(async (imp) => {
+        let finalDescription = imp.description.trim();
+        if (imp.categories.length > 0) {
+          finalDescription += `\n${imp.categories.map(category => `[[Category:${category}]]`).join("\n")}`;
+        }
+
+        let finalCountryDescription = imp.countryDescription.trim()
+        if (imp.countryCategories.length > 0) {
+          finalCountryDescription += `\n${imp.countryCategories.map(category => `[[Category:${category}]]`).join("\n")}`;
+        }
+
+        const chartParameters = imp.selectedChartParameters.map((val) => `${val.key}=${val.value}`).join("&");
+        const response = await createTask({
+          action: "startMap",
+          chartParameters,
+          description: finalDescription,
+          countryDescription: finalCountryDescription,
+          url: imp.url,
+          fileName: imp.fileName,
+          descriptionOverwriteBehaviour: imp.descriptionOverwriteBehaviour,
+          importCountries: imp.importCountries,
+          generateTemplateCommons: imp.generateTemplateCommons,
+          countryFileName: imp.countryFileName,
+          countryDescriptionOverwriteBehaviour: imp.countryDescriptionOverwriteBehaviour,
+          templateNameFormat: imp.templateNameFormat,
+        });
+        if (response.error) {
+          return alert(response.error);
+        }
+        if (response.taskId) {
+          taskId = response.taskId;
+        }
+      }));
+
+      if (imports.length == 1 && taskId) {
+        setTaskId(taskId)
+      } else {
+        onNavigateToList();
       }
 
-      let finalCountryDescription = countryDescription.trim()
-      if (countryCategories.length > 0) {
-        finalCountryDescription += `\n${countryCategories.map(category => `[[Category:${category}]]`).join("\n")}`;
-      }
-
-      const chartParameters = selectedChartParameters.map((val) => `${val.key}=${val.value}`).join("&");
-      const response = await createTask({
-        url,
-        fileName,
-        description: finalDescription,
-        action: "startMap",
-        descriptionOverwriteBehaviour,
-        importCountries,
-        generateTemplateCommons,
-        countryFileName,
-        countryDescription: finalCountryDescription,
-        countryDescriptionOverwriteBehaviour,
-        chartParameters,
-        templateNameFormat: templateName,
-      });
-      if (response.error) {
-        return alert(response.error);
-      }
-
-      if (response.taskId) {
-        setTaskId(response.taskId);
-      }
     } catch (err: any) {
       console.log('Error seding create task', err);
     }
     setLoading(false)
   }, [
-    url,
-    fileName,
-    description,
-    descriptionOverwriteBehaviour,
-    importCountries,
-    generateTemplateCommons,
-    countryFileName,
-    countryDescription,
-    countryDescriptionOverwriteBehaviour,
+    imports,
     setTaskId,
-    selectedChartParameters,
-    templateName,
-    categories,
-    countryCategories
+    setLoading,
+    onNavigateToList
   ])
 
   const onCopy = useCallback(() => {
@@ -271,8 +248,8 @@ export function MapImporter(data: MapImporterProps) {
   }, [wikiText, setIsCopied]);
 
   const submitDisabled = useMemo(() => {
-    return !url.length || !fileName || !description;
-  }, [url, fileName, description])
+    return loading || parametersLoading || disabled || !imports.every(i => i.url.trim().length > 0 && i.fileName.trim().length > 0 && i.description.trim().length > 0);
+  }, [imports, loading, parametersLoading, disabled])
 
   const canRetry = useMemo(() => {
     if (!task) return false;
@@ -352,69 +329,10 @@ export function MapImporter(data: MapImporterProps) {
   }, [taskId, getTask])
 
   useEffect(() => {
-    if (data.taskId) {
-      setTaskId(data.taskId);
+    if (incomingTaskId) {
+      setTaskId(incomingTaskId);
     }
-  }, [data.taskId])
-
-
-  useEffect(() => {
-    if (!data.taskId && debouncedUrl && debouncedUrl.includes("?")) {
-      setParametersLoading(true);
-      getChartParameters(debouncedUrl)
-        .then(res => {
-          if (res.params && res.params.length > 0) {
-            // setChartParameters(res.params);
-            const paramsKeys = res.params.map(param => param.slug);
-            const parts = debouncedUrl.split("?").pop()?.split("&")
-            const selectedParams: SelectedParameter[] = []
-            let newInitialFilenameMap = "$NAME";
-            let newInitialFilenameChart = "$NAME";
-            let newTemplateName = "$CHART_NAME"
-            parts?.forEach(part => {
-              const [key, val] = part.split("=");
-              if (key && val && paramsKeys.includes(key)) {
-                const param = res.params.find(p => p.slug == key)
-                const choice = param?.choices.find(c => c.slug == val)
-                if (param && choice) {
-                  selectedParams.push({ key: param.slug, keyName: param.name, value: val, valueName: choice.name })
-                } else {
-                  selectedParams.push({ key, keyName: key, value: val, valueName: val })
-                }
-                newInitialFilenameMap += `, $${key.toUpperCase()}`;
-                newInitialFilenameChart += `, $${key.toUpperCase()}`;
-                newTemplateName += `, $${key.toUpperCase()}`;
-              }
-            })
-
-            newInitialFilenameMap += ", $REGION, $YEAR.svg";
-            newInitialFilenameChart += ", $START_YEAR to $END_YEAR, $REGION.svg";
-            setFileName(newInitialFilenameMap);
-            setCountryFileName(newInitialFilenameChart);
-            setSelectedChartParameters(selectedParams);
-            setTemplateName(newTemplateName);
-          }
-
-          setParametersLoading(false);
-        })
-        .catch(err => {
-          console.log("Error getting chart parameters", err)
-          setParametersLoading(false);
-        })
-    } else {
-      if (!data.taskId) {
-        setSelectedChartParameters([]);
-        // setChartParameters([]);
-        setCategories(initial_categories_map);
-        setCountryCategories(initial_categories_chart);
-        setFileName(initial_filename_map);
-        setCountryFileName(initial_filename_chart);
-        setTemplateName(initial_template_name)
-      }
-      setParametersLoading(false);
-    }
-  }, [data.taskId, debouncedUrl, setSelectedChartParameters, setFileName, setCountryFileName, setTemplateName, setParametersLoading])
-
+  }, [incomingTaskId])
 
   return (
     <Box textAlign={"left"}>
@@ -451,165 +369,62 @@ export function MapImporter(data: MapImporterProps) {
                   )}
                 </Stack>
               )}
-              <Stack spacing={1}>
-                <Typography>File URL</Typography>
-                <TextField
-                  fullWidth
-                  size="small"
-                  value={url}
-                  onChange={e => setUrl(e.target.value)}
-                  placeholder={url_placeholder}
+              {imports.map((i, index) => {
+                const comp = <MapImporterForm
+                  value={i}
                   disabled={disabled}
+                  canRemove={!disabled && imports.length > 1}
+                  onChange={onMapFormChange(index)}
+                  onParamtersLoadingChange={(loading) => setParametersLoading(loading)}
+                  onDelete={() => {
+                    const newImports = imports.slice();
+                    newImports.splice(index, 1);
+                    setImports(newImports);
+                  }}
                 />
-              </Stack>
-              {selectedChartParameters.length > 0 && (
-                <Stack spacing={1}>
-                  <Typography variant="h6" >Selected parameters</Typography>
-                  {selectedChartParameters.map(param => (
-                    <Typography>{param.keyName}: {param.valueName} - You can use <strong>${param.key.toUpperCase()}</strong> in the file name as a placeholder</Typography>
-                  ))}
-                </Stack>
+
+                return (
+                  <Box key={i.id}>
+                    {imports.length > 1 ? (
+                      <Accordion expanded={expanded == i.id} onChange={(_, expanded) => setExpanded(expanded ? i.id : false)}>
+                        <AccordionSummary
+                          id={i.id}
+                          aria-controls={i.id}
+                          sx={{ backgroundColor: "#1976d2", color: "white" }}
+                          expandIcon={<ExpandMore sx={{ color: "white" }} />}
+                        >
+                          <Typography component="span">URL: {i.url}</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          {comp}
+                        </AccordionDetails>
+                      </Accordion>
+                    ) : comp}
+                  </Box>
+                )
+              }
               )}
-              <Stack>
-                <Typography variant="h4">
-                  <span>Map</span>
-                </Typography>
-                <Typography>
-                  <span dangerouslySetInnerHTML={{ __html: chart_info_map }} />
-                </Typography>
-              </Stack>
-              <Stack spacing={1}>
-                <Typography>File name</Typography>
-                <TextField
-                  size="small"
-                  value={fileName}
-                  onChange={e => setFileName(e.target.value)}
-                  fullWidth
-                  disabled={disabled}
-                />
-              </Stack>
-              <Stack spacing={1}>
-                <Typography>Description</Typography>
-                <TextareaAutosize
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  style={{ width: "100%", backgroundColor: "white", color: "black" }}
-                  minRows={5}
-                  disabled={disabled}
-                />
-              </Stack>
-              <Stack spacing={1}>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography>Categories</Typography>
-                  <Button onClick={() => setCategories(initial_categories_map)} >Reset</Button>
-                </Stack>
-                <CategoriesSearchInput value={categories} onChange={(newCategories) => setCategories(newCategories)} disabled={disabled} />
-              </Stack>
             </Stack>
-            <Stack spacing={1}>
-              <Typography>
-                If a file with the same name exists:
-              </Typography>
-              {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
-                <Stack spacing={1}>
-                  <Stack direction={"row"} alignItems={"flex-start"}>
-                    <Radio disabled={disabled} checked={descriptionOverwriteBehaviour == option.value} onClick={() => setDescriptionOverwriteBehaviour(option.value)} />
-                    <Box>
-                      <Typography>
-                        {option.title}
-                      </Typography>
-                      <Typography variant="subtitle2">{option.description}</Typography>
-                    </Box>
-                  </Stack>
-                </Stack>
-              ))}
-            </Stack>
-            {!task && (
-              <Stack spacing={1}>
-                <Stack direction="row" alignItems={"center"} >
-                  <Checkbox checked={generateTemplateCommons} onClick={toggleGenerateTemplateCommons} disabled={disabled} />
-                  <Typography>Automatically Create Template Page On Commons</Typography>
-                </Stack>
-                <Stack spacing={1}>
-                  <Typography>Template name</Typography>
-                  <TextField
-                    size="small"
-                    value={templateName}
-                    onChange={e => setTemplateName(e.target.value)}
-                    fullWidth
-                    disabled={disabled}
-                    slotProps={{
-                      input: {
-                        startAdornment: <InputAdornment position="start">Template:OWID/</InputAdornment>,
-                      },
-                    }}
-                  />
-                </Stack>
+
+            {!submitDisabled && (
+              <Stack alignItems={"center"}>
+                <Button
+                  startIcon={<Add />}
+                  disabled={parametersLoading}
+                  variant="outlined"
+                  color="primary"
+                  onClick={() => {
+                    const newImport = { ...initialImport, id: Date.now().toString() };
+                    setImports([...imports, newImport]);
+                    setExpanded(newImport.id);
+                    window.scrollTo({ left: 0, top: 0 })
+                  }}
+                >
+                  Add another URL
+                </Button>
               </Stack>
             )}
-            <Stack>
-              <Stack direction="row" alignItems={"center"} >
-                <Checkbox checked={importCountries} disabled={disabled} onClick={toggleImportCountries} />
-                <Typography>Import Countries</Typography>
-              </Stack>
-            </Stack>
-            {importCountries && (
-              <>
-                <Stack spacing={2}>
-                  <Typography variant="h4">
-                    <span>Country Chart</span>
-                  </Typography>
-                  <Typography>
-                    <span dangerouslySetInnerHTML={{ __html: chart_info_chart }} />
-                  </Typography>
-                </Stack>
-                <Stack spacing={1}>
-                  <Typography>File name</Typography>
-                  <TextField
-                    size="small"
-                    value={countryFileName}
-                    onChange={e => setCountryFileName(e.target.value)}
-                    fullWidth
-                    disabled={disabled}
-                  />
-                </Stack>
-                <Stack spacing={1}>
-                  <Typography>Description</Typography>
-                  <TextareaAutosize
-                    value={countryDescription}
-                    onChange={e => setCountryDescription(e.target.value)}
-                    style={{ width: "100%", backgroundColor: "white", color: "black" }}
-                    minRows={5}
-                    disabled={disabled}
-                  />
-                </Stack>
-                <Stack spacing={1}>
-                  <Stack direction="row" justifyContent="space-between">
-                    <Typography>Categories</Typography>
-                    <Button onClick={() => setCountryCategories(initial_categories_chart)} >Reset</Button>
-                  </Stack>
-                  <CategoriesSearchInput value={countryCategories} onChange={(newCategories) => setCountryCategories(newCategories)} disabled={disabled} />
-                </Stack>
-                <Stack spacing={1}>
-                  <Typography>
-                    If a file with the same name exists:
-                  </Typography>
-                  {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
-                    <Stack spacing={1}>
-                      <Stack direction={"row"} alignItems={"flex-start"}>
-                        <Radio disabled={disabled} checked={countryDescriptionOverwriteBehaviour == option.value} onClick={() => setCountryDescriptionOverwriteBehaviour(option.value)} />
-                        <Box>
-                          <Typography>
-                            {option.title}
-                          </Typography>
-                          <Typography variant="subtitle2">{option.description}</Typography>
-                        </Box>
-                      </Stack>
-                    </Stack>
-                  ))}
-                </Stack>
-              </>
-            )}
+
             <Stack alignItems={"end"}>
               <Box>
                 <Button
@@ -617,7 +432,7 @@ export function MapImporter(data: MapImporterProps) {
                   color="primary"
                   sx={{ marginRight: 2 }}
                   onClick={submit}
-                  disabled={submitDisabled || loading || parametersLoading || disabled}
+                  disabled={submitDisabled}
                   loading={loading}
                 >
                   Submit
