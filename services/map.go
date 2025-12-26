@@ -950,6 +950,8 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, t
 	traverseDownloadRegion(browser, task, data, user, chartParamsMap, token, chartName, title, region, url, downloadPath)
 	task.Reload()
 	if task.Status != models.TaskStatusFailed {
+		// Sleep for 10 seconds to avoid API complains of reuploading
+		time.Sleep(time.Second * 10)
 		// Attach country data to the first file metadata on commons
 		metadata, err := getRegionFileMetadata(task, region)
 		if err != nil {
