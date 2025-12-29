@@ -3,7 +3,7 @@ import { DescriptionOverwriteBehaviour, SelectedParameter } from "../types"
 import { CategoriesSearchInput } from "./CategoriesSearchInput";
 import { useDebounce } from "use-debounce";
 import { useCallback, useEffect, useState } from "react";
-import { getChartParameters } from "../request/request";
+import { ChartInfo, getChartParameters } from "../request/request";
 import { Delete } from "@mui/icons-material";
 
 export const DESCRIPTION_OVERWRITE_OPTIONS = [
@@ -25,7 +25,7 @@ export const DESCRIPTION_OVERWRITE_OPTIONS = [
 ]
 
 export interface MapImporterFormItem {
-  id:string 
+  id: string
   url: string
   fileName: string
   description: string
@@ -68,6 +68,7 @@ const chart_info_chart = `You can use $NAME (filename without extension), $START
 export function MapImporterForm({ value, onChange, onDelete, disabled, onParamtersLoadingChange, canRemove }: MapImporterFormProps) {
   const [debouncedUrl] = useDebounce(value.url, 1000);
   const [lastCheckedUrl, setLastCheckeUrl] = useState(value.url);
+  const [chartInfo, setChartInfo] = useState<ChartInfo | null>(null);
 
   const handleChange = useCallback(<K extends keyof MapImporterFormItem>(
     key: K,
@@ -77,7 +78,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
   }, [value, onChange]);
 
   useEffect(() => {
-    if (!disabled && debouncedUrl && debouncedUrl.includes("?") && debouncedUrl != lastCheckedUrl) {
+    if (!disabled && debouncedUrl && debouncedUrl != lastCheckedUrl) {
       setLastCheckeUrl(debouncedUrl);
 
       onParamtersLoadingChange(true);
@@ -118,6 +119,10 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
               templateNameFormat: newTemplateName,
             });
           }
+
+          if (res.info) {
+            setChartInfo(res.info);
+          }
         })
         .catch(err => {
           console.log("Error getting chart parameters", err)
@@ -126,7 +131,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
           onParamtersLoadingChange(false);
         })
     }
-  }, [debouncedUrl, disabled, lastCheckedUrl, value, onChange, onParamtersLoadingChange])
+  }, [disabled, debouncedUrl, lastCheckedUrl, value, onChange, onParamtersLoadingChange, setChartInfo])
 
   return (
     <Stack>
@@ -248,65 +253,71 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
             <Typography>Import Countries</Typography>
           </Stack>
         </Stack>
-        {
-          value.importCountries && (
-            <>
-              <Stack spacing={2}>
-                <Typography variant="h4">
-                  <span>Country Chart</span>
-                </Typography>
-                <Typography>
-                  <span dangerouslySetInnerHTML={{ __html: chart_info_chart }} />
-                </Typography>
-              </Stack>
-              <Stack spacing={1}>
-                <Typography>File name</Typography>
-                <TextField
-                  size="small"
-                  value={value.countryFileName}
-                  onChange={e => handleChange("countryFileName", e.target.value)}
-                  fullWidth
-                  disabled={disabled}
-                />
-              </Stack>
-              <Stack spacing={1}>
-                <Typography>Description</Typography>
-                <TextareaAutosize
-                  value={value.countryDescription}
-                  onChange={e => handleChange("countryDescription", e.target.value)}
-                  style={{ width: "100%", backgroundColor: "white", color: "black" }}
-                  minRows={5}
-                  disabled={disabled}
-                />
-              </Stack>
-              <Stack spacing={1}>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography>Categories</Typography>
-                  <Button onClick={() => handleChange("countryCategories", initial_categories_chart)} disabled={disabled} size="small" >Reset</Button>
-                </Stack>
-                <CategoriesSearchInput value={value.countryCategories} onChange={(newCategories) => handleChange("countryCategories", newCategories)} disabled={disabled} />
-              </Stack>
-              <Stack spacing={1}>
-                <Typography>
-                  If a file with the same name exists:
-                </Typography>
-                {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
-                  <Stack spacing={1}>
-                    <Stack direction={"row"} alignItems={"flex-start"}>
-                      <Radio disabled={disabled} checked={value.countryDescriptionOverwriteBehaviour == option.value} onClick={() => handleChange("countryDescriptionOverwriteBehaviour", option.value)} />
-                      < Box >
-                        <Typography>
-                          {option.title}
-                        </Typography>
-                        <Typography variant="subtitle2">{option.description}</Typography>
-                      </Box>
-                    </Stack>
+        {chartInfo && !chartInfo.hasCountries ? (
+          <Typography color="warning">This chart doesn't support Countries</Typography>
+        ) : (
+          <>
+            {
+              value.importCountries && (
+                <>
+                  <Stack spacing={2}>
+                    <Typography variant="h4">
+                      <span>Country Chart</span>
+                    </Typography>
+                    <Typography>
+                      <span dangerouslySetInnerHTML={{ __html: chart_info_chart }} />
+                    </Typography>
                   </Stack>
-                ))}
-              </Stack>
-            </>
-          )
-        }
+                  <Stack spacing={1}>
+                    <Typography>File name</Typography>
+                    <TextField
+                      size="small"
+                      value={value.countryFileName}
+                      onChange={e => handleChange("countryFileName", e.target.value)}
+                      fullWidth
+                      disabled={disabled}
+                    />
+                  </Stack>
+                  <Stack spacing={1}>
+                    <Typography>Description</Typography>
+                    <TextareaAutosize
+                      value={value.countryDescription}
+                      onChange={e => handleChange("countryDescription", e.target.value)}
+                      style={{ width: "100%", backgroundColor: "white", color: "black" }}
+                      minRows={5}
+                      disabled={disabled}
+                    />
+                  </Stack>
+                  <Stack spacing={1}>
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography>Categories</Typography>
+                      <Button onClick={() => handleChange("countryCategories", initial_categories_chart)} disabled={disabled} size="small" >Reset</Button>
+                    </Stack>
+                    <CategoriesSearchInput value={value.countryCategories} onChange={(newCategories) => handleChange("countryCategories", newCategories)} disabled={disabled} />
+                  </Stack>
+                  <Stack spacing={1}>
+                    <Typography>
+                      If a file with the same name exists:
+                    </Typography>
+                    {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
+                      <Stack spacing={1}>
+                        <Stack direction={"row"} alignItems={"flex-start"}>
+                          <Radio disabled={disabled} checked={value.countryDescriptionOverwriteBehaviour == option.value} onClick={() => handleChange("countryDescriptionOverwriteBehaviour", option.value)} />
+                          < Box >
+                            <Typography>
+                              {option.title}
+                            </Typography>
+                            <Typography variant="subtitle2">{option.description}</Typography>
+                          </Box>
+                        </Stack>
+                      </Stack>
+                    ))}
+                  </Stack>
+                </>
+              )
+            }
+          </>
+        )}
       </Stack>
     </Stack >
   )

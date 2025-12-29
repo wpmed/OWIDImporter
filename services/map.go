@@ -303,12 +303,12 @@ type ChartParameterChoice struct {
 }
 
 type ChartInfo struct {
-	Params       *[]ChartParameter
-	ParamsMap    map[string]string
-	StartYear    string
-	EndYear      string
-	Title        string
-	HasCountries bool
+	Params       *[]ChartParameter `json:"params"`
+	ParamsMap    map[string]string `json:"paramsMap"`
+	StartYear    string            `json:"startYear"`
+	EndYear      string            `json:"endYear"`
+	Title        string            `json:"title"`
+	HasCountries bool              `json:"hasCountries"`
 }
 
 /*
@@ -331,7 +331,7 @@ func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo,
 		page.MustWaitIdle()
 		page.MustWaitLoad()
 		page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-		time.Sleep(time.Millisecond * 500)
+		time.Sleep(time.Second * 1)
 
 		chartInfo.Params = GetChartParametersFromPage(page)
 		fmt.Println("Got chart params")
@@ -839,7 +839,7 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 func getMapHasCountriesFromPage(page *rod.Page) bool {
 	fmt.Println("Getting map start/end year + title: ", page.MustInfo().URL)
 
-	lineElements := page.MustElements("figure.chart .ContentSwitchers__Container div.Tabs div.Tabs__Tab .label")
+	lineElements := page.MustElements(".ContentSwitchers__Container div.Tabs div.Tabs__Tab .label")
 	hasLines := false
 
 	for _, el := range lineElements {

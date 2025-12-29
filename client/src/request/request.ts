@@ -168,6 +168,15 @@ export async function fetchTaskById(id: string) {
 
 export interface GetChartParametersResponse {
   params: ChartParamteres[]
+  info: ChartInfo
+}
+
+export interface ChartInfo {
+  params: ChartParamteres[]
+  title: string
+  hasCountries: boolean
+  startYear: string
+  endYear: string
 }
 
 export interface ChartParamteres {

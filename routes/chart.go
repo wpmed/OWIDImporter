@@ -34,10 +34,14 @@ func GetChartParameters(c *gin.Context) {
 		return
 	}
 
+	// if !strings.Contains(url, "tab=") {
+	// 	url += ""
+	// }
+
 	l, browser := services.GetBrowser()
 	defer l.Cleanup()
 	defer browser.Close()
-	params := services.GetChartParameters(browser, url)
+	info, err := services.GetChartInfo(browser, url, "")
 
-	c.JSON(http.StatusOK, gin.H{"params": params})
+	c.JSON(http.StatusOK, gin.H{"params": info.Params, "info": info})
 }
