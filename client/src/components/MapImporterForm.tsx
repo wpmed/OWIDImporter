@@ -1,10 +1,10 @@
-import { Box, Button, Checkbox, CircularProgress, InputAdornment, Radio, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
+import { Box, Button, Checkbox, InputAdornment, Radio, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
 import { DescriptionOverwriteBehaviour, SelectedParameter } from "../types"
 import { CategoriesSearchInput } from "./CategoriesSearchInput";
 import { useDebounce } from "use-debounce";
 import { useCallback, useEffect, useState } from "react";
 import { ChartInfo, getChartParameters } from "../request/request";
-import { Delete, FrontLoader } from "@mui/icons-material";
+import { Delete } from "@mui/icons-material";
 import { COMMONS_TEMPLATE_PREFIX, OWID_CHART_URL_PREFIX } from "../constants";
 import { searchPageExists } from "../request/commons";
 import { FieldLoading } from "./FieldLoader";
