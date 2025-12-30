@@ -194,8 +194,9 @@ export interface ChartParamteresChoice {
 export async function getChartParameters(url: string) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
 
-  const response = await fetch(`${API_BASE}/chart/parameters?url=${url}`, {
-    method: "GET",
+  const response = await fetch(`${API_BASE}/chart/parameters`, {
+    method: "POST",
+    body: JSON.stringify({ url }),
     headers: {
       "Content-Type": "application/json",
       ...(sessionId ? {

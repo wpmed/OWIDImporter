@@ -40,7 +40,7 @@ func BuildRoutes() *gin.Engine {
 	router.GET("/task/:id", GetTask)
 
 	// Chart related info
-	router.GET("/chart/parameters", GetChartParameters)
+	router.POST("/chart/parameters", GetChartParameters)
 
 	router.Static("/assets", filepath.Join(CLIENT_BUILD_PATH, "assets"))
 	// Handle SPA routing

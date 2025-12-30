@@ -1,10 +1,13 @@
-import { Box, Button, Checkbox, InputAdornment, Radio, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
+import { Box, Button, Checkbox, CircularProgress, InputAdornment, Radio, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
 import { DescriptionOverwriteBehaviour, SelectedParameter } from "../types"
 import { CategoriesSearchInput } from "./CategoriesSearchInput";
 import { useDebounce } from "use-debounce";
 import { useCallback, useEffect, useState } from "react";
 import { ChartInfo, getChartParameters } from "../request/request";
-import { Delete } from "@mui/icons-material";
+import { Delete, FrontLoader } from "@mui/icons-material";
+import { COMMONS_TEMPLATE_PREFIX, OWID_CHART_URL_PREFIX } from "../constants";
+import { searchPageExists } from "../request/commons";
+import { FieldLoading } from "./FieldLoader";
 
 export const DESCRIPTION_OVERWRITE_OPTIONS = [
   {
@@ -67,8 +70,13 @@ const chart_info_chart = `You can use $NAME (filename without extension), $START
 // { url, fileName, description, categories, descriptionOverwriteBehaviour, countryFileName, countryDescription, countryCategories, countryDescriptionOverwriteBehaviour, importCountries, generateTemplateCommons, selectedChartParameters, templateName }
 export function MapImporterForm({ value, onChange, onDelete, disabled, onParamtersLoadingChange, canRemove }: MapImporterFormProps) {
   const [debouncedUrl] = useDebounce(value.url, 1000);
+  const [debouncedTemplateName] = useDebounce(value.templateNameFormat, 1000);
   const [lastCheckedUrl, setLastCheckeUrl] = useState(value.url);
   const [chartInfo, setChartInfo] = useState<ChartInfo | null>(null);
+  const [lastCheckedTemplateName, setLastCheckedTemplateName] = useState("");
+  const [templateExistsLoading, setTemplateExistsLoading] = useState(false);
+  const [templateExists, setTemplateExists] = useState(false);
+  const [parametersLoading, setParametersLoading] = useState(false);
 
   const handleChange = useCallback(<K extends keyof MapImporterFormItem>(
     key: K,
@@ -78,10 +86,11 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
   }, [value, onChange]);
 
   useEffect(() => {
-    if (!disabled && debouncedUrl && debouncedUrl != lastCheckedUrl) {
+    if (!disabled && debouncedUrl && debouncedUrl != lastCheckedUrl && debouncedUrl.startsWith(OWID_CHART_URL_PREFIX)) {
       setLastCheckeUrl(debouncedUrl);
 
       onParamtersLoadingChange(true);
+      setParametersLoading(true);
       getChartParameters(debouncedUrl)
         .then(res => {
           if (res.params && res.params.length > 0) {
@@ -129,9 +138,37 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
         })
         .finally(() => {
           onParamtersLoadingChange(false);
+          setParametersLoading(false);
         })
     }
-  }, [disabled, debouncedUrl, lastCheckedUrl, value, onChange, onParamtersLoadingChange, setChartInfo])
+  }, [disabled, debouncedUrl, lastCheckedUrl, value, onChange, onParamtersLoadingChange, setChartInfo, setParametersLoading])
+
+  useEffect(() => {
+    if (chartInfo) {
+      let templateName = `${COMMONS_TEMPLATE_PREFIX}/${debouncedTemplateName}`;
+      templateName = templateName.replace("$CHART_NAME", chartInfo?.title);
+      if (value.selectedChartParameters.length > 0) {
+        value.selectedChartParameters.forEach((param) => {
+          templateName = templateName.replace(`$${param.key.toUpperCase()}`, param.valueName);
+        })
+      }
+      if (templateName != lastCheckedTemplateName) {
+        setLastCheckedTemplateName(templateName);
+        setTemplateExistsLoading(true);
+        searchPageExists(templateName)
+          .then((exists) => {
+            setTemplateExists(exists);
+          })
+          .catch(err => {
+            console.log("Error checking template exists: ", err);
+          })
+          .finally(() => {
+            setTemplateExistsLoading(false);
+          })
+      }
+    }
+
+  }, [chartInfo, debouncedTemplateName, value.selectedChartParameters, lastCheckedTemplateName, setLastCheckedTemplateName, setTemplateExistsLoading, setTemplateExists]);
 
   return (
     <Stack>
@@ -154,15 +191,31 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
 
         <Stack spacing={1}>
           <Typography>File URL</Typography>
-          <TextField
-            fullWidth
-            size="small"
-            value={value.url}
-            onChange={e => handleChange("url", e.target.value)}
-            placeholder={url_placeholder}
-            disabled={disabled}
-          />
+          <Box sx={{ position: "relative" }}>
+            <TextField
+              fullWidth
+              size="small"
+              value={value.url}
+              onChange={e => handleChange("url", e.target.value)}
+              placeholder={url_placeholder}
+              disabled={disabled}
+            />
+            {parametersLoading && (
+              <FieldLoading />
+            )}
+          </Box>
         </Stack>
+        {chartInfo?.title ? (
+          <Stack spacing={1}>
+            <Typography variant="subtitle2">Chart Name: <strong>{chartInfo.title}</strong></Typography>
+          </Stack>
+        ) : null}
+        {chartInfo?.startYear && chartInfo?.endYear ? (
+          <Stack flexDirection={"row"} alignItems={"center"}>
+            <Typography variant="subtitle2">Start Year: <strong>{chartInfo.startYear}</strong></Typography>
+            <Typography variant="subtitle2" sx={{ marginLeft: "5px" }}>End Year: <strong>{chartInfo.endYear}</strong></Typography>
+          </Stack>
+        ) : null}
 
         {value.selectedChartParameters.length > 0 && (
           <Stack spacing={1}>
@@ -228,28 +281,37 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
             <Typography>Automatically Create Template Page On Commons</Typography>
           </Stack>
           {value.generateTemplateCommons && (
-            <Stack spacing={1}>
-              <Typography>Template name</Typography>
-              <TextField
-                size="small"
-                value={value.templateNameFormat}
-                onChange={e => handleChange("templateNameFormat", e.target.value)}
-                fullWidth
-                disabled={disabled}
-                slotProps={{
-                  input: {
-                    startAdornment: <InputAdornment position="start">Template:OWID/</InputAdornment>,
-                  },
-                }}
-              />
-            </Stack>
+            <>
+              <Stack spacing={1}>
+                <Typography>Template name</Typography>
+                <Box sx={{ position: "relative" }}>
+                  <TextField
+                    size="small"
+                    value={value.templateNameFormat}
+                    onChange={e => handleChange("templateNameFormat", e.target.value)}
+                    fullWidth
+                    disabled={disabled}
+                    slotProps={{
+                      input: {
+                        startAdornment: <InputAdornment position="start">Template:OWID/</InputAdornment>,
+                      },
+                    }}
+                  />
+                  {templateExistsLoading && (
+                    <FieldLoading />
+                  )}
+                </Box>
+              </Stack>
+              {templateExists && lastCheckedTemplateName ? (
+                <Typography color="warning">A template with this name <a style={{ textDecoration: "underline" }} href={`${import.meta.env.VITE_MW_BASE_URL}/${lastCheckedTemplateName}`} target="_blank" >already exists</a></Typography>
+              ) : null}
+            </>
           )}
         </Stack>
 
-
         <Stack>
           <Stack direction="row" alignItems={"center"} >
-            <Checkbox checked={value.importCountries} disabled={disabled} onClick={() => handleChange("importCountries", !value.importCountries)} />
+            <Checkbox checked={value.importCountries} disabled={disabled || (chartInfo != null && !chartInfo.hasCountries)} onClick={() => handleChange("importCountries", !value.importCountries)} />
             <Typography>Import Countries</Typography>
           </Stack>
         </Stack>

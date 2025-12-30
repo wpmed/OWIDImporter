@@ -1,13 +1,19 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/services"
 	"github.com/wpmed-videowiki/OWIDImporter/sessions"
 )
+
+type ChartParametersData struct {
+	Url string `json:"url"`
+}
 
 func GetChartParameters(c *gin.Context) {
 	sessionId := c.Request.Header.Get("sessionId")
@@ -28,15 +34,27 @@ func GetChartParameters(c *gin.Context) {
 		return
 	}
 
-	url := c.Query("url")
+	var data ChartParametersData
+	if err := c.BindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid data"})
+		return
+	}
+
+	url := data.Url
 	if url == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid url param"})
 		return
 	}
 
-	// if !strings.Contains(url, "tab=") {
-	// 	url += ""
-	// }
+	fmt.Println("================================== Incoming url: ", url)
+	if !strings.Contains(url, "tab=") {
+		if strings.Contains(url, "&") {
+			url = fmt.Sprintf("%s%s", url, "&tab=map")
+		} else if !strings.Contains(url, "?") {
+			url = fmt.Sprintf("%s%s", url, "?tab=map")
+		}
+	}
+	fmt.Println("Final url: ", url)
 
 	l, browser := services.GetBrowser()
 	defer l.Cleanup()
