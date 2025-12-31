@@ -11,6 +11,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/dghubble/oauth1"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
@@ -263,4 +264,8 @@ func DownloadFile(url, filepath string) (err error) {
 	}
 
 	return nil
+}
+
+func ToTitle(s string) string {
+	return strings.ToUpper(s[:1]) + s[1:]
 }
