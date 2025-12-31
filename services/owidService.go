@@ -164,7 +164,7 @@ func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[
 		templateName = strings.ReplaceAll(templateName, fmt.Sprintf("$%s", k), v)
 	}
 
-	return fmt.Sprintf("Template:OWID/%s", templateName)
+	return fmt.Sprintf("Template:OWID/%s", utils.ToTitle(templateName))
 }
 
 func GetChartNameFromUrl(url string) (string, error) {

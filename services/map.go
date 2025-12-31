@@ -134,6 +134,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	chartParamsMap := chartInfo.ParamsMap
 	templateName := GenerateTemplateCommonsName(data.TemplateNameFormat, task.ChartName, chartParamsMap)
 	task.CommonsTemplateName = templateName
+	fmt.Println("==================== COMMONS TEMPLATE NAME: ", templateName, "=====================")
 	task.Update()
 
 	startYear := chartInfo.StartYear
@@ -837,7 +838,7 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 }
 
 func getMapHasCountriesFromPage(page *rod.Page) bool {
-	fmt.Println("Getting map start/end year + title: ", page.MustInfo().URL)
+	fmt.Println("Getting Has Countries From Page: ", page.MustInfo().URL)
 
 	lineElements := page.MustElements(".ContentSwitchers__Container div.Tabs div.Tabs__Tab .label")
 	hasLines := false
@@ -849,6 +850,7 @@ func getMapHasCountriesFromPage(page *rod.Page) bool {
 			continue
 		}
 
+		fmt.Println("Tab item: ", text)
 		text = strings.ToLower(text)
 		if text == "line" {
 			hasLines = true
