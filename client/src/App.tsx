@@ -21,21 +21,28 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Task, TaskTypeEnum } from './types';
 import { fetchTasks, logout } from './request/request';
 import { TaskList } from './components/TaskList';
-import { ChartImporter } from './components/ChartImporter';
 
 const drawerWidth = 240;
 
 enum TABS {
-  MAP_LSIT = 0,
+  MAP_LIST = 0,
   MAP_DETAILS = 1,
   CHART_LIST = 2,
   CHART_DETAILS = 3,
+  IMPORT_MAP = 4,
+  BLANK = 5,
 }
 
 const LIST_ITEMS = [
   {
-    id: TABS.MAP_LSIT,
+    id: TABS.MAP_LIST,
     title: "Map",
+    icon: <MapIcon />,
+    taskType: TaskTypeEnum.MAP,
+  },
+  {
+    id: TABS.IMPORT_MAP,
+    title: "Import Map",
     icon: <MapIcon />,
     taskType: TaskTypeEnum.MAP,
   },
@@ -49,7 +56,7 @@ const LIST_ITEMS = [
 
 
 export default function App() {
-  const [tab, setTab] = useState(TABS.MAP_LSIT);
+  const [tab, setTab] = useState(TABS.MAP_LIST);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [tasks, setTasks] = useState<Task[]>([])
 
@@ -59,7 +66,7 @@ export default function App() {
   const username = window.localStorage.getItem(USERNAME_KEY);
 
   const selectedTaskType = useMemo(() => {
-    if ([TABS.MAP_LSIT, TABS.MAP_DETAILS].includes(tab)) {
+    if ([TABS.MAP_LIST, TABS.MAP_DETAILS].includes(tab)) {
       return TaskTypeEnum.MAP
     }
     return TaskTypeEnum.CHART
@@ -74,13 +81,12 @@ export default function App() {
   }
 
   const onNewClick = () => {
-    if (selectedTaskType === TaskTypeEnum.MAP) {
-      setSelectedTaskId("");
-      setTab(TABS.MAP_DETAILS);
-    } else if (selectedTaskType == TaskTypeEnum.CHART) {
-      setSelectedTaskId("");
-      setTab(TABS.CHART_DETAILS);
-    }
+    console.log("On New Click")
+    setSelectedTaskId("");
+    setTab(TABS.BLANK);
+    setTimeout(() => {
+      setTab(TABS.IMPORT_MAP);
+    }, 50)
   }
 
   const onTaskClick = (task: Task) => {
@@ -93,12 +99,12 @@ export default function App() {
   }
 
   const onNavigateToList = useCallback(() => {
-    setTab(TABS.MAP_LSIT);
+    setTab(TABS.MAP_LIST);
     window.scrollTo({ left: 0, top: 0 })
   }, [setTab])
 
   useEffect(() => {
-    if (sessionId && [TABS.MAP_LSIT, TABS.CHART_LIST].includes(tab)) {
+    if (sessionId && [TABS.MAP_LIST, TABS.CHART_LIST].includes(tab)) {
       console.log("SHould get task list");
       fetchTasks(selectedTaskType)
         .then(res => {
@@ -138,7 +144,16 @@ export default function App() {
               <List>
                 {LIST_ITEMS.map(item => (
                   <ListItem key={item.id} disablePadding>
-                    <ListItemButton onClick={() => setTab(item.id)} selected={item.taskType === selectedTaskType}>
+                    <ListItemButton onClick={() => {
+                      console.log("On Click ", item)
+                      if (item.id === TABS.IMPORT_MAP) {
+                        onNewClick()
+                      } else {
+                        setSelectedTaskId("");
+                        setTab(item.id);
+                      }
+                    }}
+                      selected={item.id === tab}>
                       <ListItemIcon>
                         {item.icon}
                       </ListItemIcon>
@@ -159,17 +174,11 @@ export default function App() {
           </Drawer>
           <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
             <Toolbar />
-            {[TABS.MAP_LSIT, TABS.CHART_LIST].includes(tab) ? (
+            {[TABS.MAP_LIST, TABS.CHART_LIST].includes(tab) ? (
               <TaskList tasks={tasks} taskType={selectedTaskType} onNew={onNewClick} onTaskClick={onTaskClick} />
-            ) : (
-              <>
-                {selectedTaskType == TaskTypeEnum.MAP ? (
-                  <MapImporter taskId={selectedTaskId} onNavigateToList={onNavigateToList} />
-                ) : (
-                  <ChartImporter taskId={selectedTaskId} />
-                )}
-              </>
-            )}
+            ) : [TABS.IMPORT_MAP, TABS.MAP_DETAILS].includes(tab) ? (
+              <MapImporter taskId={selectedTaskId} onNavigateToList={onNavigateToList} />
+            ) : null}
           </Box>
         </>
       ) : (
