@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
+	"github.com/wpmed-videowiki/OWIDImporter/owidparser"
 	"github.com/wpmed-videowiki/OWIDImporter/utils"
 )
 
@@ -150,10 +151,11 @@ type ContentSlot struct {
 }
 
 const (
-	DOWNLOAD_BUTTON_SELECTOR   = `figure div[data-track-note="chart_click_download"] button`
-	DOWNLOAD_SVG_SELECTOR      = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
-	DOWNLOAD_SVG_ICON_SELECTOR = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2) .download-modal__download-preview-img"
-	HEADLESS                   = true
+	DOWNLOAD_BUTTON_SELECTOR       = `figure div[data-track-note="chart_click_download"] button`
+	PLAY_TIMELAPSE_BUTTON_SELECTOR = `.timeline-component .ActionButton button`
+	DOWNLOAD_SVG_SELECTOR          = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
+	DOWNLOAD_SVG_ICON_SELECTOR     = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2) .download-modal__download-preview-img"
+	HEADLESS                       = true
 )
 
 func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[string]string) string {
@@ -256,6 +258,12 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 	}
 	fmt.Println("Uploading file: ", fileInfo.FilePath)
 
+	// Cleanup file and load it again
+	owidparser.CleanupSVGForUpload(fileInfo.FilePath)
+	fileInfo, err = getFileInfo(downloadPath)
+	if err != nil {
+		return filename, "", err
+	}
 	res, err := utils.DoApiReq[QueryResponse](user, map[string]string{
 		"action": "query",
 		"prop":   "imageinfo",

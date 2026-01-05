@@ -128,6 +128,8 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		task.Status = models.TaskStatusFailed
 		task.Update()
 		utils.SendWSTask(task)
+		browser.Close()
+		l.Cleanup()
 		return fmt.Errorf("Error getting chart info")
 	}
 
@@ -206,12 +208,12 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing && chartInfo.HasCountries {
 		fmt.Print("================= STARTED IMPORTING COUNTRIES")
 		result := func() error {
-			countriesList, title, startYear, endYear, err := GetCountryList(url)
-			if err != nil {
-				fmt.Println("Error fetching country list", err)
-				return err
-			}
-			fmt.Println("Countries:====================== ", countriesList)
+			// countriesList, title, startYear, endYear, err := GetCountryList(url)
+			// if err != nil {
+			// 	fmt.Println("Error fetching country list", err)
+			// 	return err
+			// }
+			fmt.Println("Countries:====================== ", chartInfo.CountriesList)
 
 			startTime := time.Now()
 			g, _ := errgroup.WithContext(context.Background())
@@ -225,7 +227,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			fmt.Println("================================================")
 			fmt.Println("================================================")
 			fmt.Println("================================================")
-			for _, country := range countriesList {
+			for _, country := range chartInfo.CountriesList {
 				country := country
 				g.Go(func(country, downloadPath string, token *string) func() error {
 					return func() error {
@@ -304,12 +306,13 @@ type ChartParameterChoice struct {
 }
 
 type ChartInfo struct {
-	Params       *[]ChartParameter `json:"params"`
-	ParamsMap    map[string]string `json:"paramsMap"`
-	StartYear    string            `json:"startYear"`
-	EndYear      string            `json:"endYear"`
-	Title        string            `json:"title"`
-	HasCountries bool              `json:"hasCountries"`
+	Params        *[]ChartParameter `json:"params"`
+	ParamsMap     map[string]string `json:"paramsMap"`
+	StartYear     string            `json:"startYear"`
+	EndYear       string            `json:"endYear"`
+	Title         string            `json:"title"`
+	HasCountries  bool              `json:"hasCountries"`
+	CountriesList []string          `json:"countriesList"`
 }
 
 /*
@@ -321,38 +324,50 @@ type ChartInfo struct {
 
 func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo, error) {
 	chartInfo := ChartInfo{}
-	err := rod.Try(func() {
-		page := browser.MustPage("")
-		defer page.Close()
-		page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-		page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
+	var err error
 
-		fmt.Println("Before navigate")
-		page.MustNavigate(url)
-		page.MustWaitIdle()
-		page.MustWaitLoad()
-		page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-		time.Sleep(time.Second * 1)
+	for i := 0; i < 2; i++ {
+		err = rod.Try(func() {
+			page := browser.MustPage("")
+			defer page.Close()
+			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 
-		chartInfo.Params = GetChartParametersFromPage(page)
-		fmt.Println("Got chart params")
-		chartInfo.ParamsMap = GetChartParametersMapFromPage(page, selectedParams)
-		fmt.Println("Got chart params map")
+			fmt.Println("Before navigate")
+			page.MustNavigate(url)
+			page.MustWaitIdle()
+			page.MustWaitLoad()
 
-		startYear, endYear, title := getMapStartEndYearTitleFromPage(page)
-		fmt.Println("start/end year title")
-		chartInfo.StartYear = startYear
-		chartInfo.EndYear = endYear
-		chartInfo.Title = title
-		chartInfo.HasCountries = getMapHasCountriesFromPage(page)
-		fmt.Println("Got has countries")
+			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
+			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+			page.MustWaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
+			time.Sleep(time.Second * 1)
 
-		fmt.Println("============= CHART INTO ***************************************** ", chartInfo)
-		_, err := GetPageCanDownload(page)
-		if err != nil {
-			panic(err)
+			chartInfo.Params = GetChartParametersFromPage(page)
+			fmt.Println("Got chart params")
+			chartInfo.ParamsMap = GetChartParametersMapFromPage(page, selectedParams)
+			fmt.Println("Got chart params map")
+
+			startYear, endYear, title := getMapStartEndYearTitleFromPage(page)
+			fmt.Println("start/end year title")
+			chartInfo.StartYear = startYear
+			chartInfo.EndYear = endYear
+			chartInfo.Title = title
+			chartInfo.HasCountries = getMapHasCountriesFromPage(page)
+			fmt.Println("Got has countries")
+			if chartInfo.HasCountries {
+				chartInfo.CountriesList = GetCountryListFromPage(page)
+			}
+
+			fmt.Println("============= CHART INTO ***************************************** ", chartInfo)
+			_, err := GetPageCanDownload(page)
+			if err != nil {
+				panic(err)
+			}
+		})
+		if err == nil {
+			break
 		}
-	})
+	}
 
 	return &chartInfo, err
 }
@@ -464,6 +479,7 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 	fmt.Println("Before navigate")
 	page.MustNavigate(url)
 	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+	page.WaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
 	fmt.Println("FOUND ELEMENT")
 
 	fmt.Println("DOWNLOADING MAP FILE")
@@ -951,10 +967,10 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, t
 	url = fmt.Sprintf("%s&time=latest", url)
 	traverseDownloadRegion(browser, task, data, user, chartParamsMap, token, chartName, title, region, url, downloadPath)
 	task.Reload()
+	// Sleep for 10 seconds to avoid API complains of reuploading
+	// Attach country data to the first file metadata on commons
+	time.Sleep(time.Second * 10)
 	if task.Status != models.TaskStatusFailed {
-		// Sleep for 10 seconds to avoid API complains of reuploading
-		time.Sleep(time.Second * 10)
-		// Attach country data to the first file metadata on commons
 		metadata, err := getRegionFileMetadata(task, region)
 		if err != nil {
 			fmt.Println("Error generating metadata: ", err)

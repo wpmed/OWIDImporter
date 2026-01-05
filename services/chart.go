@@ -324,6 +324,32 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 	return nil
 }
 
+func GetCountryListFromPage(page *rod.Page) []string {
+	countries := []string{}
+
+	elements := page.MustElements(".entity-selector__content li")
+	for _, element := range elements {
+		label := element.MustElement(".label")
+		value := element.MustElement(".value")
+		if value != nil && value.MustText() != "" && strings.ToLower(value.MustText()) == "no data" {
+			fmt.Println("No data for country: ", element.MustText())
+			continue
+		}
+		country := strings.TrimSpace(label.MustText())
+		countryCode, ok := constants.COUNTRY_CODES[country]
+		if !ok {
+			fmt.Println("Country not found", country)
+			continue
+		}
+		// check if country is not already in list
+		if !utils.Contains(countries, countryCode) {
+			countries = append(countries, countryCode)
+		}
+	}
+
+	return countries
+}
+
 func GetCountryList(url string) ([]string, string, string, string, error) {
 	// url := fmt.Sprintf("%s%s?tab=chart", constants.OWID_BASE_URL, chartName)
 	l, browser := GetBrowser()
@@ -333,18 +359,22 @@ func GetCountryList(url string) ([]string, string, string, string, error) {
 	defer l.Cleanup()
 	defer browser.Close()
 
-	page := browser.MustPage("")
-	fmt.Println("Getting  country list")
-	page.MustSetViewport(1920, 1080, 1, false)
-
 	countries := []string{}
 	startYear := ""
 	endYear := ""
 	title := ""
 
 	err := rod.Try(func() {
-		page = page.Timeout(time.Second * constants.CHART_WAIT_TIME_SECONDS)
+		page := browser.MustPage("")
+		fmt.Println("Getting  country list")
+		page.MustSetViewport(1920, 1080, 1, false)
 		page.MustNavigate(url)
+		page.MustWaitIdle()
+		page.MustWaitLoad()
+
+		page = page.Timeout(time.Second * constants.CHART_WAIT_TIME_SECONDS)
+		page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+		page.MustWaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
 		fmt.Println("waiting for entity selector")
 		page.MustElement(".entity-selector__content")
 		fmt.Println("found entity selector")

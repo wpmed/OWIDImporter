@@ -448,6 +448,52 @@ func getCountryID(entityName string) string {
 	return strings.ReplaceAll(entityName, " ", "-")
 }
 
+func CleanupSVGForUpload(mapPath string) error {
+	var genericSVG GenericSVG
+	svgData, err := os.ReadFile(mapPath)
+	if err != nil {
+		return err
+	}
+
+	// Clean up the SVG content to remove duplicate xmlns declarations
+	svgContent := string(svgData)
+
+	// Remove duplicate xmlns declarations but keep the first one
+	lines := strings.Split(svgContent, "\n")
+	var cleanedLines []string
+	seenXmlns := false
+
+	for _, line := range lines {
+		// If this line contains xmlns="http://www.w3.org/2000/svg" and we've seen it before, skip it
+		if strings.Contains(line, `xmlns="http://www.w3.org/2000/svg"`) {
+			if seenXmlns && !strings.Contains(line, "<svg") {
+				// Skip this line as it's a duplicate xmlns
+				continue
+			}
+			seenXmlns = true
+		}
+		cleanedLines = append(cleanedLines, line)
+	}
+
+	cleanedSVGString := strings.Join(cleanedLines, "\n")
+
+	if err := xml.Unmarshal([]byte(cleanedSVGString), &genericSVG); err != nil {
+		log.Printf("Generic struct parser error: %v", err)
+		return err
+	}
+
+	CleanupAnchorElementsHref(&genericSVG)
+	CleanupTextElementsPreserveStructure(&genericSVG)
+
+	err = WriteSVGFile(&genericSVG, mapPath)
+	if err != nil {
+		fmt.Println("============****************=========== Error Writing SVG", err)
+		return err
+	}
+
+	return nil
+}
+
 func GenerateImages(config *OWIDGrapherConfig, title string, titleYear int, dataPath, metadataPath, mapPath, outPath string) (*[]WriteResult, error) {
 	dataBytes, err := os.ReadFile(dataPath)
 	if err != nil {
@@ -1025,6 +1071,18 @@ func extractAllTextContent(element *GenericElement) string {
 	}
 
 	return textBuilder.String()
+}
+
+func CleanupAnchorElementsHref(svg *GenericSVG) {
+	links := svg.FindElements("a")
+	for _, link := range links {
+		href := strings.ToLower(link.Attributes["href"])
+		// Custom HREF's aren't allowed by the API
+		if !strings.HasPrefix(href, "http") {
+			link.Attributes["href"] = "#"
+			fmt.Println("***************************** Found HREF: ", href)
+		}
+	}
 }
 
 // Alternative version that preserves more structure if needed
