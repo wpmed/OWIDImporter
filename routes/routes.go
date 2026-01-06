@@ -41,6 +41,7 @@ func BuildRoutes() *gin.Engine {
 
 	// Chart related info
 	router.POST("/chart/parameters", GetChartParameters)
+	router.POST("/chart/parameters/multi", GetMultiChartParameters)
 
 	router.Static("/assets", filepath.Join(CLIENT_BUILD_PATH, "assets"))
 	// Handle SPA routing

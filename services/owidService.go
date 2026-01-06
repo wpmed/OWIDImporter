@@ -152,9 +152,11 @@ type ContentSlot struct {
 
 const (
 	DOWNLOAD_BUTTON_SELECTOR       = `figure div[data-track-note="chart_click_download"] button`
-	PLAY_TIMELAPSE_BUTTON_SELECTOR = `.timeline-component .ActionButton button`
+	PLAY_TIMELAPSE_BUTTON_SELECTOR = `.GrapherTimeline`
 	DOWNLOAD_SVG_SELECTOR          = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
 	DOWNLOAD_SVG_ICON_SELECTOR     = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2) .download-modal__download-preview-img"
+	START_MARKER_SELECTOR          = ".startMarker"
+	END_MARKER_SELECTOR            = ".endMarker"
 	HEADLESS                       = true
 )
 
@@ -240,6 +242,7 @@ func createCommonsTemplatePage(user *models.User, token, title, wikiText string)
 		"ignorewarnings": "1",
 		"token":          token,
 	}
+	fmt.Println("---------------- CREATING COMMONS TEMPLATE: ", title)
 	_, err := utils.DoApiReq[interface{}](user, params, nil)
 	if err != nil {
 		return "", err

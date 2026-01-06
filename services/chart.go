@@ -205,7 +205,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			page.MustNavigate(url)
 			fmt.Println("Navigated to url", url)
 			fmt.Println("Before timeline startMarker")
-			page.Timeout(timeoutDuration).MustElement(".timeline-component .startMarker")
+			page.Timeout(timeoutDuration).MustElement(START_MARKER_SELECTOR)
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
 			fmt.Println("After timeline startMarker")
 			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
@@ -401,7 +401,7 @@ func GetCountryList(url string) ([]string, string, string, string, error) {
 		}
 
 		// Get start/end years
-		marker := page.MustElement(".handle.startMarker")
+		marker := page.MustElement(START_MARKER_SELECTOR)
 		fmt.Println("Got marker", marker)
 		startYear = *marker.MustAttribute("aria-valuemin")
 		endYear = *marker.MustAttribute("aria-valuemax")

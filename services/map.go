@@ -269,6 +269,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			// Create template page in commons
 			fmt.Print("============= GENERTING COMMONS TEMPLATE")
 			wikiText, err := GetMapTemplate(task.ID)
+			fmt.Println("GOT WIKITEXT: ", err)
 			if err == nil {
 				title, err := createCommonsTemplatePage(user, token, task.CommonsTemplateName, wikiText)
 				if err == nil {
@@ -330,6 +331,7 @@ func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo,
 		err = rod.Try(func() {
 			page := browser.MustPage("")
 			defer page.Close()
+			page.MustSetViewport(1920, 1080, 1, false)
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 
 			fmt.Println("Before navigate")
@@ -339,7 +341,9 @@ func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo,
 
 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
 			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+			fmt.Println("FOUND DOWNLOAD BTN")
 			page.MustWaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
+			fmt.Println("FOUND PLAY TIMELAPSE BTN")
 			time.Sleep(time.Second * 1)
 
 			chartInfo.Params = GetChartParametersFromPage(page)
@@ -348,7 +352,7 @@ func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo,
 			fmt.Println("Got chart params map")
 
 			startYear, endYear, title := getMapStartEndYearTitleFromPage(page)
-			fmt.Println("start/end year title")
+			fmt.Println("start/end year title", startYear, endYear, title)
 			chartInfo.StartYear = startYear
 			chartInfo.EndYear = endYear
 			chartInfo.Title = title
@@ -373,8 +377,8 @@ func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo,
 }
 
 func GetPageCanDownload(page *rod.Page) (bool, error) {
-	startMarker := page.MustElement(".startMarker")
-	endMarker := page.MustElement(".endMarker")
+	startMarker := page.MustElement(START_MARKER_SELECTOR)
+	endMarker := page.MustElement(END_MARKER_SELECTOR)
 	if startMarker == nil && endMarker == nil {
 		return false, fmt.Errorf("No start & end markers")
 	}
@@ -485,8 +489,8 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 	fmt.Println("DOWNLOADING MAP FILE")
 	page.WaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 	// TODO: REMVOE THIS, just trying to scroll along
-	startMarker := page.MustElement(".startMarker")
-	endMarker := page.MustElement(".endMarker")
+	startMarker := page.MustElement(START_MARKER_SELECTOR)
+	endMarker := page.MustElement(END_MARKER_SELECTOR)
 	if startMarker != nil || endMarker != nil {
 		startYear := ""
 		endYear := ""
@@ -884,7 +888,7 @@ func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
 	endYear := ""
 	title := ""
 
-	marker := page.MustElement(".handle.startMarker")
+	marker := page.MustElement(START_MARKER_SELECTOR)
 	fmt.Println("Got marker", marker)
 	startYear = *marker.MustAttribute("aria-valuemin")
 	endYear = *marker.MustAttribute("aria-valuemax")
@@ -918,7 +922,7 @@ func getMapStartEndYearTitle(browser *rod.Browser, url string) (string, string, 
 			fmt.Println("Before idle")
 			page.MustWaitIdle()
 			fmt.Println("After idle")
-			marker := page.MustElement(".handle.startMarker")
+			marker := page.MustElement(START_MARKER_SELECTOR)
 			fmt.Println("Got marker", marker)
 			startYear = *marker.MustAttribute("aria-valuemin")
 			endYear = *marker.MustAttribute("aria-valuemax")
