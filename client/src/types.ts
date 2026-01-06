@@ -67,3 +67,22 @@ export interface SelectedParameter {
   valueName: string
 }
 
+export interface MapImporterFormItem {
+  id: string
+  url: string
+  fileName: string
+  description: string
+  categories: string[]
+  descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour
+
+  countryFileName: string
+  countryDescription: string
+  countryCategories: string[]
+  countryDescriptionOverwriteBehaviour: DescriptionOverwriteBehaviour
+  importCountries: boolean
+  generateTemplateCommons: boolean
+  selectedChartParameters: SelectedParameter[]
+  templateNameFormat: string
+  linkVerified: boolean
+  templateExists: boolean
+}

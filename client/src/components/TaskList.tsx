@@ -51,7 +51,7 @@ export function TaskList({ tasks, taskType, onTaskClick, onNew }: TaskListProps)
                       </Typography>
                     </Grid>
                   </Grid>
-                  {task.generateTemplateCommons == 1 && task.commonsTemplateName ? (
+                  {task.generateTemplateCommons == 1 && task.commonsTemplateName && task.status == TaskStatusEnum.Done ? (
                     <Grid container spacing={1}>
                       <Grid size={3}>
                         <Typography variant="body2">

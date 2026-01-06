@@ -2,49 +2,12 @@ import { Accordion, AccordionDetails, AccordionSummary, Box, Button, CircularPro
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SocketMessage, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
 import { cancelTask, createTask, fetchTaskById, retryTask } from "../request/request";
-import { DescriptionOverwriteBehaviour, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
+import { DescriptionOverwriteBehaviour, MapImporterFormItem, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
 import { copyText, extractAndReplaceCategoriesFromDescription, getStatusColor, getTaskProcessStatusColor } from "../utils";
-import { MapImporterForm, MapImporterFormItem } from "./MapImporterForm";
+import { MapImporterForm } from "./MapImporterForm";
 import { Add, ExpandMore } from "@mui/icons-material";
-
-
-const initial_template_name = `$CHART_NAME`
-const initial_description_map = `=={{int:filedesc}}==
-{{Information
-|description={{en|1=$TITLE, $REGION}}
-|author = Our World In Data
-|date= $YEAR
-|source = $URL
-|permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
-|other versions =
-}}
-{{Map showing old data|year=$YEAR}}
-=={{int:license-header}}==
-{{cc-by-4.0}}
-`;
-const initial_categories_map = [
-  "$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}",
-  "SVG maps by Our World in Data",
-  "Uploaded by OWID importer tool"
-]
-
-const initial_filename_map = `$NAME, $REGION, $YEAR.svg`;
-
-const initial_description_chart = `=={{int:filedesc}}==
-{{Information
-|description={{en|1=$TITLE, $REGION}}
-|author = Our World In Data
-|date= $END_YEAR
-|source = $URL
-|permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
-|other versions =
-}}
-=={{int:license-header}}==
-{{cc-by-4.0}}
-`;
-// [[Category:Uploaded by OWID importer tool]]
-const initial_categories_chart = ["Uploaded by OWID importer tool"]
-const initial_filename_chart = `$NAME, $START_YEAR to $END_YEAR, $REGION.svg`;
+import { MultiImportModal } from "./MultiImportModal";
+import { generateBlankImport } from "../constants";
 
 
 export interface MapImporterSubmitData {
@@ -58,31 +21,11 @@ export interface MapImporterProps {
   onNavigateToList: () => void
 }
 
-const initialImport: MapImporterFormItem = {
-  id: Date.now().toString(),
-  url: "",
-  fileName: initial_filename_map,
-  description: initial_description_map,
-  categories: initial_categories_map,
-  descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour.ALL,
-  importCountries: true,
-  generateTemplateCommons: true,
-  selectedChartParameters: [],
-  templateNameFormat: initial_template_name,
-
-  // Country
-  countryFileName: initial_filename_chart,
-  countryDescription: initial_description_chart,
-  countryCategories: initial_categories_chart,
-  countryDescriptionOverwriteBehaviour: DescriptionOverwriteBehaviour.ALL,
-}
-
 export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImporterProps) {
   const [loading, setLoading] = useState(false);
   const [parametersLoading, setParametersLoading] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  // const [chartParameters, setChartParameters] = useState<ChartParamteres[]>([]);
-  const [imports, setImports] = useState([{ ...initialImport, id: Date.now().toString() }]);
+  const [imports, setImports] = useState([generateBlankImport()]);
   const [expanded, setExpanded] = useState<string | false>(imports[0].id);
 
 
@@ -129,13 +72,13 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
 
         const { description, categories } = extractAndReplaceCategoriesFromDescription(res.task.description)
         const importItem: MapImporterFormItem = {
-          ...initialImport,
-          id: Date.now().toString(),
+          ...generateBlankImport(),
           description,
           categories,
           url: task.url,
           fileName: task.filename,
           descriptionOverwriteBehaviour: task.descriptionOverwriteBehaviour,
+          templateNameFormat: task.commonsTemplateNameFormat || "",
         };
 
         if (res.task.importCountries && res.task.countryDescription) {
@@ -349,6 +292,15 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
                 <span>OWID Importer</span>
               </Typography>
             </Stack>
+            {!task && (
+
+              <Stack spacing={2}>
+                <MultiImportModal onAdd={(newImports) => setImports((oldImports) => {
+                  const allImports = [...oldImports, ...newImports].filter(imp => imp.url.trim())
+                  return allImports;
+                })} />
+              </Stack>
+            )}
             <Stack spacing={2}>
               {task && (
                 <Stack direction={"row"} justifyContent={"space-between"}>
@@ -414,7 +366,7 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
                   variant="outlined"
                   color="primary"
                   onClick={() => {
-                    const newImport = { ...initialImport, id: Date.now().toString() };
+                    const newImport = generateBlankImport();
                     setImports([...imports, newImport]);
                     setExpanded(newImport.id);
                     window.scrollTo({ left: 0, top: 0 })

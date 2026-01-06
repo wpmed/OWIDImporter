@@ -171,6 +171,14 @@ export interface GetChartParametersResponse {
   info: ChartInfo
 }
 
+export interface GetMultiChartParametersResponse {
+  data: {
+    url: string
+    params: ChartParamteres[]
+    info: ChartInfo
+  }
+}
+
 export interface ChartInfo {
   params: ChartParamteres[]
   title: string
@@ -206,6 +214,25 @@ export async function getChartParameters(url: string) {
   });
 
   const responseData = await response.json() as GetChartParametersResponse;
+
+  return responseData;
+}
+
+export async function getMultiChartParameters(urls: string[]) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+
+  const response = await fetch(`${API_BASE}/chart/parameters/multi`, {
+    method: "POST",
+    body: JSON.stringify({ urls }),
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionId ? {
+        [SESSION_ID_KEY]: sessionId
+      } : {})
+    }
+  });
+
+  const responseData = await response.json() as GetMultiChartParametersResponse;
 
   return responseData;
 }

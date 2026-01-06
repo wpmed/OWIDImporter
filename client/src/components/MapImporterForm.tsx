@@ -1,11 +1,11 @@
 import { Box, Button, Checkbox, InputAdornment, Radio, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
-import { DescriptionOverwriteBehaviour, SelectedParameter } from "../types"
+import { DescriptionOverwriteBehaviour, MapImporterFormItem, SelectedParameter } from "../types"
 import { CategoriesSearchInput } from "./CategoriesSearchInput";
 import { useDebounce } from "use-debounce";
 import { useCallback, useEffect, useState } from "react";
 import { ChartInfo, getChartParameters } from "../request/request";
 import { Delete } from "@mui/icons-material";
-import { COMMONS_TEMPLATE_PREFIX, OWID_CHART_URL_PREFIX } from "../constants";
+import { CHART_INFO_CHART, CHART_INFO_MAP, COMMONS_TEMPLATE_PREFIX, INITIAL_CATEGORIES_CHART, INITIAL_CATEGORIES_MAP, OWID_CHART_URL_PREFIX, URL_PLACEHOLDER } from "../constants";
 import { searchPageExists } from "../request/commons";
 import { FieldLoading } from "./FieldLoader";
 
@@ -27,24 +27,6 @@ export const DESCRIPTION_OVERWRITE_OPTIONS = [
   }
 ]
 
-export interface MapImporterFormItem {
-  id: string
-  url: string
-  fileName: string
-  description: string
-  categories: string[]
-  descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour
-
-  countryFileName: string
-  countryDescription: string
-  countryCategories: string[]
-  countryDescriptionOverwriteBehaviour: DescriptionOverwriteBehaviour
-  importCountries: boolean
-  generateTemplateCommons: boolean
-  selectedChartParameters: SelectedParameter[]
-
-  templateNameFormat: string
-}
 
 
 export interface MapImporterFormProps {
@@ -56,16 +38,7 @@ export interface MapImporterFormProps {
   canRemove: boolean
 }
 
-const url_placeholder = `https://ourworldindata.org/grapher/<NAME OF GRAPH>`;
-const initial_categories_map = [
-  "$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}",
-  "SVG maps by Our World in Data",
-  "Uploaded by OWID importer tool"
-]
 
-const chart_info_map = `You can use $NAME (filename without extension), $YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders. This only works for graphs that are maps with data over multiple years.`;
-const initial_categories_chart = ["Uploaded by OWID importer tool"]
-const chart_info_chart = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders`;
 
 // { url, fileName, description, categories, descriptionOverwriteBehaviour, countryFileName, countryDescription, countryCategories, countryDescriptionOverwriteBehaviour, importCountries, generateTemplateCommons, selectedChartParameters, templateName }
 export function MapImporterForm({ value, onChange, onDelete, disabled, onParamtersLoadingChange, canRemove }: MapImporterFormProps) {
@@ -86,7 +59,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
   }, [value, onChange]);
 
   useEffect(() => {
-    if (!disabled && debouncedUrl && debouncedUrl != lastCheckedUrl && debouncedUrl.startsWith(OWID_CHART_URL_PREFIX)) {
+    if (!disabled && debouncedUrl && debouncedUrl != lastCheckedUrl && debouncedUrl.startsWith(OWID_CHART_URL_PREFIX) && !value.linkVerified) {
       setLastCheckeUrl(debouncedUrl);
 
       onParamtersLoadingChange(true);
@@ -126,6 +99,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
               countryFileName: newInitialFilenameChart,
               selectedChartParameters: selectedParams,
               templateNameFormat: newTemplateName,
+              linkVerified: true,
             });
           }
 
@@ -179,7 +153,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
               <span>Map</span>
             </Typography>
             <Typography>
-              <span dangerouslySetInnerHTML={{ __html: chart_info_map }} />
+              <span dangerouslySetInnerHTML={{ __html: CHART_INFO_MAP }} />
             </Typography>
           </Stack>
           {canRemove ? (
@@ -197,7 +171,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
               size="small"
               value={value.url}
               onChange={e => handleChange("url", e.target.value)}
-              placeholder={url_placeholder}
+              placeholder={URL_PLACEHOLDER}
               disabled={disabled}
             />
             {parametersLoading && (
@@ -250,7 +224,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
           <Stack spacing={1}>
             <Stack direction="row" justifyContent="space-between">
               <Typography>Categories</Typography>
-              <Button onClick={() => handleChange("categories", initial_categories_map)} size="small">Reset</Button>
+              <Button onClick={() => handleChange("categories", INITIAL_CATEGORIES_MAP)} size="small">Reset</Button>
             </Stack>
             <CategoriesSearchInput value={value.categories} onChange={(newCategories) => handleChange("categories", newCategories)} disabled={disabled} />
           </Stack>
@@ -327,7 +301,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
                       <span>Country Chart</span>
                     </Typography>
                     <Typography>
-                      <span dangerouslySetInnerHTML={{ __html: chart_info_chart }} />
+                      <span dangerouslySetInnerHTML={{ __html: CHART_INFO_CHART }} />
                     </Typography>
                   </Stack>
                   <Stack spacing={1}>
@@ -353,7 +327,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
                   <Stack spacing={1}>
                     <Stack direction="row" justifyContent="space-between">
                       <Typography>Categories</Typography>
-                      <Button onClick={() => handleChange("countryCategories", initial_categories_chart)} disabled={disabled} size="small" >Reset</Button>
+                      <Button onClick={() => handleChange("countryCategories", INITIAL_CATEGORIES_CHART)} disabled={disabled} size="small" >Reset</Button>
                     </Stack>
                     <CategoriesSearchInput value={value.countryCategories} onChange={(newCategories) => handleChange("countryCategories", newCategories)} disabled={disabled} />
                   </Stack>
