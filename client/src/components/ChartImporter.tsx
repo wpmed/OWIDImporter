@@ -172,7 +172,7 @@ export function ChartImporter(data: ChartImporterProps) {
 
   const canRetry = useMemo(() => {
     if (!task) return false;
-    if (task.status === TaskStatusEnum.Failed) return true;
+    if ([TaskStatusEnum.Failed, TaskStatusEnum.Cancelled].includes(task.status)) return true;
     if (task.status === TaskStatusEnum.Done && items.some(item => item.status === TaskProcessStatusEnum.Failed)) {
       return true
     }

@@ -25,6 +25,7 @@ const (
 	TaskStatusSkipped     TaskStatus = "skipped"
 	TaskStatusOverwritten TaskStatus = "overwritten"
 	TaskStatusFailed      TaskStatus = "failed"
+	TaskStatusCancelled   TaskStatus = "cancelled"
 )
 
 const (

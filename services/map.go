@@ -87,7 +87,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				break
 			}
 			task.Reload()
-			if task.Status == models.TaskStatusDone || task.Status == models.TaskStatusFailed {
+			if task.Status == models.TaskStatusDone || task.Status == models.TaskStatusFailed || task.Status == models.TaskStatusCancelled {
 				done = true
 				break
 			}
@@ -178,13 +178,13 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	regionGroup.SetLimit(constants.CONCURRENT_REQUESTS)
 
 	for _, region := range constants.REGIONS {
-		if task.Status == models.TaskStatusFailed {
+		if task.Status != models.TaskStatusProcessing {
 			break
 		}
 		region := region
 		regionGroup.Go(func(region string) func() error {
 			return func() error {
-				if task.Status == models.TaskStatusFailed {
+				if task.Status != models.TaskStatusProcessing {
 					return nil
 				}
 				l, browser := GetBrowser()
@@ -231,7 +231,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				country := country
 				g.Go(func(country, downloadPath string, token *string) func() error {
 					return func() error {
-						if task.Status != models.TaskStatusFailed {
+						if task.Status == models.TaskStatusProcessing {
 							processCountry(user, task, *token, chartName, country, title, startYear, endYear, downloadPath, StartData{
 								Url:                           data.Url,
 								FileName:                      task.CountryFileName,
@@ -514,7 +514,7 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 
 		fmt.Println("00000000000000000000000000 GOT START MARKER 00000000000000000000000000000", startYear, endYear)
 
-		for task.Status != models.TaskStatusFailed {
+		for task.Status == models.TaskStatusProcessing {
 			models.UpdateTaskLastOperationAt(task.ID)
 			startMarker = page.MustElement(".startMarker")
 			endMarker = page.MustElement(".endMarker")
@@ -989,7 +989,7 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, t
 	// Sleep for 10 seconds to avoid API complains of reuploading
 	// Attach country data to the first file metadata on commons
 	time.Sleep(time.Second * 10)
-	if task.Status != models.TaskStatusFailed {
+	if task.Status == models.TaskStatusProcessing {
 		metadata, err := getRegionFileMetadata(task, region)
 		if err != nil {
 			fmt.Println("Error generating metadata: ", err)
@@ -1327,7 +1327,7 @@ func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, 
 	}
 
 	for i := range *results {
-		if task.Status == models.TaskStatusFailed {
+		if task.Status != models.TaskStatusProcessing {
 			break
 		}
 		processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, "", (*results)[i].Year, chartParams)
@@ -1340,7 +1340,7 @@ func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, 
 	// }
 
 	task.Reload()
-	if task.Status != models.TaskStatusFailed {
+	if task.Status == models.TaskStatusProcessing {
 		// Attach country data to the first file metadata on commons
 		metadata, err := getRegionFileMetadata(task, region)
 		if err != nil {

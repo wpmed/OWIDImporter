@@ -117,7 +117,7 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 		country := country
 		g.Go(func(country, downloadPath string, token *string) func() error {
 			return func() error {
-				if task.Status != models.TaskStatusFailed {
+				if task.Status == models.TaskStatusProcessing {
 					params := make(map[string]string, 0)
 					processCountry(user, task, *token, chartName, country, title, startYear, endYear, downloadPath, data, params)
 				}

@@ -6,6 +6,8 @@ export function getStatusColor(status: TaskStatusEnum) {
       return "blue"
     case TaskStatusEnum.Failed:
       return "red"
+    case TaskStatusEnum.Cancelled:
+      return "red"
     case TaskStatusEnum.Retrying:
       return "orange"
     case TaskStatusEnum.Queued:

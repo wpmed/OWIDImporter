@@ -4,6 +4,7 @@ export enum TaskStatusEnum {
   Done = "done",
   Retrying = "retrying",
   Failed = "failed",
+  Cancelled = "cancelled",
 }
 
 export enum TaskProcessStatusEnum {
