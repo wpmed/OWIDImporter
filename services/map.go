@@ -377,13 +377,23 @@ func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo,
 }
 
 func GetPageCanDownload(page *rod.Page) (bool, error) {
+	fmt.Println("Checking if page can download")
 	startMarker := page.MustElement(START_MARKER_SELECTOR)
 	endMarker := page.MustElement(END_MARKER_SELECTOR)
+	fmt.Println("Got start")
 	if startMarker == nil && endMarker == nil {
 		return false, fmt.Errorf("No start & end markers")
 	}
 
-	err := page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
+	fmt.Println("Waiting for download button")
+	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+	fmt.Println("Found for download button")
+	downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
+	downloadBtn.MustFocus()
+	time.Sleep(time.Millisecond * 200)
+
+	err := page.Keyboard.Press(input.Enter)
+	fmt.Println("Clicked download btn", err)
 	if err != nil {
 		fmt.Println(err)
 		return false, fmt.Errorf("Cannot find/click on download button")
@@ -553,7 +563,12 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			}
 
 			mapPath := filepath.Join(downloadPath, currentYear)
-			err = page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
+			// err = page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
+			downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
+			downloadBtn.MustFocus()
+			time.Sleep(time.Millisecond * 200)
+			page.Keyboard.Press(input.Enter)
+			err = page.Keyboard.Press(input.Enter)
 			if err != nil {
 				panic(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
 			}
