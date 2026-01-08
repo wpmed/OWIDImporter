@@ -51,8 +51,8 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
     if (task) {
       setRetryLoading(true);
       retryTask(task.id)
-        .then((res) => {
-          console.log("retry response", res)
+        .then(() => {
+          setTask((task) => task ? { ...task, status: TaskStatusEnum.Queued } : null)
         })
         .catch((err) => {
           console.log("Retry error", err)
