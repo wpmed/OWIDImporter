@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dghubble/oauth1"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
@@ -268,4 +269,54 @@ func DownloadFile(url, filepath string) (err error) {
 
 func ToTitle(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func ParseDate(dateStr string) (time.Time, error) {
+	// Common date formats to try
+	formats := []string{
+		// Year only
+		"2006", // Just year (e.g., "2007")
+
+		// Year and month
+		"2006-01",      // YYYY-MM
+		"2006/01",      // YYYY/MM
+		"January 2006", // Month Year
+		"Jan 2006",     // Short month Year
+		"01/2006",      // MM/YYYY
+		"01-2006",      // MM-YYYY
+
+		// Full dates
+		time.RFC3339,                // "2006-01-02T15:04:05Z07:00"
+		time.RFC3339Nano,            // "2006-01-02T15:04:05.999999999Z07:00"
+		time.RFC1123,                // "Mon, 02 Jan 2006 15:04:05 MST"
+		time.RFC1123Z,               // "Mon, 02 Jan 2006 15:04:05 -0700"
+		time.RFC822,                 // "02 Jan 06 15:04 MST"
+		time.RFC822Z,                // "02 Jan 06 15:04 -0700"
+		time.RFC850,                 // "Monday, 02-Jan-06 15:04:05 MST"
+		"2006-01-02",                // ISO 8601 date only
+		"2006-01-02 15:04:05",       // Common datetime format
+		"2006-01-02T15:04:05",       // ISO 8601 without timezone
+		"01/02/2006",                // US format (MM/DD/YYYY)
+		"02/01/2006",                // European format (DD/MM/YYYY)
+		"01-02-2006",                // US format with dashes
+		"02-01-2006",                // European format with dashes
+		"2006/01/02",                // Asian format (YYYY/MM/DD)
+		"January 2, 2006",           // Long month name
+		"Jan 2, 2006",               // Short month name
+		"2 January 2006",            // Day first with long month
+		"2 Jan 2006",                // Day first with short month
+		"2006-01-02 15:04:05 MST",   // With timezone abbreviation
+		"2006-01-02 15:04:05 -0700", // With timezone offset
+	}
+
+	// Try each format
+	for _, format := range formats {
+		parsedTime, err := time.Parse(format, dateStr)
+		if err == nil {
+			return parsedTime, nil
+		}
+	}
+
+	// If all formats fail, return error
+	return time.Time{}, fmt.Errorf("unable to parse date string: %s", dateStr)
 }

@@ -47,7 +47,7 @@ type TokenResponse struct {
 type FileNameAcc struct {
 	FileName string
 	Region   string
-	Year     int64
+	Year     string
 }
 
 type QueryResponse struct {
@@ -564,8 +564,10 @@ func GetMapTemplate(taskId string) (string, error) {
 	countriesData := make([]CountryTemplateDataItem, 0)
 	firstFileName := ""
 	endFileName := ""
-	startYear := time.Now().Year()
-	endYear := 0
+	startYear := time.Now().Unix()
+	startYearStr := ""
+	endYear := time.Unix(0, 0).Unix()
+	endYearStr := ""
 
 	// Accumilate regions
 	regions := make(map[string]bool)
@@ -574,25 +576,43 @@ func GetMapTemplate(taskId string) (string, error) {
 			regions[el.Region] = true
 		}
 		if el.Type == models.TaskProcessTypeMap && el.Status != models.TaskProcessStatusFailed && strings.ToLower(el.Region) == "world" {
+			elDate, err := utils.ParseDate(el.Date)
+			if err == nil {
+				if elDate.Unix() < startYear {
+					startYear = elDate.Unix()
+					startYearStr = el.Date
+					firstFileName = el.FileName
+				}
 
-			if int64(el.Year) < int64(startYear) {
-				startYear = el.Year
-				firstFileName = el.FileName
+				if elDate.Unix() > endYear {
+					endYear = elDate.Unix()
+					endYearStr = el.Date
+					endFileName = el.FileName
+				}
+			} else {
+				fmt.Println("Error getting el date: ", el.Date, err)
 			}
 
-			if int64(el.Year) > int64(endYear) {
-				endYear = el.Year
-				endFileName = el.FileName
-			}
+			// if int64(el.Year) < int64(startYear) {
+			// 	startYear = el.Year
+			// 	firstFileName = el.FileName
+			// }
+			//
+			// if int64(el.Year) > int64(endYear) {
+			// 	endYear = el.Year
+			// 	endFileName = el.FileName
+			// }
 		}
 	}
+	fmt.Println("============ START YEAR", startYear, startYearStr, firstFileName)
+	fmt.Println("============ END YEAR", endYear, endYearStr, endFileName)
 
 	for key := range regions {
 		items := make([]FileNameAcc, 0)
 		for _, tp := range taskProcesses {
 			if tp.Status != models.TaskProcessStatusFailed && tp.Region == key && tp.Type == models.TaskProcessTypeMap && tp.FileName != "" {
 				items = append(items, FileNameAcc{
-					Year:     int64(tp.Year),
+					Year:     tp.Date,
 					Region:   tp.Region,
 					FileName: tp.FileName,
 				})
@@ -618,7 +638,7 @@ func GetMapTemplate(taskId string) (string, error) {
 
 	sliderTemplateText := strings.Builder{}
 	sliderTemplateText.WriteString("{{owidslider\n")
-	sliderTemplateText.WriteString(fmt.Sprintf("|start        = %d\n", endYear))
+	sliderTemplateText.WriteString(fmt.Sprintf("|start        = %s\n", endYearStr))
 	sliderTemplateText.WriteString(fmt.Sprintf("|list         = %s#gallery\n", task.CommonsTemplateName))
 	sliderTemplateText.WriteString("|location      = commons\n")
 	sliderTemplateText.WriteString("|caption      =\n")
@@ -648,7 +668,7 @@ func GetMapTemplate(taskId string) (string, error) {
 
 		wikiText.WriteString(fmt.Sprintf("|gallery-%s=\n", el.Region))
 		for _, item := range el.Data {
-			wikiText.WriteString(fmt.Sprintf("File:%s!year=%d\n", item.FileName, item.Year))
+			wikiText.WriteString(fmt.Sprintf("File:%s!year=%s\n", item.FileName, item.Year))
 		}
 	}
 

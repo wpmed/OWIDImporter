@@ -20,7 +20,7 @@ export enum TaskProcessStatusEnum {
 export interface TaskProcess {
   id: string,
   region: string,
-  year: number,
+  date: string,
   status: TaskProcessStatusEnum,
   taskId: string,
   filename: string

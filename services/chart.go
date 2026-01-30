@@ -160,7 +160,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 	var err error
 	var taskProcess *models.TaskProcess
 	// Try to find existing process, otherwise create one
-	existingTB, err := models.FindTaskProcessByTaskRegionYear(country, 0, task.ID)
+	existingTB, err := models.FindTaskProcessByTaskRegionDate(country, "", task.ID)
 	if existingTB != nil {
 		if existingTB.Status != models.TaskProcessStatusFailed {
 			// Not in a retry, skip
@@ -174,7 +174,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 		}
 		taskProcess = existingTB
 	} else {
-		taskProcess, err = models.NewTaskProcess(country, 0, "", models.TaskProcessStatusProcessing, models.TaskProcessTypeCountry, task.ID)
+		taskProcess, err = models.NewTaskProcess(country, "", "", models.TaskProcessStatusProcessing, models.TaskProcessTypeCountry, task.ID)
 		if err != nil {
 			return err
 		}

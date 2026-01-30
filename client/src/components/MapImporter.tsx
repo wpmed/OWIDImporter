@@ -441,7 +441,7 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
           <Stack sx={{ textAlign: "left" }}>
             {items.map(msg => (
               <Typography key={msg.id} variant="caption" color={getTaskProcessStatusColor(msg.status)}>
-                {msg.region} {msg.year || ""} - <span style={{ textTransform: "capitalize" }}>{msg.status?.replace("_", " ")}</span>
+                {msg.region}: {msg.date || ""} - <span style={{ textTransform: "capitalize" }}>{msg.status?.replace("_", " ")}</span>
                 {msg.filename && (
                   <a
                     target="_blank"
