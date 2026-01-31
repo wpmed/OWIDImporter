@@ -1,4 +1,4 @@
-const COMMONS_API_BASE = "https://commons.wikimedia.org/w/api.php";
+const COMMONS_API_BASE = import.meta.env.VITE_MW_API_BASE_URL;
 
 interface CommonsSearchCategoriesResponse {
   query: {

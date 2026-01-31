@@ -1,11 +1,11 @@
-import { Accordion, AccordionDetails, AccordionSummary, Box, Button, CircularProgress, Grid, Snackbar, Stack, Typography } from "@mui/material";
+import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Card, CardContent, CircularProgress, Grid, Snackbar, Stack, Typography } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SocketMessage, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
 import { cancelTask, createTask, fetchTaskById, retryTask } from "../request/request";
 import { DescriptionOverwriteBehaviour, MapImporterFormItem, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
 import { copyText, extractAndReplaceCategoriesFromDescription, getStatusColor, getTaskProcessStatusColor } from "../utils";
 import { MapImporterForm } from "./MapImporterForm";
-import { Add, ExpandMore } from "@mui/icons-material";
+import { Add, ExpandMore, Close } from "@mui/icons-material";
 import { MultiImportModal } from "./MultiImportModal";
 import { generateBlankImport } from "../constants";
 
@@ -134,7 +134,7 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
     setLoading(true);
     try {
       let taskId = ""
-      await Promise.all(imports.map(async (imp) => {
+      await Promise.all(imports.filter(i => i.canImport).map(async (imp) => {
         let finalDescription = imp.description.trim();
         if (imp.categories.length > 0) {
           finalDescription += `\n${imp.categories.map(category => `[[Category:${category}]]`).join("\n")}`;
@@ -191,7 +191,8 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
   }, [wikiText, setIsCopied]);
 
   const submitDisabled = useMemo(() => {
-    return loading || parametersLoading || disabled || !imports.every(i => i.url.trim().length > 0 && i.fileName.trim().length > 0 && i.description.trim().length > 0);
+    const validImports = imports.filter(i => i.url.trim().length > 0 && i.fileName.trim().length > 0 && i.description.trim().length > 0 && i.canImport);
+    return loading || parametersLoading || disabled || validImports.length == 0;
   }, [imports, loading, parametersLoading, disabled])
 
   const canRetry = useMemo(() => {
@@ -336,7 +337,7 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
                 />
 
                 return (
-                  <Box key={i.id}>
+                  <Box key={i.id} >
                     {imports.length > 1 ? (
                       <Accordion expanded={expanded == i.id} onChange={(_, expanded) => setExpanded(expanded ? i.id : false)}>
                         <AccordionSummary
@@ -345,7 +346,17 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
                           sx={{ backgroundColor: "#1976d2", color: "white" }}
                           expandIcon={<ExpandMore sx={{ color: "white" }} />}
                         >
-                          <Typography component="span">URL: {i.url}</Typography>
+                          <Stack>
+                            <Typography component="span">URL: {i.url} </Typography>
+                            {i.linkVerified && !i.canImport && expanded !== i.id && (
+                              <Stack flexDirection="row" justifyContent="center" sx={{ mt: 1, color: "orange" }}>
+                                <Close />
+                                <Typography>
+                                  This chart cannot be imported
+                                </Typography>
+                              </Stack>
+                            )}
+                          </Stack>
                         </AccordionSummary>
                         <AccordionDetails>
                           {comp}

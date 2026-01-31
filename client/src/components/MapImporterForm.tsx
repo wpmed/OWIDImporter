@@ -61,12 +61,16 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
   useEffect(() => {
     if (!disabled && debouncedUrl && debouncedUrl != lastCheckedUrl && debouncedUrl.startsWith(OWID_CHART_URL_PREFIX) && !value.linkVerified) {
       setLastCheckeUrl(debouncedUrl);
+      setChartInfo(null);
 
       onParamtersLoadingChange(true);
       setParametersLoading(true);
       getChartParameters(debouncedUrl)
         .then(res => {
-          if (res.params && res.params.length > 0) {
+          if (res.error) {
+            console.log("Chart info error: ", res);
+            onChange({ ...value, canImport: false, linkVerified: true });
+          } else if (res.params && res.params.length > 0) {
             // setChartParameters(res.params);
             const paramsKeys = res.params.map(param => param.slug);
             const parts = debouncedUrl.split("?").pop()?.split("&")
@@ -100,6 +104,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
               selectedChartParameters: selectedParams,
               templateNameFormat: newTemplateName,
               linkVerified: true,
+              canImport: true
             });
           }
 
@@ -190,6 +195,9 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
             <Typography variant="subtitle2" sx={{ marginLeft: "5px" }}>End Year: <strong>{chartInfo.endYear}</strong></Typography>
           </Stack>
         ) : null}
+        {!parametersLoading && value.linkVerified && !value.canImport && (
+          <Typography color="error">This chart cannot be imported </Typography>
+        )}
 
         {value.selectedChartParameters.length > 0 && (
           <Stack spacing={1}>

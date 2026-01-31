@@ -86,4 +86,5 @@ export interface MapImporterFormItem {
   templateNameFormat: string
   linkVerified: boolean
   templateExists: boolean
+  canImport: boolean
 }

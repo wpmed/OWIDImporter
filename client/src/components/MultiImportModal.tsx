@@ -139,14 +139,17 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
               imp.templateExists = templateExists;
             } catch (err) {
               console.log("Error checking if template exists: ", { url: imp.url, templateName, err });
-
             }
+          }
+
+          if (!result.error) {
+            imp.canImport = true;
           }
 
           setProcessedLinks(old => {
             const urlIndex = old.findIndex(item => item.url == url);
             if (urlIndex != -1) {
-              old[urlIndex].status = "done";
+              old[urlIndex].status = imp.canImport ? "done" : "failed";
             }
             return [...old];
           });

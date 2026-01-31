@@ -169,6 +169,7 @@ export async function fetchTaskById(id: string) {
 export interface GetChartParametersResponse {
   params: ChartParamteres[]
   info: ChartInfo
+  error: string
 }
 
 export interface GetMultiChartParametersResponse {

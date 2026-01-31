@@ -70,6 +70,7 @@ const initialImport: MapImporterFormItem = {
   countryDescriptionOverwriteBehaviour: DescriptionOverwriteBehaviour.ALL,
   linkVerified: false,
   templateExists: false,
+  canImport: false
 }
 
 export function generateBlankImport(): MapImporterFormItem {

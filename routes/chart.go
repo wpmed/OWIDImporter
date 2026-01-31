@@ -70,6 +70,10 @@ func GetChartParameters(c *gin.Context) {
 	defer l.Cleanup()
 	defer browser.Close()
 	info, err := services.GetChartInfo(browser, url, "")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to get chart data"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"params": info.Params, "info": info})
 }
