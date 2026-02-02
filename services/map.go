@@ -121,7 +121,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 
 	l, browser := GetBrowser()
 	_ = browser.MustPage("")
-	chartInfo, err := GetChartInfo(browser, url, task.ChartParameters)
+	chartInfo, err := GetChartInfo(browser, url, data.TemplateNameFormat, task.ChartParameters)
 	if err != nil {
 		fmt.Println("Error getting chart info: ", err)
 		task.Status = models.TaskStatusFailed
@@ -311,6 +311,7 @@ type ChartInfo struct {
 	StartYear     string            `json:"startYear"`
 	EndYear       string            `json:"endYear"`
 	Title         string            `json:"title"`
+	ChartName     string            `json:"chartName"`
 	HasCountries  bool              `json:"hasCountries"`
 	CountriesList []string          `json:"countriesList"`
 }
@@ -322,7 +323,7 @@ type ChartInfo struct {
 * HasCountries
  */
 
-func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo, error) {
+func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string) (*ChartInfo, error) {
 	chartInfo := ChartInfo{}
 	var err error
 
@@ -356,13 +357,19 @@ func GetChartInfo(browser *rod.Browser, url, selectedParams string) (*ChartInfo,
 			chartInfo.EndYear = endYear
 			chartInfo.Title = title
 			chartInfo.HasCountries = getMapHasCountriesFromPage(page)
+
+			chartName, err := GetChartNameFromUrl(url)
+			if err == nil && chartName != "" {
+				chartInfo.ChartName = GenerateTemplateCommonsNameNoPrefix(chartFormat, chartName, chartInfo.ParamsMap)
+			}
+
 			fmt.Println("Got has countries")
 			if chartInfo.HasCountries {
 				chartInfo.CountriesList = GetCountryListFromPage(page)
 			}
 
 			fmt.Println("============= CHART INTO ***************************************** ", chartInfo)
-			_, err := GetPageCanDownload(page)
+			_, err = GetPageCanDownload(page)
 			if err != nil {
 				panic(err)
 			}

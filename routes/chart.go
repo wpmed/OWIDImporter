@@ -69,7 +69,7 @@ func GetChartParameters(c *gin.Context) {
 	l, browser := services.GetBrowser()
 	defer l.Cleanup()
 	defer browser.Close()
-	info, err := services.GetChartInfo(browser, url, "")
+	info, err := services.GetChartInfo(browser, url, "$CHART_NAME", "")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to get chart data"})
 		return
@@ -119,7 +119,7 @@ func GetMultiChartParameters(c *gin.Context) {
 		}
 		fmt.Println("Final url: ", url)
 
-		info, err := services.GetChartInfo(browser, url, "")
+		info, err := services.GetChartInfo(browser, url, "$CHART_NAME", "")
 		if err == nil {
 			response = append(response, MultiChartParametersResponse{Url: url, Params: *info.Params, Info: *info})
 		}

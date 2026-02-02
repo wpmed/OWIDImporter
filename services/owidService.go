@@ -161,6 +161,10 @@ const (
 )
 
 func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[string]string) string {
+	return fmt.Sprintf("Template:OWID/%s", GenerateTemplateCommonsNameNoPrefix(chartFormat, chartName, chartParams))
+}
+
+func GenerateTemplateCommonsNameNoPrefix(chartFormat, chartName string, chartParams map[string]string) string {
 	fileName := GetFileNameFromChartName(chartName)
 	templateName := strings.ReplaceAll(chartFormat, "$CHART_NAME", fileName)
 
@@ -168,7 +172,7 @@ func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[
 		templateName = strings.ReplaceAll(templateName, fmt.Sprintf("$%s", k), v)
 	}
 
-	return fmt.Sprintf("Template:OWID/%s", utils.ToTitle(templateName))
+	return utils.ToTitle(templateName)
 }
 
 func GetChartNameFromUrl(url string) (string, error) {
