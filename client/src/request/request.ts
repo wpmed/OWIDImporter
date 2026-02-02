@@ -183,6 +183,7 @@ export interface GetMultiChartParametersResponse {
 export interface ChartInfo {
   params: ChartParamteres[]
   title: string
+  chartName: string
   hasCountries: boolean
   startYear: string
   endYear: string

@@ -125,7 +125,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
   useEffect(() => {
     if (chartInfo) {
       let templateName = `${COMMONS_TEMPLATE_PREFIX}/${debouncedTemplateName}`;
-      templateName = templateName.replace("$CHART_NAME", chartInfo?.title);
+      templateName = templateName.replace("$CHART_NAME", chartInfo?.chartName);
       if (value.selectedChartParameters.length > 0) {
         value.selectedChartParameters.forEach((param) => {
           templateName = templateName.replace(`$${param.key.toUpperCase()}`, param.valueName);
@@ -184,9 +184,14 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
             )}
           </Box>
         </Stack>
+        {chartInfo?.chartName ? (
+          <Stack spacing={1}>
+            <Typography sx={{ textTransform: "capitalize" }} variant="subtitle2">Chart Name: <strong>{chartInfo.chartName}</strong></Typography>
+          </Stack>
+        ) : null}
         {chartInfo?.title ? (
           <Stack spacing={1}>
-            <Typography variant="subtitle2">Chart Name: <strong>{chartInfo.title}</strong></Typography>
+            <Typography variant="subtitle2">Chart Title: <strong>{chartInfo.title}</strong></Typography>
           </Stack>
         ) : null}
         {chartInfo?.startYear && chartInfo?.endYear ? (
