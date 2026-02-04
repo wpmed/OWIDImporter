@@ -2,6 +2,7 @@ import { Box, Button, Card, CardContent, CircularProgress, Grid, Stack, Typograp
 import { Task, TaskStatusEnum, TaskTypeEnum } from "../types"
 import { formatDate, getStatusColor } from "../utils"
 import { CopyButton } from "./CopyButton"
+import { COMMONS_TEMPLATE_PREFIX } from "../constants"
 
 interface TaskListProps {
   tasks: Task[],
@@ -69,7 +70,7 @@ export function TaskList({ tasks, taskType, onTaskClick, onNew }: TaskListProps)
                               {task.commonsTemplateName}
                             </a>
                           </Typography>
-                          <CopyButton text={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`} />
+                          <CopyButton text={`*[[${task.commonsTemplateName}|${task.commonsTemplateName.replace(COMMONS_TEMPLATE_PREFIX + "/", "")}]]`} />
                         </Stack>
                       </Grid>
                     </Grid>

@@ -70,7 +70,8 @@ func monitorQueuedTasks() {
 			fmt.Println("Error finding processing tasks count", err)
 			continue
 		}
-		if count < 1 {
+
+		if count < 2 {
 			task, err := models.FindNextTaskToProcess()
 			if err != nil {
 				fmt.Println("Error finding next task to process", err)
