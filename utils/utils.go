@@ -13,12 +13,15 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dghubble/oauth1"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/sessions"
 )
+
+const MAX_RES_LOG_LENGTH = 200
 
 func GetOAuthConfig() *oauth1.Config {
 	envData := env.GetEnv()
@@ -128,7 +131,12 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 		fmt.Println("Error reading body", err)
 		return nil, err
 	}
-	fmt.Println("Res body: ", res.StatusCode, string(body))
+	strRes := string(body)
+	if utf8.RuneCountInString(strRes) > MAX_RES_LOG_LENGTH {
+		strRes = strRes[:MAX_RES_LOG_LENGTH] + "..."
+	}
+	fmt.Println("Res body: ", res.StatusCode, strRes)
+
 	var result T
 	err = json.Unmarshal(body, &result)
 	if err != nil {

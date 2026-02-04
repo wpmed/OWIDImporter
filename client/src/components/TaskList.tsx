@@ -1,6 +1,7 @@
 import { Box, Button, Card, CardContent, CircularProgress, Grid, Stack, Typography } from "@mui/material"
 import { Task, TaskStatusEnum, TaskTypeEnum } from "../types"
 import { formatDate, getStatusColor } from "../utils"
+import { CopyButton } from "./CopyButton"
 
 interface TaskListProps {
   tasks: Task[],
@@ -44,11 +45,14 @@ export function TaskList({ tasks, taskType, onTaskClick, onNew }: TaskListProps)
                       </Typography>
                     </Grid>
                     <Grid onClick={(e) => e.stopPropagation()}>
-                      <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 14 }}>
-                        <a href={task.url} target="_blank">
-                          {task.url}
-                        </a>
-                      </Typography>
+                      <Stack justifyContent={"space-between"} alignItems={"center"} flexDirection={"row"}>
+                        <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 14 }}>
+                          <a href={task.url} target="_blank">
+                            {task.url.split("/").pop()}
+                          </a>
+                        </Typography>
+                        <CopyButton text={task.url} />
+                      </Stack>
                     </Grid>
                   </Grid>
                   {task.generateTemplateCommons == 1 && task.commonsTemplateName && task.status == TaskStatusEnum.Done ? (
@@ -59,11 +63,14 @@ export function TaskList({ tasks, taskType, onTaskClick, onNew }: TaskListProps)
                         </Typography>
                       </Grid>
                       <Grid onClick={(e) => e.stopPropagation()}>
-                        <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 14 }}>
-                          <a href={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`} target="_blank">
-                            {task.commonsTemplateName}
-                          </a>
-                        </Typography>
+                        <Stack justifyContent={"space-between"} alignItems={"center"} flexDirection={"row"}>
+                          <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 14 }}>
+                            <a href={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`} target="_blank">
+                              {task.commonsTemplateName}
+                            </a>
+                          </Typography>
+                          <CopyButton text={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`} />
+                        </Stack>
                       </Grid>
                     </Grid>
                   ) : null}

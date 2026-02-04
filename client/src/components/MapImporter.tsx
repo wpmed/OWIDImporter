@@ -285,7 +285,8 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
         autoHideDuration={2000}
         onClose={() => setIsCopied(false)}
         message="Copied succesfully"
-      />      <Grid container columnSpacing={2}>
+      />
+      <Grid container columnSpacing={2}>
         <Grid size={6} ref={formContainerRef}>
           <Stack sx={{ textAlign: "left" }} spacing={4}>
             <Stack spacing={2}>
