@@ -11,6 +11,8 @@ import (
 	"net/textproto"
 	"net/url"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -280,9 +282,35 @@ func ToTitle(s string) string {
 }
 
 func ParseDate(dateStr string) (time.Time, error) {
+	// Trim whitespace
+	dateStr = strings.TrimSpace(dateStr)
+
+	// Special handling for BCE/BC/AD/CE year notations
+	// Matches patterns like "480 BCE", "480 BC", "2024 CE", "2024 AD"
+	bcPattern := regexp.MustCompile(`^(\d{1,4})\s*(BCE?|AD|CE)$`)
+	if matches := bcPattern.FindStringSubmatch(strings.ToUpper(dateStr)); matches != nil {
+		year, err := strconv.Atoi(matches[1])
+		if err == nil && year >= 0 && year <= 9999 {
+			era := matches[2]
+			// BCE/BC years are represented as negative in Go
+			if era == "BCE" || era == "BC" {
+				year = -year + 1 // Year 1 BCE is year 0, 2 BCE is year -1, etc.
+			}
+			return time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC), nil
+		}
+	}
+
+	// Special handling for year-only strings (including years < 1000)
+	if matched, _ := regexp.MatchString(`^\d{1,4}$`, dateStr); matched {
+		year, err := strconv.Atoi(dateStr)
+		if err == nil && year >= 0 && year <= 9999 {
+			return time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC), nil
+		}
+	}
+
 	// Common date formats to try
 	formats := []string{
-		// Year only
+		// Year only (4 digits)
 		"2006", // Just year (e.g., "2007")
 
 		// Year and month
@@ -319,8 +347,7 @@ func ParseDate(dateStr string) (time.Time, error) {
 
 	// Try each format
 	for _, format := range formats {
-		parsedTime, err := time.Parse(format, dateStr)
-		if err == nil {
+		if parsedTime, err := time.Parse(format, dateStr); err == nil {
 			return parsedTime, nil
 		}
 	}
