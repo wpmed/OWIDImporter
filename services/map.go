@@ -203,6 +203,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		}(region))
 	}
 	regionGroup.Wait()
+	fmt.Println("================= FINISHED PROCESSING ALL REGIONS ==================")
 
 	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing && chartInfo.HasCountries {
 		fmt.Print("================= STARTED IMPORTING COUNTRIES")
@@ -520,8 +521,29 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 
 		fmt.Println("00000000000000000000000000 GOT START MARKER 00000000000000000000000000000", startYear, endYear)
 
+		downloadSelector := "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
+
+		counter := 0
 		for task.Status == models.TaskStatusProcessing {
+			counter = counter + 1
 			models.UpdateTaskLastOperationAt(task.ID)
+			if counter == 50 {
+				currentUrl := page.MustInfo().URL
+				fmt.Println("========================= RELOADIN PAGE ===================", currentUrl)
+				page.Close()
+
+				page = browser.MustPage("")
+				defer page.Close()
+				page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+
+				fmt.Println("Before navigate")
+				page.MustNavigate(currentUrl)
+				page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+				page.WaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
+				fmt.Println("FOUND ELEMENT")
+
+				counter = 0
+			}
 			startMarker = page.MustElement(".startMarker")
 			endMarker = page.MustElement(".endMarker")
 
@@ -582,7 +604,6 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			// TODO:  Check if need to remove
 			wait := page.Browser().WaitDownload(mapPath)
 
-			downloadSelector := "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
 			page.MustWaitElementsMoreThan(downloadSelector, 0)
 			err = page.MustElements(downloadSelector)[0].Click(proto.InputMouseButtonLeft, 1)
 			if err != nil {
@@ -712,7 +733,6 @@ func didReachStartYear(startMarker, endMarker *rod.Element, startYear string) bo
 
 func moveToNextYear(page *rod.Page, startMarker, endMarker *rod.Element, currentYear, startYear string) bool {
 	if didReachStartYear(startMarker, endMarker, startYear) {
-		fmt.Println("REACHING START YEAR")
 		return false
 	}
 

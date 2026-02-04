@@ -106,6 +106,12 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
               linkVerified: true,
               canImport: true
             });
+          } else {
+            onChange({
+              ...value,
+              linkVerified: true,
+              canImport: true
+            });
           }
 
           if (res.info) {

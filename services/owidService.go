@@ -214,7 +214,7 @@ func getFileWikiText(user *models.User, filename string) (string, error) {
 		return "", err
 	}
 
-	fmt.Println("Response: ", res)
+	// fmt.Println("Response: ", res)
 	for _, page := range res.Query.Pages {
 		if len(page.Revisions) > 0 {
 			// Assuming the main slot contains the wikitext
