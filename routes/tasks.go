@@ -3,6 +3,7 @@ package routes
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
@@ -55,6 +56,30 @@ func CreateTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid data"})
 		return
 	}
+
+	urlParts := strings.Split(data.Url, "?")
+	url := urlParts[0]
+
+	if len(urlParts) > 1 {
+		// We have query params
+		params := strings.Split(urlParts[1], "&")
+		if len(params) > 0 {
+			url = fmt.Sprintf("%s?", url)
+			for _, param := range params {
+				keyVal := strings.Split(param, "=")
+				if !strings.HasSuffix(url, "?") {
+					url = fmt.Sprintf("%s&", url)
+				}
+				// Remove region, tab and time as they're being handled via the tool
+				if keyVal[0] == "tab" || keyVal[0] == "region" || keyVal[0] == "time" || keyVal[0] == "country" {
+					continue
+				} else {
+					url = fmt.Sprintf("%s%s=%s", url, keyVal[0], keyVal[1])
+				}
+			}
+		}
+	}
+	data.Url = url
 
 	var modelType models.TaskType
 	switch data.Action {

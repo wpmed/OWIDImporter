@@ -151,13 +151,14 @@ type ContentSlot struct {
 }
 
 const (
-	DOWNLOAD_BUTTON_SELECTOR       = `figure div[data-track-note="chart_click_download"] button`
+	DOWNLOAD_BUTTON_SELECTOR       = `figure div[data-track-note="chart_click_download"] button, .Explorer .ActionButtons div[data-track-note="chart_click_download"] button`
 	PLAY_TIMELAPSE_BUTTON_SELECTOR = `.GrapherTimeline`
 	DOWNLOAD_SVG_SELECTOR          = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
 	DOWNLOAD_SVG_ICON_SELECTOR     = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2) .download-modal__download-preview-img"
 	START_MARKER_SELECTOR          = ".startMarker"
+	TITLE_SELECTOR                 = "h1.header__title, .HeaderHTML h1"
 	END_MARKER_SELECTOR            = ".endMarker"
-	HEADLESS                       = true
+	HEADLESS                       = false
 )
 
 func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[string]string) string {
@@ -190,13 +191,13 @@ func ValidateParameters(data StartData) error {
 	if data.Url == "" || data.FileName == "" || data.Description == "" {
 		return fmt.Errorf("missing information")
 	}
-	if !strings.HasPrefix(data.Url, "https://ourworldindata.org/grapher/") {
+	if !strings.HasPrefix(data.Url, "https://ourworldindata.org/") {
 		return fmt.Errorf("invalid url")
 	}
-	chartName, err := GetChartNameFromUrl(data.Url)
-	if err != nil || chartName == "" {
-		return fmt.Errorf("invalid url")
-	}
+	// chartName, err := GetChartNameFromUrl(data.Url)
+	// if err != nil || chartName == "" {
+	// 	return fmt.Errorf("invalid url")
+	// }
 
 	return nil
 }
@@ -466,6 +467,16 @@ type ReplaceVarsData struct {
 }
 
 func replaceVars(value string, params ReplaceVarsData) string {
+	fmt.Println("*****************************************************************************************************")
+	fmt.Println("*****************************************************************************************************")
+	fmt.Println("Replacing vars: Got the following: ")
+	fmt.Println("Value: ", value)
+	fmt.Println("Params: ")
+	fmt.Println("Title: ", params.Title)
+	fmt.Println("FileName: ", params.FileName)
+	fmt.Println("Params: ", params.Params)
+	fmt.Println("*****************************************************************************************************")
+	fmt.Println("*****************************************************************************************************")
 	value = strings.ReplaceAll(value, "$URL", params.Url)
 	value = strings.ReplaceAll(value, "$NAME", params.FileName)
 
@@ -659,7 +670,7 @@ func GetMapTemplate(taskId string) (string, error) {
 	wikiText.WriteString("<syntaxhighlight lang=\"wikitext\" style=\"overflow:auto;\">\n")
 	wikiText.WriteString(sliderTemplateText.String())
 	wikiText.WriteString("</syntaxhighlight>\n")
-	wikiText.WriteString(fmt.Sprintf("*'''Source''': https://ourworldindata.org/grapher/%s\n", task.ChartName))
+	wikiText.WriteString(fmt.Sprintf("*'''Source''': %s\n", task.URL))
 	wikiText.WriteString(fmt.Sprintf("*'''Translate''': https://svgtranslate.toolforge.org/File:%s\n", strings.ReplaceAll(firstFileName, " ", "_")))
 	wikiText.WriteString("{{-}}\n\n")
 	wikiText.WriteString("==Data==\n")

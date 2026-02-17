@@ -184,6 +184,7 @@ export interface ChartInfo {
   params: ChartParamteres[]
   title: string
   chartName: string
+  templateName: string
   hasCountries: boolean
   startYear: string
   endYear: string

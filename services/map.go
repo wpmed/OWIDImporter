@@ -28,16 +28,84 @@ import (
 )
 
 func StartMap(taskId string, user *models.User, data StartData) error {
-	err := ValidateParameters(data)
+	task, err := models.FindTaskById(taskId)
 	if err != nil {
 		return err
 	}
-	chartName, err := GetChartNameFromUrl(data.Url)
-	if err != nil || chartName == "" {
+
+	task.Status = models.TaskStatusProcessing
+	if err := task.Update(); err != nil {
+		fmt.Println("Error setting task to Processing: ", err)
+	}
+	models.UpdateTaskLastOperationAt(task.ID)
+	utils.SendWSTask(task)
+
+	url := utils.AttachQueryParamToUrl(data.Url, "tab=map")
+
+	// url := fmt.Sprintf("%s%s?tab=map", constants.OWID_BASE_URL, chartName)
+	if task.ChartParameters != "" {
+		url = utils.AttachQueryParamToUrl(url, task.ChartParameters)
+	}
+
+	fmt.Println("==================== CONSTRUCTED URL: ", url)
+
+	err = ValidateParameters(data)
+	if err != nil {
+		task.Status = models.TaskStatusFailed
+		task.Update()
+		utils.SendWSTask(task)
+		return err
+	}
+
+	l, browser := GetBrowser()
+	_ = browser.MustPage("")
+	chartInfo, err := GetChartInfo(browser, url, data.TemplateNameFormat, task.ChartParameters)
+	if err != nil {
+		fmt.Println("Error getting chart info: ", err)
+		task.Status = models.TaskStatusFailed
+		task.Update()
+		utils.SendWSTask(task)
+		browser.Close()
+		l.Cleanup()
+		return fmt.Errorf("Error getting chart info")
+	}
+
+	browser.Close()
+	l.Cleanup()
+
+	task.ChartName = chartInfo.ChartName
+	if task.ChartName == "" {
+		task.Status = models.TaskStatusFailed
+		task.Update()
+		utils.SendWSTask(task)
 		return fmt.Errorf("invalid url")
 	}
 
-	fmt.Println("Chart Name:", chartName)
+	chartParamsMap := chartInfo.ParamsMap
+	templateName := GenerateTemplateCommonsName(data.TemplateNameFormat, task.ChartName, chartParamsMap)
+	task.CommonsTemplateName = templateName
+	fmt.Println("==================== COMMONS TEMPLATE NAME: ", templateName, "=====================")
+	models.UpdateTaskLastOperationAt(task.ID)
+	task.Update()
+	utils.SendWSTask(task)
+
+	startYear := chartInfo.StartYear
+	endYear := chartInfo.EndYear
+	title := chartInfo.Title
+
+	fmt.Println("Got start/end year: ", startYear, endYear, title)
+	fmt.Println("Got params: ", chartParamsMap)
+	fmt.Print("Has countries: ", chartInfo.HasCountries)
+
+	if startYear == "" || endYear == "" {
+		// utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
+		task.Status = models.TaskStatusFailed
+		task.Update()
+		utils.SendWSTask(task)
+		return fmt.Errorf("failed to get start and end years")
+	}
+
+	fmt.Println("Chart Name:", task.ChartName)
 
 	tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
 		"action": "query",
@@ -59,19 +127,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	defer os.RemoveAll(tmpDir)
 
 	// startTime := time.Now()
-	task, err := models.FindTaskById(taskId)
-	if err != nil {
-		return err
-	}
-
-	models.UpdateTaskLastOperationAt(task.ID)
-
-	task.ChartName = chartName
-	task.Status = models.TaskStatusProcessing
-	if err := task.Update(); err != nil {
-		fmt.Println("Error setting task to Processing: ", err)
-	}
-	utils.SendWSTask(task)
 
 	done := false
 	defer func() {
@@ -114,48 +169,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		}
 	}()
 
-	url := fmt.Sprintf("%s%s?tab=map", constants.OWID_BASE_URL, chartName)
-	if task.ChartParameters != "" {
-		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
-	}
-
-	l, browser := GetBrowser()
-	_ = browser.MustPage("")
-	chartInfo, err := GetChartInfo(browser, url, data.TemplateNameFormat, task.ChartParameters)
-	if err != nil {
-		fmt.Println("Error getting chart info: ", err)
-		task.Status = models.TaskStatusFailed
-		task.Update()
-		utils.SendWSTask(task)
-		browser.Close()
-		l.Cleanup()
-		return fmt.Errorf("Error getting chart info")
-	}
-
-	chartParamsMap := chartInfo.ParamsMap
-	templateName := GenerateTemplateCommonsName(data.TemplateNameFormat, task.ChartName, chartParamsMap)
-	task.CommonsTemplateName = templateName
-	fmt.Println("==================== COMMONS TEMPLATE NAME: ", templateName, "=====================")
-	task.Update()
-
-	startYear := chartInfo.StartYear
-	endYear := chartInfo.EndYear
-	title := chartInfo.Title
-	browser.Close()
-	l.Cleanup()
-
-	fmt.Println("Got start/end year: ", startYear, endYear, title)
-	fmt.Println("Got params: ", chartParamsMap)
-	fmt.Print("Has countries: ", chartInfo.HasCountries)
-
-	if startYear == "" || endYear == "" {
-		// utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
-		task.Status = models.TaskStatusFailed
-		task.Update()
-		utils.SendWSTask(task)
-		return fmt.Errorf("failed to get start and end years")
-	}
-
 	// startYearInt, err := strconv.ParseInt(startYear, 10, 64)
 	// if err != nil {
 	// 	// utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
@@ -192,7 +205,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				defer blankPage.Close()
 				defer l.Cleanup()
 				defer browser.Close()
-				err := processRegion(browser, user, task, &token, chartName, region, filepath.Join(tmpDir, region), chartParamsMap, startYear, endYear, title, data)
+				err := processRegion(browser, user, task, &token, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, startYear, endYear, title, data)
 				fmt.Print("============= FINISHED PROCESSING REGION: ", region)
 				if err != nil {
 					fmt.Println("Error in processing some of the region", region)
@@ -232,7 +245,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				g.Go(func(country, downloadPath string, token *string) func() error {
 					return func() error {
 						if task.Status == models.TaskStatusProcessing {
-							processCountry(user, task, *token, chartName, country, title, startYear, endYear, downloadPath, StartData{
+							processCountry(user, task, *token, task.ChartName, country, title, startYear, endYear, downloadPath, StartData{
 								Url:                           data.Url,
 								FileName:                      task.CountryFileName,
 								Description:                   task.CountryDescription,
@@ -313,6 +326,7 @@ type ChartInfo struct {
 	EndYear       string            `json:"endYear"`
 	Title         string            `json:"title"`
 	ChartName     string            `json:"chartName"`
+	TemplateName  string            `json:"templateName"`
 	HasCountries  bool              `json:"hasCountries"`
 	CountriesList []string          `json:"countriesList"`
 }
@@ -341,6 +355,7 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 			page.MustWaitLoad()
 
 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
+			fmt.Println("LOOKING FOR DOWNLOAD BTN")
 			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 			fmt.Println("FOUND DOWNLOAD BTN")
 			page.MustWaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
@@ -360,8 +375,14 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 			chartInfo.HasCountries = getMapHasCountriesFromPage(page)
 
 			chartName, err := GetChartNameFromUrl(url)
+			fmt.Println("================== GOT CHART NAME =============", chartName, err)
+
 			if err == nil && chartName != "" {
-				chartInfo.ChartName = GenerateTemplateCommonsNameNoPrefix(chartFormat, chartName, chartInfo.ParamsMap)
+				chartInfo.ChartName = utils.ToTitle(chartName)
+				chartInfo.TemplateName = GenerateTemplateCommonsNameNoPrefix(chartFormat, chartName, chartInfo.ParamsMap)
+			} else if chartInfo.Title != "" {
+				chartInfo.ChartName = utils.ToTitle(chartInfo.Title)
+				chartInfo.TemplateName = GenerateTemplateCommonsNameNoPrefix(chartFormat, chartInfo.Title, chartInfo.ParamsMap)
 			}
 
 			fmt.Println("Got has countries")
@@ -960,7 +981,7 @@ func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
 	startYear = *marker.MustAttribute("aria-valuemin")
 	endYear = *marker.MustAttribute("aria-valuemax")
 	fmt.Println("Got start/end")
-	title = page.MustElement("h1.header__title, .HeaderHTML h1").MustText()
+	title = page.MustElement(TITLE_SELECTOR).MustText()
 	title = strings.TrimSpace(title)
 	fmt.Println("Got start/end title")
 	suffix := ", " + endYear
@@ -994,7 +1015,7 @@ func getMapStartEndYearTitle(browser *rod.Browser, url string) (string, string, 
 			startYear = *marker.MustAttribute("aria-valuemin")
 			endYear = *marker.MustAttribute("aria-valuemax")
 			fmt.Println("Got start/end")
-			title = page.MustElement("h1.header__title, .HeaderHTML h1").MustText()
+			title = page.MustElement(TITLE_SELECTOR).MustText()
 			title = strings.TrimSpace(title)
 			fmt.Println("Got start/end title")
 			suffix := ", " + endYear
@@ -1023,19 +1044,22 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, t
 		os.Mkdir(downloadPath, 0755)
 	}
 
-	url := ""
+	url := data.Url
 	if region == "World" {
 		// World chart has no region parameter
-		url = fmt.Sprintf("%s%s?tab=map", constants.OWID_BASE_URL, chartName)
+		url = utils.AttachQueryParamToUrl(url, "tab=map")
 	} else {
-		url = fmt.Sprintf("%s%s?tab=map&region=%s", constants.OWID_BASE_URL, chartName, region)
+		url = utils.AttachQueryParamToUrl(url, fmt.Sprintf("tab=map&region=%s", region))
 	}
 	// TODO:
 
 	if task.ChartParameters != "" {
-		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
+		url = utils.AttachQueryParamToUrl(url, task.ChartParameters)
 	}
-	url = fmt.Sprintf("%s&time=latest", url)
+
+	url = utils.AttachQueryParamToUrl(url, "time=latest")
+	fmt.Println("============== TRAVERSINGG NAVIGATE TO ", url)
+
 	traverseDownloadRegion(browser, task, data, user, chartParamsMap, token, chartName, title, region, url, downloadPath)
 	task.Reload()
 	// Sleep for 10 seconds to avoid API complains of reuploading

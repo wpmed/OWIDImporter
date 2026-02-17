@@ -278,12 +278,14 @@ func DownloadFile(url, filepath string) (err error) {
 }
 
 func ToTitle(s string) string {
-	return strings.ToUpper(s[:1]) + s[1:]
+	return strings.ReplaceAll(strings.ToUpper(s[:1])+s[1:], "-", " ")
 }
 
 func ParseDate(dateStr string) (time.Time, error) {
 	// Trim whitespace
 	dateStr = strings.TrimSpace(dateStr)
+	// Remove commas
+	dateStr = strings.ReplaceAll(dateStr, ",", "")
 
 	// Special handling for BCE/BC/AD/CE year notations
 	// Matches patterns like "480 BCE", "480 BC", "2024 CE", "2024 AD"
@@ -339,6 +341,8 @@ func ParseDate(dateStr string) (time.Time, error) {
 		"2006/01/02",                // Asian format (YYYY/MM/DD)
 		"January 2, 2006",           // Long month name
 		"Jan 2, 2006",               // Short month name
+		"January 2 2006",            // Long month name, no comma
+		"Jan 2 2006",                // Short month name, no comma
 		"2 January 2006",            // Day first with long month
 		"2 Jan 2006",                // Day first with short month
 		"2006-01-02 15:04:05 MST",   // With timezone abbreviation
@@ -354,4 +358,16 @@ func ParseDate(dateStr string) (time.Time, error) {
 
 	// If all formats fail, return error
 	return time.Time{}, fmt.Errorf("unable to parse date string: %s", dateStr)
+}
+
+func AttachQueryParamToUrl(url, queryStr string) string {
+	if !strings.Contains(url, "tab=map") {
+		if strings.Contains(url, "?") {
+			url = fmt.Sprintf("%s&%s", url, queryStr)
+		} else {
+			url = fmt.Sprintf("%s?%s", url, queryStr)
+		}
+	}
+
+	return url
 }

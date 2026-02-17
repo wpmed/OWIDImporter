@@ -182,7 +182,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 
 	utils.SendWSTaskProcess(task.ID, taskProcess)
 
-	url := fmt.Sprintf("%s%s?tab=chart&time=%s..%s&country=~%s", constants.OWID_BASE_URL, chartName, startYear, endYear, country)
+	url := utils.AttachQueryParamToUrl(task.URL, fmt.Sprintf("tab=chart&country=~%s", country))
 	if task.ChartParameters != "" {
 		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
 	}
@@ -211,7 +211,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 			fmt.Println("After download labesls")
 
-			// title := page.MustElement("h1.header__title").MustText()
+			// title := page.MustElement(TITLE_SELECTOR).MustText()
 			// startYear := page.MustElement(".slider.clickable .handle.startMarker").MustAttribute("aria-valuenow")
 			// endYear := page.MustElement(".slider.clickable .handle.endMarker").MustAttribute("aria-valuenow")
 			// fmt.Println("After getting title/start/end years", title, *startYear, *endYear)
@@ -378,7 +378,7 @@ func GetCountryList(url string) ([]string, string, string, string, error) {
 		fmt.Println("waiting for entity selector")
 		page.MustElement(".entity-selector__content")
 		fmt.Println("found entity selector")
-		title = page.MustElement("h1.header__title, .HeaderHTML h1").MustText()
+		title = page.MustElement(TITLE_SELECTOR).MustText()
 		title = strings.TrimSpace(title)
 		elements := page.MustElements(".entity-selector__content li")
 		for _, element := range elements {
