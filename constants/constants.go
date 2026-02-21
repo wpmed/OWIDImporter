@@ -268,3 +268,49 @@ var REGIONS = []string{
 	"Europe",
 	"Oceania",
 }
+
+var COUNTRY_CHART_POPUP_STYLES = `
+line.max-line {
+    stroke-linecap: square;
+    stroke: #dadada
+}
+
+.HorizontalAxis text {
+    fill: #787878;
+    font-weight: 700;
+    font-size: 10px;
+    transform: translate(2px,2px)
+}
+
+.HorizontalAxis text:last-child {
+    transform: translate(-2px,2px)
+}
+
+.AxisGridLines.horizontalLines line {
+    stroke-dasharray: 0;
+    stroke-linecap: square;
+    stroke: #dadada
+}
+
+.AxisGridLines.horizontalLines line.zero-line {
+    stroke: #787878
+}
+
+.hoverIndicator circle {
+    stroke-width: 1;
+    r: 5px
+}
+
+.axis-label text {
+    font: 400 10px Lato;
+    letter-spacing: .01em;
+    font-style: italic;
+    text-anchor: end;
+    fill: #787878
+}
+
+.axis-label text.outline {
+    stroke: #ffffffd9;
+    stroke-width: 2px
+}
+`

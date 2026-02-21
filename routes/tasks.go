@@ -71,7 +71,7 @@ func CreateTask(c *gin.Context) {
 					url = fmt.Sprintf("%s&", url)
 				}
 				// Remove region, tab and time as they're being handled via the tool
-				if keyVal[0] == "tab" || keyVal[0] == "region" || keyVal[0] == "time" || keyVal[0] == "country" {
+				if keyVal[0] == "tab" || keyVal[0] == "region" || keyVal[0] == "time" || keyVal[0] == "country" || keyVal[0] == "mapSelect" {
 					continue
 				} else {
 					url = fmt.Sprintf("%s%s=%s", url, keyVal[0], keyVal[1])

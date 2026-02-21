@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -149,6 +150,102 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	return nil
 }
 
+func ProcessCountriesFromPopover(user *models.User, task *models.Task, token, chartName, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
+	url := utils.AttachQueryParamToUrl(task.URL, fmt.Sprintf("tab=map"))
+	if task.ChartParameters != "" {
+		url = utils.AttachQueryParamToUrl(url, task.ChartParameters)
+	}
+
+	models.UpdateTaskLastOperationAt(task.ID)
+	result := DownloadCountryGraphsFromPopover(url, downloadPath)
+
+	for country, path := range result {
+		models.UpdateTaskLastOperationAt(task.ID)
+		// Throttle for api usage limit
+		time.Sleep(time.Second)
+
+		var taskProcess *models.TaskProcess
+		// Try to find existing process, otherwise create one
+		existingTB, err := models.FindTaskProcessByTaskRegionDate(country, "", task.ID)
+		if existingTB != nil {
+			if existingTB.Status != models.TaskProcessStatusFailed {
+				// Not in a retry, skip
+				// existingTB.Status = models.TaskProcessStatusSkipped
+				// existingTB.Update()
+				continue
+			}
+			existingTB.Status = models.TaskProcessStatusProcessing
+			if err := existingTB.Update(); err != nil {
+				fmt.Println("Error updating task process to processing")
+			}
+			taskProcess = existingTB
+		} else {
+			taskProcess, err = models.NewTaskProcess(country, "", "", models.TaskProcessStatusProcessing, models.TaskProcessTypeCountry, task.ID)
+			if err != nil {
+				continue
+			}
+		}
+
+		utils.SendWSTaskProcess(task.ID, taskProcess)
+
+		replaceData := ReplaceVarsData{
+			Url:       data.Url,
+			Title:     title,
+			Region:    country,
+			StartYear: startYear,
+			EndYear:   endYear,
+			FileName:  GetFileNameFromChartName(chartName),
+			Comment:   "Importing from " + data.Url,
+			Params:    chartParams,
+		}
+
+		filename, status, err := uploadMapFile(user, token, replaceData, path, data)
+		if err != nil {
+			fmt.Println("Error country first upload", country, err)
+			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+			taskProcess.Status = models.TaskProcessStatusRetrying
+			taskProcess.Update()
+			utils.SendWSTaskProcess(task.ID, taskProcess)
+			time.Sleep(time.Second * 2)
+			filename, status, err = uploadMapFile(user, token, replaceData, downloadPath, data)
+			if err != nil {
+				fmt.Println("Error retrying for second time: ", country, err)
+				taskProcess.Status = models.TaskProcessStatusFailed
+				taskProcess.Update()
+				utils.SendWSTaskProcess(task.ID, taskProcess)
+				continue
+			}
+		}
+
+		switch status {
+		case "skipped":
+			taskProcess.Status = models.TaskProcessStatusSkipped
+			taskProcess.Update()
+			utils.SendWSTaskProcess(task.ID, taskProcess)
+		case "description_updated":
+			taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
+			taskProcess.Update()
+			utils.SendWSTaskProcess(task.ID, taskProcess)
+		case "overwritten":
+			taskProcess.Status = models.TaskProcessStatusOverwritten
+			taskProcess.Update()
+			utils.SendWSTaskProcess(task.ID, taskProcess)
+		case "uploaded":
+			taskProcess.Status = models.TaskProcessStatusUploaded
+			taskProcess.Update()
+			utils.SendWSTaskProcess(task.ID, taskProcess)
+		}
+		// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:done:%s", country, status))
+
+		taskProcess.FileName = filename
+		taskProcess.Update()
+		utils.SendWSTaskProcess(task.ID, taskProcess)
+
+	}
+
+	return nil
+}
+
 func processCountry(user *models.User, task *models.Task, token, chartName, country, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
 	l, browser := GetBrowser()
 	blankPage := browser.MustPage("")
@@ -184,7 +281,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 
 	url := utils.AttachQueryParamToUrl(task.URL, fmt.Sprintf("tab=chart&country=~%s", country))
 	if task.ChartParameters != "" {
-		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
+		url = utils.AttachQueryParamToUrl(url, task.ChartParameters)
 	}
 
 	fmt.Println("================== Processing country: ", url)
@@ -322,6 +419,121 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 	utils.SendWSTaskProcess(task.ID, taskProcess)
 
 	return nil
+}
+
+func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
+	fmt.Println("Downloading country graphs from popover")
+
+	l, browser := GetBrowser()
+	page := browser.MustPage("")
+	defer page.Close()
+	defer l.Cleanup()
+	defer browser.Close()
+
+	// Max 3 minutes for the process to complete
+	page = page.Timeout(time.Minute * 3)
+	page.MustSetViewport(1920, 1080, 1, false)
+	page.MustNavigate(url)
+	page.MustWaitLoad()
+	page.MustWaitIdle()
+	time.Sleep(time.Second * 2)
+	fmt.Println("Url", page.MustInfo().URL)
+
+	countries := make([]string, 0)
+	countries = append(countries, "Russia")
+	countries = append(countries, "China")
+	countries = append(countries, "Brazil")
+
+	countries = append(countries, "New-Zealand")
+	countries = append(countries, "Chile")
+	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+
+	foundCountries := make([]string, 0)
+	notFoundCountries := make([]string, 0)
+	gotSvg := make([]string, 0)
+	result := make(map[string]string, 0)
+
+	for name, code := range constants.COUNTRY_CODES {
+		time.Sleep(time.Millisecond * 200)
+
+		id := strings.ReplaceAll(name, " ", "-")
+		has, _, err := page.Has(fmt.Sprintf("#%s", id))
+		if err != nil {
+			fmt.Println("Error finding: ", name, id)
+			continue
+		}
+
+		if !has {
+			notFoundCountries = append(notFoundCountries, name)
+			continue
+
+		}
+		foundCountries = append(foundCountries, name)
+
+		time.Sleep(time.Millisecond * 200)
+
+		fmt.Println("Key: ", name, " Code: ", code, " ID: ", id)
+		el, err := page.Element(fmt.Sprintf("#%s", id))
+		if err != nil {
+			fmt.Println("Error finding element: ", err)
+			continue
+		}
+		shape := el.MustShape()
+
+		page.Mouse.MustMoveTo(shape.OnePointInside().X, shape.OnePointInside().Y)
+		time.Sleep(time.Millisecond * 200)
+		if !page.MustHas("#mapTooltip svg") {
+			fmt.Println("Country doesn't have chart to download: ", name)
+			continue
+		}
+
+		countrySvg := page.MustElement("#mapTooltip svg")
+		_, err = countrySvg.Eval(`(styles) => {
+			// Attach style
+			const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+			styleEl.textContent = styles;
+			this.insertBefore(styleEl, this.firstChild);
+			// Add xmlns attribute for standalone SVG file compatibility
+			this.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+		}`, constants.COUNTRY_CHART_POPUP_STYLES)
+		if err != nil {
+			fmt.Println("Failed to inject styles: ", err)
+		}
+
+		html, err := countrySvg.HTML()
+		if err != nil {
+			fmt.Println("Error getting country svg html", name, err)
+			continue
+		}
+
+		countryDirPath := path.Join(outputDir, code)
+
+		if err := os.Mkdir(countryDirPath, 0755); err != nil {
+			fmt.Println("Error creating output country dir: ", err)
+			continue
+		}
+		outputPath := path.Join(countryDirPath, fmt.Sprintf("%s.svg", code))
+		err = os.WriteFile(outputPath, []byte(html), 0644)
+		if err != nil {
+			fmt.Println("Error writing file: ", name, err)
+			continue
+		}
+
+		gotSvg = append(gotSvg, name)
+		result[code] = countryDirPath
+	}
+
+	fmt.Println("===========================")
+	fmt.Println("Found countries", len(foundCountries))
+	fmt.Println(foundCountries)
+	fmt.Println("===========================")
+	fmt.Println("Not Found countries", len(notFoundCountries))
+	fmt.Println(notFoundCountries)
+	fmt.Println("===========================")
+	fmt.Println("Got SVGs", len(gotSvg))
+	fmt.Println(gotSvg)
+
+	return result
 }
 
 func GetCountryListFromPage(page *rod.Page) []string {

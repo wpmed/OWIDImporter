@@ -304,75 +304,74 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
 
         <Stack>
           <Stack direction="row" alignItems={"center"} >
-            <Checkbox checked={value.importCountries} disabled={disabled || (chartInfo != null && !chartInfo.hasCountries)} onClick={() => handleChange("importCountries", !value.importCountries)} />
+            <Checkbox checked={value.importCountries} disabled={disabled} onClick={() => handleChange("importCountries", !value.importCountries)} />
             <Typography>Import Countries</Typography>
           </Stack>
         </Stack>
-        {chartInfo && !chartInfo.hasCountries ? (
-          <Typography color="warning">This chart doesn't support Countries</Typography>
-        ) : (
-          <>
-            {
-              value.importCountries && (
-                <>
-                  <Stack spacing={2}>
-                    <Typography variant="h4">
-                      <span>Country Chart</span>
-                    </Typography>
-                    <Typography>
-                      <span dangerouslySetInnerHTML={{ __html: CHART_INFO_CHART }} />
-                    </Typography>
+        <>
+          {
+            value.importCountries && (
+              <>
+                <Stack spacing={2}>
+                  <Typography variant="h4">
+                    <span>Country Chart</span>
+                  </Typography>
+                  {chartInfo && !chartInfo.hasCountries ? (
+                    <Typography color="warning">This chart doesn't support Countries line charts. We'll try with popover charts.</Typography>
+                  ) : null}
+                  <Typography>
+                    <span dangerouslySetInnerHTML={{ __html: CHART_INFO_CHART }} />
+                  </Typography>
+                </Stack>
+                <Stack spacing={1}>
+                  <Typography>File name</Typography>
+                  <TextField
+                    size="small"
+                    value={value.countryFileName}
+                    onChange={e => handleChange("countryFileName", e.target.value)}
+                    fullWidth
+                    disabled={disabled}
+                  />
+                </Stack>
+                <Stack spacing={1}>
+                  <Typography>Description</Typography>
+                  <TextareaAutosize
+                    value={value.countryDescription}
+                    onChange={e => handleChange("countryDescription", e.target.value)}
+                    style={{ width: "100%", backgroundColor: "white", color: "black" }}
+                    minRows={5}
+                    disabled={disabled}
+                  />
+                </Stack>
+                <Stack spacing={1}>
+                  <Stack direction="row" justifyContent="space-between">
+                    <Typography>Categories</Typography>
+                    <Button onClick={() => handleChange("countryCategories", INITIAL_CATEGORIES_CHART)} disabled={disabled} size="small" >Reset</Button>
                   </Stack>
-                  <Stack spacing={1}>
-                    <Typography>File name</Typography>
-                    <TextField
-                      size="small"
-                      value={value.countryFileName}
-                      onChange={e => handleChange("countryFileName", e.target.value)}
-                      fullWidth
-                      disabled={disabled}
-                    />
-                  </Stack>
-                  <Stack spacing={1}>
-                    <Typography>Description</Typography>
-                    <TextareaAutosize
-                      value={value.countryDescription}
-                      onChange={e => handleChange("countryDescription", e.target.value)}
-                      style={{ width: "100%", backgroundColor: "white", color: "black" }}
-                      minRows={5}
-                      disabled={disabled}
-                    />
-                  </Stack>
-                  <Stack spacing={1}>
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography>Categories</Typography>
-                      <Button onClick={() => handleChange("countryCategories", INITIAL_CATEGORIES_CHART)} disabled={disabled} size="small" >Reset</Button>
-                    </Stack>
-                    <CategoriesSearchInput value={value.countryCategories} onChange={(newCategories) => handleChange("countryCategories", newCategories)} disabled={disabled} />
-                  </Stack>
-                  <Stack spacing={1}>
-                    <Typography>
-                      If a file with the same name exists:
-                    </Typography>
-                    {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
-                      <Stack spacing={1}>
-                        <Stack direction={"row"} alignItems={"flex-start"}>
-                          <Radio disabled={disabled} checked={value.countryDescriptionOverwriteBehaviour == option.value} onClick={() => handleChange("countryDescriptionOverwriteBehaviour", option.value)} />
-                          < Box >
-                            <Typography>
-                              {option.title}
-                            </Typography>
-                            <Typography variant="subtitle2">{option.description}</Typography>
-                          </Box>
-                        </Stack>
+                  <CategoriesSearchInput value={value.countryCategories} onChange={(newCategories) => handleChange("countryCategories", newCategories)} disabled={disabled} />
+                </Stack>
+                <Stack spacing={1}>
+                  <Typography>
+                    If a file with the same name exists:
+                  </Typography>
+                  {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
+                    <Stack spacing={1}>
+                      <Stack direction={"row"} alignItems={"flex-start"}>
+                        <Radio disabled={disabled} checked={value.countryDescriptionOverwriteBehaviour == option.value} onClick={() => handleChange("countryDescriptionOverwriteBehaviour", option.value)} />
+                        < Box >
+                          <Typography>
+                            {option.title}
+                          </Typography>
+                          <Typography variant="subtitle2">{option.description}</Typography>
+                        </Box>
                       </Stack>
-                    ))}
-                  </Stack>
-                </>
-              )
-            }
-          </>
-        )}
+                    </Stack>
+                  ))}
+                </Stack>
+              </>
+            )
+          }
+        </>
       </Stack>
     </Stack >
   )

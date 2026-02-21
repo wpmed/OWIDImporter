@@ -218,62 +218,80 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	regionGroup.Wait()
 	fmt.Println("================= FINISHED PROCESSING ALL REGIONS ==================")
 
-	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing && chartInfo.HasCountries {
+	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
 		fmt.Print("================= STARTED IMPORTING COUNTRIES")
-		result := func() error {
-			// countriesList, title, startYear, endYear, err := GetCountryList(url)
-			// if err != nil {
-			// 	fmt.Println("Error fetching country list", err)
-			// 	return err
-			// }
-			fmt.Println("Countries:====================== ", chartInfo.CountriesList)
+		if chartInfo.HasCountries {
+			fmt.Println("======= Has Countries, using regular flow ========")
 
-			startTime := time.Now()
-			g, _ := errgroup.WithContext(context.Background())
-			g.SetLimit(constants.CONCURRENT_REQUESTS)
+			result := func() error {
+				// countriesList, title, startYear, endYear, err := GetCountryList(url)
+				// if err != nil {
+				// 	fmt.Println("Error fetching country list", err)
+				// 	return err
+				// }
+				fmt.Println("Countries:====================== ", chartInfo.CountriesList)
 
-			fmt.Println("================================================")
-			fmt.Println("================================================")
+				startTime := time.Now()
+				g, _ := errgroup.WithContext(context.Background())
+				g.SetLimit(constants.CONCURRENT_REQUESTS)
 
-			fmt.Println(url)
-			fmt.Println(chartParamsMap)
-			fmt.Println("================================================")
-			fmt.Println("================================================")
-			fmt.Println("================================================")
-			for _, country := range chartInfo.CountriesList {
-				country := country
-				g.Go(func(country, downloadPath string, token *string) func() error {
-					return func() error {
-						if task.Status == models.TaskStatusProcessing {
-							processCountry(user, task, *token, task.ChartName, country, title, startYear, endYear, downloadPath, StartData{
-								Url:                           data.Url,
-								FileName:                      task.CountryFileName,
-								Description:                   task.CountryDescription,
-								DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-							}, chartParamsMap)
+				fmt.Println("================================================")
+				fmt.Println("================================================")
+
+				fmt.Println(url)
+				fmt.Println(chartParamsMap)
+				fmt.Println("================================================")
+				fmt.Println("================================================")
+				fmt.Println("================================================")
+				for _, country := range chartInfo.CountriesList {
+					country := country
+					g.Go(func(country, downloadPath string, token *string) func() error {
+						return func() error {
+							if task.Status == models.TaskStatusProcessing {
+								processCountry(user, task, *token, task.ChartName, country, title, startYear, endYear, downloadPath, StartData{
+									Url:                           data.Url,
+									FileName:                      task.CountryFileName,
+									Description:                   task.CountryDescription,
+									DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
+								}, chartParamsMap)
+							}
+							return nil
 						}
-						return nil
-					}
-				}(country, filepath.Join(tmpDir, country), &token))
-			}
+					}(country, filepath.Join(tmpDir, country), &token))
+				}
 
-			fmt.Println("Started in", time.Since(startTime).String())
-			err = g.Wait()
-			elapsedTime := time.Since(startTime)
-			fmt.Println("Finished in", elapsedTime.String())
-			if err != nil {
-				fmt.Println("Error processing countries", err)
+				fmt.Println("Started in", time.Since(startTime).String())
+				err = g.Wait()
+				elapsedTime := time.Since(startTime)
+				fmt.Println("Finished in", elapsedTime.String())
+				if err != nil {
+					fmt.Println("Error processing countries", err)
+					return err
+				}
+				return nil
+			}()
+
+			if result != nil {
+				fmt.Print("================== ERROR IMPORTING COUNTRIES: ", err)
+				task.Status = models.TaskStatusFailed
+				task.Update()
+				utils.SendWSTask(task)
 				return err
 			}
-			return nil
-		}()
-
-		if result != nil {
-			fmt.Print("================== ERROR IMPORTING COUNTRIES: ", err)
-			task.Status = models.TaskStatusFailed
-			task.Update()
-			utils.SendWSTask(task)
-			return err
+		} else {
+			fmt.Println("============= Doesn't have countries, downloading popup chart instead ===============")
+			countriesDir := path.Join(tmpDir, "countries")
+			err := os.Mkdir(countriesDir, 0755)
+			if err == nil {
+				ProcessCountriesFromPopover(user, task, token, task.ChartName, title, startYear, endYear, countriesDir, StartData{
+					Url:                           data.Url,
+					FileName:                      task.CountryFileName,
+					Description:                   task.CountryDescription,
+					DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
+				}, chartParamsMap)
+			} else {
+				fmt.Println("Error creating countries directory: ", err)
+			}
 		}
 	}
 
