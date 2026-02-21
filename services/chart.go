@@ -150,7 +150,38 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 	return nil
 }
 
-func ProcessCountriesFromPopover(user *models.User, task *models.Task, token, chartName, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
+func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
+	token := ""
+	done := false
+
+	defer func() {
+		done = true
+	}()
+
+	go func() {
+		for !done {
+			fmt.Println("Gettng new token ProcessCountriesFromPopover")
+			tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
+				"action": "query",
+				"meta":   "tokens",
+				"format": "json",
+			}, nil)
+			if err != nil {
+				fmt.Println("Error fetching edit token", err)
+			} else if tokenResponse.Query.Tokens.CsrfToken != "" {
+				token = tokenResponse.Query.Tokens.CsrfToken
+				fmt.Println("Got new token")
+			}
+
+			time.Sleep(time.Second * 20)
+		}
+	}()
+
+	for token == "" {
+		time.Sleep(time.Second)
+		fmt.Println("Waiting for token")
+	}
+
 	url := utils.AttachQueryParamToUrl(task.URL, fmt.Sprintf("tab=map"))
 	if task.ChartParameters != "" {
 		url = utils.AttachQueryParamToUrl(url, task.ChartParameters)

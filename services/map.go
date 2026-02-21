@@ -107,18 +107,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 
 	fmt.Println("Chart Name:", task.ChartName)
 
-	tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
-		"action": "query",
-		"meta":   "tokens",
-		"format": "json",
-	}, nil)
-	if err != nil {
-		fmt.Println("Error fetching edit token", err)
-		return err
-	}
-	token := tokenResponse.Query.Tokens.CsrfToken
-	fmt.Println("Got edit token")
-
 	tmpDir, err := os.MkdirTemp("", "owid-exporter")
 	if err != nil {
 		fmt.Println("Error creating temp directory", err)
@@ -144,27 +132,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			if task.Status == models.TaskStatusDone || task.Status == models.TaskStatusFailed || task.Status == models.TaskStatusCancelled {
 				done = true
 				break
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			time.Sleep(time.Minute)
-			if done {
-				break
-			}
-			fmt.Println("Gettng new token")
-			tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
-				"action": "query",
-				"meta":   "tokens",
-				"format": "json",
-			}, nil)
-			if err != nil {
-				fmt.Println("Error fetching edit token", err)
-			} else if tokenResponse.Query.Tokens.CsrfToken != "" {
-				token = tokenResponse.Query.Tokens.CsrfToken
-				fmt.Println("Got new token")
 			}
 		}
 	}()
@@ -205,7 +172,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				defer blankPage.Close()
 				defer l.Cleanup()
 				defer browser.Close()
-				err := processRegion(browser, user, task, &token, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, startYear, endYear, title, data)
+				err := processRegion(browser, user, task, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, startYear, endYear, title, data)
 				fmt.Print("============= FINISHED PROCESSING REGION: ", region)
 				if err != nil {
 					fmt.Println("Error in processing some of the region", region)
@@ -222,6 +189,39 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		fmt.Print("================= STARTED IMPORTING COUNTRIES")
 		if chartInfo.HasCountries {
 			fmt.Println("======= Has Countries, using regular flow ========")
+
+			tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
+				"action": "query",
+				"meta":   "tokens",
+				"format": "json",
+			}, nil)
+			if err != nil {
+				fmt.Println("Error fetching edit token", err)
+				return err
+			}
+			token := tokenResponse.Query.Tokens.CsrfToken
+			fmt.Println("Got edit token")
+
+			go func() {
+				for {
+					time.Sleep(time.Second * 20)
+					if done {
+						break
+					}
+					fmt.Println("Gettng new token")
+					tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
+						"action": "query",
+						"meta":   "tokens",
+						"format": "json",
+					}, nil)
+					if err != nil {
+						fmt.Println("Error fetching edit token", err)
+					} else if tokenResponse.Query.Tokens.CsrfToken != "" {
+						token = tokenResponse.Query.Tokens.CsrfToken
+						fmt.Println("Got new token")
+					}
+				}
+			}()
 
 			result := func() error {
 				// countriesList, title, startYear, endYear, err := GetCountryList(url)
@@ -283,7 +283,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			countriesDir := path.Join(tmpDir, "countries")
 			err := os.Mkdir(countriesDir, 0755)
 			if err == nil {
-				ProcessCountriesFromPopover(user, task, token, task.ChartName, title, startYear, endYear, countriesDir, StartData{
+				ProcessCountriesFromPopover(user, task, task.ChartName, title, startYear, endYear, countriesDir, StartData{
 					Url:                           data.Url,
 					FileName:                      task.CountryFileName,
 					Description:                   task.CountryDescription,
@@ -302,12 +302,24 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			wikiText, err := GetMapTemplate(task.ID)
 			fmt.Println("GOT WIKITEXT: ", err)
 			if err == nil {
-				title, err := createCommonsTemplatePage(user, token, task.CommonsTemplateName, wikiText)
-				if err == nil {
-					task.CommonsTemplateName = title
-					fmt.Print("=============== DONE CREATING COMMONS TEMPLATE")
-				} else {
-					fmt.Println("Error creating commons template page: ", err)
+				tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
+					"action": "query",
+					"meta":   "tokens",
+					"format": "json",
+				}, nil)
+
+				if err != nil {
+					fmt.Println("Error fetching edit token", err)
+				} else if tokenResponse.Query.Tokens.CsrfToken != "" {
+					token := tokenResponse.Query.Tokens.CsrfToken
+					fmt.Println("Got new token")
+					title, err := createCommonsTemplatePage(user, token, task.CommonsTemplateName, wikiText)
+					if err == nil {
+						task.CommonsTemplateName = title
+						fmt.Print("=============== DONE CREATING COMMONS TEMPLATE")
+					} else {
+						fmt.Println("Error creating commons template page: ", err)
+					}
 				}
 			} else {
 				fmt.Println("Error getting task wikitext", task.ID, err)
@@ -726,6 +738,12 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			}
 
 			Filename, status, err := uploadMapFile(user, *token, replaceData, mapPath, data)
+			//  Retry once
+			if err != nil {
+				time.Sleep(time.Second * 2)
+				Filename, status, err = uploadMapFile(user, *token, replaceData, mapPath, data)
+			}
+
 			if err != nil {
 				fmt.Println("Error processing", region, year)
 				taskProcess.Status = models.TaskProcessStatusFailed
@@ -1051,7 +1069,38 @@ func getMapStartEndYearTitle(browser *rod.Browser, url string) (string, string, 
 	return startYear, endYear, title
 }
 
-func processRegion(browser *rod.Browser, user *models.User, task *models.Task, token *string, chartName string, region, downloadPath string, chartParamsMap map[string]string, startYear, endYear string, title string, data StartData) error {
+func processRegion(browser *rod.Browser, user *models.User, task *models.Task, chartName string, region, downloadPath string, chartParamsMap map[string]string, startYear, endYear string, title string, data StartData) error {
+	token := ""
+	done := false
+
+	defer func() {
+		done = true
+	}()
+
+	go func() {
+		for !done {
+			fmt.Println("Gettng new token processRegion ", region)
+			tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
+				"action": "query",
+				"meta":   "tokens",
+				"format": "json",
+			}, nil)
+			if err != nil {
+				fmt.Println("Error fetching edit token", err)
+			} else if tokenResponse.Query.Tokens.CsrfToken != "" {
+				token = tokenResponse.Query.Tokens.CsrfToken
+				fmt.Println("Got new token")
+			}
+
+			time.Sleep(time.Second * 20)
+		}
+	}()
+
+	for token == "" {
+		time.Sleep(time.Second)
+		fmt.Println("Waiting for token")
+	}
+
 	// Get start and end years
 	// get chart title
 	// Process each year
@@ -1078,7 +1127,7 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, t
 	url = utils.AttachQueryParamToUrl(url, "time=latest")
 	fmt.Println("============== TRAVERSINGG NAVIGATE TO ", url)
 
-	traverseDownloadRegion(browser, task, data, user, chartParamsMap, token, chartName, title, region, url, downloadPath)
+	traverseDownloadRegion(browser, task, data, user, chartParamsMap, &token, chartName, title, region, url, downloadPath)
 	task.Reload()
 	// Sleep for 10 seconds to avoid API complains of reuploading
 	// Attach country data to the first file metadata on commons

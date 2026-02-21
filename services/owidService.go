@@ -158,7 +158,7 @@ const (
 	START_MARKER_SELECTOR          = ".startMarker"
 	TITLE_SELECTOR                 = "h1.header__title, .HeaderHTML h1"
 	END_MARKER_SELECTOR            = ".endMarker"
-	HEADLESS                       = false
+	HEADLESS                       = true
 )
 
 func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[string]string) string {
@@ -467,16 +467,16 @@ type ReplaceVarsData struct {
 }
 
 func replaceVars(value string, params ReplaceVarsData) string {
-	fmt.Println("*****************************************************************************************************")
-	fmt.Println("*****************************************************************************************************")
-	fmt.Println("Replacing vars: Got the following: ")
-	fmt.Println("Value: ", value)
-	fmt.Println("Params: ")
-	fmt.Println("Title: ", params.Title)
-	fmt.Println("FileName: ", params.FileName)
-	fmt.Println("Params: ", params.Params)
-	fmt.Println("*****************************************************************************************************")
-	fmt.Println("*****************************************************************************************************")
+	// fmt.Println("*****************************************************************************************************")
+	// fmt.Println("*****************************************************************************************************")
+	// fmt.Println("Replacing vars: Got the following: ")
+	// fmt.Println("Value: ", value)
+	// fmt.Println("Params: ")
+	// fmt.Println("Title: ", params.Title)
+	// fmt.Println("FileName: ", params.FileName)
+	// fmt.Println("Params: ", params.Params)
+	// fmt.Println("*****************************************************************************************************")
+	// fmt.Println("*****************************************************************************************************")
 	value = strings.ReplaceAll(value, "$URL", params.Url)
 	value = strings.ReplaceAll(value, "$NAME", params.FileName)
 
