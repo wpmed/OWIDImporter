@@ -57,13 +57,29 @@ func CreateTask(c *gin.Context) {
 		return
 	}
 
-	urlParts := strings.Split(data.Url, "?")
+	urlPartsInitial := strings.Split(data.Url, "?")
+	urlParts := make([]string, 0)
+
+	for _, part := range urlPartsInitial {
+		if part != "" {
+			urlParts = append(urlParts, part)
+		}
+	}
+
 	url := urlParts[0]
 
 	if len(urlParts) > 1 {
 		// We have query params
-		params := strings.Split(urlParts[1], "&")
+		paramsInitial := strings.Split(urlParts[1], "&")
+		params := make([]string, 0)
+		for _, param := range paramsInitial {
+			if param != "" {
+				params = append(params, param)
+			}
+		}
+
 		if len(params) > 0 {
+			fmt.Println("Params: ", params, len(params))
 			url = fmt.Sprintf("%s?", url)
 			for _, param := range params {
 				keyVal := strings.Split(param, "=")

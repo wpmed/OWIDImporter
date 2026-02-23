@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/input"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/wpmed-videowiki/OWIDImporter/constants"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
@@ -186,6 +187,9 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 	if task.ChartParameters != "" {
 		url = utils.AttachQueryParamToUrl(url, task.ChartParameters)
 	}
+	if !strings.Contains(url, "time=") {
+		url = utils.AttachQueryParamToUrl(url, "time=latest")
+	}
 
 	models.UpdateTaskLastOperationAt(task.ID)
 	result := DownloadCountryGraphsFromPopover(url, downloadPath)
@@ -330,6 +334,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			defer page.Close()
 
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+			page.MustSetViewport(1920, 1080, 1, false)
 			page.MustNavigate(url)
 			fmt.Println("Navigated to url", url)
 			fmt.Println("Before timeline startMarker")
@@ -347,7 +352,12 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			// TODO: Check if need to remove
 			time.Sleep(time.Second * 1)
 			wait := page.Browser().WaitDownload(downloadPath)
-			err = page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
+			fmt.Println("Before clicking download button")
+			downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
+			downloadBtn.MustFocus()
+			time.Sleep(time.Millisecond * 200)
+			err = page.Keyboard.Press(input.Enter)
+			// err = downloadBtn.Click(proto.InputMouseButtonLeft, 1)
 			fmt.Println("Clicked download button")
 			if err != nil {
 				fmt.Println(country, "Error clicking download button", err)
@@ -453,7 +463,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 }
 
 func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
-	fmt.Println("Downloading country graphs from popover")
+	fmt.Println("Downloading country graphs from popover", url)
 
 	l, browser := GetBrowser()
 	page := browser.MustPage("")
@@ -470,13 +480,6 @@ func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
 	time.Sleep(time.Second * 2)
 	fmt.Println("Url", page.MustInfo().URL)
 
-	countries := make([]string, 0)
-	countries = append(countries, "Russia")
-	countries = append(countries, "China")
-	countries = append(countries, "Brazil")
-
-	countries = append(countries, "New-Zealand")
-	countries = append(countries, "Chile")
 	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 
 	foundCountries := make([]string, 0)
@@ -511,7 +514,18 @@ func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
 		}
 		shape := el.MustShape()
 
-		page.Mouse.MustMoveTo(shape.OnePointInside().X, shape.OnePointInside().Y)
+		if shape == nil {
+			fmt.Println("Doesn't have shape: ", name)
+			continue
+		}
+
+		pointInside := shape.OnePointInside()
+		if pointInside == nil {
+			fmt.Println("Doesn't have point inside: ", name)
+			continue
+		}
+
+		page.Mouse.MustMoveTo(pointInside.X, pointInside.Y)
 		time.Sleep(time.Millisecond * 200)
 		if !page.MustHas("#mapTooltip svg") {
 			fmt.Println("Country doesn't have chart to download: ", name)
@@ -571,22 +585,53 @@ func GetCountryListFromPage(page *rod.Page) []string {
 	countries := []string{}
 
 	elements := page.MustElements(".entity-selector__content li")
-	for _, element := range elements {
-		label := element.MustElement(".label")
-		value := element.MustElement(".value")
-		if value != nil && value.MustText() != "" && strings.ToLower(value.MustText()) == "no data" {
-			fmt.Println("No data for country: ", element.MustText())
-			continue
+	// Is regular graph
+	if len(elements) > 0 {
+		for _, element := range elements {
+			label := element.MustElement(".label")
+			value := element.MustElement(".value")
+			if value != nil && value.MustText() != "" && strings.ToLower(value.MustText()) == "no data" {
+				fmt.Println("No data for country: ", element.MustText())
+				continue
+			}
+			country := strings.TrimSpace(label.MustText())
+			countryCode, ok := constants.COUNTRY_CODES[country]
+			if !ok {
+				fmt.Println("Country not found", country)
+				continue
+			}
+			// check if country is not already in list
+			if !utils.Contains(countries, countryCode) {
+				countries = append(countries, countryCode)
+			}
 		}
-		country := strings.TrimSpace(label.MustText())
-		countryCode, ok := constants.COUNTRY_CODES[country]
-		if !ok {
-			fmt.Println("Country not found", country)
-			continue
-		}
-		// check if country is not already in list
-		if !utils.Contains(countries, countryCode) {
-			countries = append(countries, countryCode)
+
+		return countries
+	}
+
+	// Is explorer graph
+	elements = page.MustElements(".EntityList label.EntityPickerOption")
+	if len(elements) > 0 {
+		for _, element := range elements {
+			label := element.MustElement(".name")
+			classes := element.MustAttribute("class")
+			fmt.Println("Element: ", label, *classes)
+
+			if strings.Contains(*classes, "MissingData") {
+				fmt.Println("No data for country: ", element.MustText())
+				continue
+			}
+
+			country := strings.TrimSpace(label.MustText())
+			countryCode, ok := constants.COUNTRY_CODES[country]
+			if !ok {
+				fmt.Println("Country not found", country)
+				continue
+			}
+			// check if country is not already in list
+			if !utils.Contains(countries, countryCode) {
+				countries = append(countries, countryCode)
+			}
 		}
 	}
 

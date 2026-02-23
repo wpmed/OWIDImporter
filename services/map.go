@@ -656,6 +656,8 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			wait := page.Browser().WaitDownload(mapPath)
 
 			page.MustWaitElementsMoreThan(downloadSelector, 0)
+			time.Sleep(time.Millisecond * 500)
+
 			err = page.MustElements(downloadSelector)[0].Click(proto.InputMouseButtonLeft, 1)
 			if err != nil {
 				// utils.SendWSProgress(session, taskProcess)
@@ -984,6 +986,7 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 func getMapHasCountriesFromPage(page *rod.Page) bool {
 	fmt.Println("Getting Has Countries From Page: ", page.MustInfo().URL)
 
+	activeTab := page.MustElement(".ContentSwitchers__Container div.Tabs div.Tabs__Tab.active")
 	lineElements := page.MustElements(".ContentSwitchers__Container div.Tabs div.Tabs__Tab .label")
 	hasLines := false
 
@@ -999,6 +1002,30 @@ func getMapHasCountriesFromPage(page *rod.Page) bool {
 		if text == "line" {
 			hasLines = true
 			break
+		}
+	}
+
+	if !hasLines {
+		// Check for chart tab
+		for _, el := range lineElements {
+			text, err := el.Text()
+			if err != nil {
+				fmt.Println("Error parsing line text", err)
+				continue
+			}
+
+			fmt.Println("Tab item: ", text)
+			text = strings.ToLower(text)
+			if text == "chart" {
+				el.Click(proto.InputMouseButtonLeft, 1)
+				time.Sleep(time.Second)
+				hasLines = page.MustHas("svg .LineChart")
+				if activeTab != nil {
+					activeTab.Click(proto.InputMouseButtonLeft, 1)
+					time.Sleep(time.Millisecond * 200)
+				}
+				break
+			}
 		}
 	}
 
