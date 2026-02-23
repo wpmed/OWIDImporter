@@ -195,6 +195,10 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 	result := DownloadCountryGraphsFromPopover(url, downloadPath)
 
 	for country, path := range result {
+		if task.Status != models.TaskStatusProcessing {
+			break
+		}
+
 		models.UpdateTaskLastOperationAt(task.ID)
 		// Throttle for api usage limit
 		time.Sleep(time.Second)

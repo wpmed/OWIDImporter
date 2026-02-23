@@ -153,38 +153,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	// 	return fmt.Errorf("failed to parse end year: %v", err)
 	// }
 
-	regionGroup, _ := errgroup.WithContext(context.Background())
-	regionGroup.SetLimit(constants.CONCURRENT_REQUESTS)
-
-	for _, region := range constants.REGIONS {
-		if task.Status != models.TaskStatusProcessing {
-			break
-		}
-		region := region
-		regionGroup.Go(func(region string) func() error {
-			return func() error {
-				if task.Status != models.TaskStatusProcessing {
-					return nil
-				}
-				l, browser := GetBrowser()
-				blankPage := browser.MustPage("")
-
-				defer blankPage.Close()
-				defer l.Cleanup()
-				defer browser.Close()
-				err := processRegion(browser, user, task, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, startYear, endYear, title, data)
-				fmt.Print("============= FINISHED PROCESSING REGION: ", region)
-				if err != nil {
-					fmt.Println("Error in processing some of the region", region)
-					fmt.Println(err)
-				}
-				return nil
-			}
-		}(region))
-	}
-	regionGroup.Wait()
-	fmt.Println("================= FINISHED PROCESSING ALL REGIONS ==================")
-
 	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
 		fmt.Print("================= STARTED IMPORTING COUNTRIES")
 		if chartInfo.HasCountries {
@@ -294,6 +262,38 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			}
 		}
 	}
+
+	regionGroup, _ := errgroup.WithContext(context.Background())
+	regionGroup.SetLimit(constants.CONCURRENT_REQUESTS)
+
+	for _, region := range constants.REGIONS {
+		if task.Status != models.TaskStatusProcessing {
+			break
+		}
+		region := region
+		regionGroup.Go(func(region string) func() error {
+			return func() error {
+				if task.Status != models.TaskStatusProcessing {
+					return nil
+				}
+				l, browser := GetBrowser()
+				blankPage := browser.MustPage("")
+
+				defer blankPage.Close()
+				defer l.Cleanup()
+				defer browser.Close()
+				err := processRegion(browser, user, task, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, startYear, endYear, title, data)
+				fmt.Print("============= FINISHED PROCESSING REGION: ", region)
+				if err != nil {
+					fmt.Println("Error in processing some of the region", region)
+					fmt.Println(err)
+				}
+				return nil
+			}
+		}(region))
+	}
+	regionGroup.Wait()
+	fmt.Println("================= FINISHED PROCESSING ALL REGIONS ==================")
 
 	if task.Status == models.TaskStatusProcessing {
 		if data.GenerateTemplateCommons {
@@ -1000,6 +1000,9 @@ func getMapHasCountriesFromPage(page *rod.Page) bool {
 		fmt.Println("Tab item: ", text)
 		text = strings.ToLower(text)
 		if text == "line" {
+			el.Click(proto.InputMouseButtonLeft, 1)
+			time.Sleep(time.Second)
+
 			hasLines = true
 			break
 		}
@@ -1020,13 +1023,19 @@ func getMapHasCountriesFromPage(page *rod.Page) bool {
 				el.Click(proto.InputMouseButtonLeft, 1)
 				time.Sleep(time.Second)
 				hasLines = page.MustHas("svg .LineChart")
-				if activeTab != nil {
-					activeTab.Click(proto.InputMouseButtonLeft, 1)
-					time.Sleep(time.Millisecond * 200)
-				}
 				break
 			}
 		}
+	}
+	if hasLines {
+		// Check for entity selector
+		hasLines = page.MustHas(".entity-selector .entity-section, .EntityPicker .EntityList")
+		fmt.Println("Has entity selector: ", hasLines)
+	}
+
+	if activeTab != nil {
+		activeTab.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(time.Millisecond * 200)
 	}
 
 	return hasLines
