@@ -361,12 +361,10 @@ func ParseDate(dateStr string) (time.Time, error) {
 }
 
 func AttachQueryParamToUrl(url, queryStr string) string {
-	if !strings.Contains(url, "tab=map") {
-		if strings.Contains(url, "?") {
-			url = fmt.Sprintf("%s&%s", url, queryStr)
-		} else {
-			url = fmt.Sprintf("%s?%s", url, queryStr)
-		}
+	if strings.Contains(url, "?") {
+		url = fmt.Sprintf("%s&%s", url, queryStr)
+	} else {
+		url = fmt.Sprintf("%s?%s", url, queryStr)
 	}
 
 	return url
