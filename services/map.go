@@ -1148,12 +1148,13 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, c
 	}
 
 	url := data.Url
-	if region == "World" {
-		// World chart has no region parameter
-		url = utils.AttachQueryParamToUrl(url, "tab=map")
-	} else {
-		url = utils.AttachQueryParamToUrl(url, fmt.Sprintf("tab=map&region=%s", region))
-	}
+	url = utils.AttachQueryParamToUrl(url, fmt.Sprintf("tab=map&region=%s", region))
+	// if region == "World" {
+	// 	// World chart has no region parameter
+	// url = utils.AttachQueryParamToUrl(url, "tab=map")
+	// } else {
+	// 	url = utils.AttachQueryParamToUrl(url, fmt.Sprintf("tab=map&region=%s", region))
+	// }
 	// TODO:
 
 	if task.ChartParameters != "" {
