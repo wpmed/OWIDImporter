@@ -3,14 +3,7 @@
 FROM debian:bullseye as go-builder
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    wget \
-    gcc \
-    libc6-dev \
-    sqlite3 \
-    libsqlite3-dev \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install -y wget gcc libc6-dev sqlite3 libsqlite3-dev git && rm -rf /var/lib/apt/lists/*
 
 # Install golang
 RUN wget https://golang.org/dl/go1.23.2.linux-amd64.tar.gz \
