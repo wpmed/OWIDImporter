@@ -369,3 +369,62 @@ func AttachQueryParamToUrl(url, queryStr string) string {
 
 	return url
 }
+
+func CleanupTaskURLQueryParams(url string) string {
+	if !strings.Contains(url, "?") {
+		return url
+	}
+
+	urlPartsInitial := strings.Split(url, "?")
+	urlParts := make([]string, 0)
+
+	for _, part := range urlPartsInitial {
+		if part != "" {
+			urlParts = append(urlParts, part)
+		}
+	}
+
+	url = urlParts[0]
+
+	if len(urlParts) > 1 {
+		// We have query params
+		paramsInitial := strings.Split(urlParts[1], "&")
+		params := make([]string, 0)
+		for _, param := range paramsInitial {
+			if param != "" {
+				params = append(params, param)
+			}
+		}
+
+		if len(params) > 0 {
+			fmt.Println("Params: ", params, len(params))
+			url = fmt.Sprintf("%s?", url)
+			addedParams := false
+			for _, param := range params {
+				keyVal := strings.Split(param, "=")
+				key := strings.ToLower(keyVal[0])
+				// Remove region, tab and time as they're being handled via the tool
+				if key == "tab" || key == "region" || key == "time" || key == "country" || key == "mapselect" {
+					continue
+				}
+
+				// Avoid globe parameters
+				if strings.HasPrefix(key, "globe") {
+					continue
+				}
+
+				if !strings.HasSuffix(url, "?") {
+					url = fmt.Sprintf("%s&", url)
+				}
+				url = fmt.Sprintf("%s%s=%s", url, keyVal[0], keyVal[1])
+				addedParams = true
+			}
+
+			if !addedParams {
+				url = strings.Split(url, "?")[0]
+			}
+		}
+	}
+
+	return url
+}

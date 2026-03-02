@@ -81,6 +81,14 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		return fmt.Errorf("invalid url")
 	}
 
+	if chartInfo.StableUrl != "" {
+		data.Url = chartInfo.StableUrl
+		if task.URL != data.Url {
+			task.URL = data.Url
+			task.Update()
+		}
+	}
+
 	chartParamsMap := chartInfo.ParamsMap
 	templateName := GenerateTemplateCommonsName(data.TemplateNameFormat, task.ChartName, chartParamsMap)
 	task.CommonsTemplateName = templateName
@@ -135,23 +143,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			}
 		}
 	}()
-
-	// startYearInt, err := strconv.ParseInt(startYear, 10, 64)
-	// if err != nil {
-	// 	// utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
-	// 	task.Status = models.TaskStatusFailed
-	// 	task.Update()
-	// 	utils.SendWSTask(task)
-	// 	return fmt.Errorf("failed to parse start year: %v", err)
-	// }
-	// endYearInt, err := strconv.ParseInt(endYear, 10, 64)
-	// if err != nil {
-	// 	// utils.SendWSMessage(session, "debug", fmt.Sprintf("%s:failed", region))
-	// 	task.Status = models.TaskStatusFailed
-	// 	task.Update()
-	// 	utils.SendWSTask(task)
-	// 	return fmt.Errorf("failed to parse end year: %v", err)
-	// }
 
 	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
 		fmt.Print("================= STARTED IMPORTING COUNTRIES")
@@ -359,6 +350,7 @@ type ChartInfo struct {
 	TemplateName  string            `json:"templateName"`
 	HasCountries  bool              `json:"hasCountries"`
 	CountriesList []string          `json:"countriesList"`
+	StableUrl     string            `json:"stableUrl"`
 }
 
 /*
@@ -420,6 +412,7 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 				chartInfo.CountriesList = GetCountryListFromPage(page)
 			}
 
+			chartInfo.StableUrl = utils.CleanupTaskURLQueryParams(page.MustInfo().URL)
 			fmt.Println("============= CHART INTO ***************************************** ", chartInfo)
 			_, err = GetPageCanDownload(page)
 			if err != nil {
@@ -548,7 +541,7 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 	defer page.Close()
 	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 
-	fmt.Println("Before navigate")
+	fmt.Println("==================== Before navigate: Traversing to: ", url)
 	page.MustNavigate(url)
 	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 	page.WaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)

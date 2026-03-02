@@ -3,12 +3,12 @@ package routes
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/services"
 	"github.com/wpmed-videowiki/OWIDImporter/sessions"
+	"github.com/wpmed-videowiki/OWIDImporter/utils"
 )
 
 type CreateTaskData struct {
@@ -57,45 +57,7 @@ func CreateTask(c *gin.Context) {
 		return
 	}
 
-	urlPartsInitial := strings.Split(data.Url, "?")
-	urlParts := make([]string, 0)
-
-	for _, part := range urlPartsInitial {
-		if part != "" {
-			urlParts = append(urlParts, part)
-		}
-	}
-
-	url := urlParts[0]
-
-	if len(urlParts) > 1 {
-		// We have query params
-		paramsInitial := strings.Split(urlParts[1], "&")
-		params := make([]string, 0)
-		for _, param := range paramsInitial {
-			if param != "" {
-				params = append(params, param)
-			}
-		}
-
-		if len(params) > 0 {
-			fmt.Println("Params: ", params, len(params))
-			url = fmt.Sprintf("%s?", url)
-			for _, param := range params {
-				keyVal := strings.Split(param, "=")
-				if !strings.HasSuffix(url, "?") {
-					url = fmt.Sprintf("%s&", url)
-				}
-				// Remove region, tab and time as they're being handled via the tool
-				if keyVal[0] == "tab" || keyVal[0] == "region" || keyVal[0] == "time" || keyVal[0] == "country" || keyVal[0] == "mapSelect" {
-					continue
-				} else {
-					url = fmt.Sprintf("%s%s=%s", url, keyVal[0], keyVal[1])
-				}
-			}
-		}
-	}
-	data.Url = url
+	data.Url = utils.CleanupTaskURLQueryParams(data.Url)
 
 	var modelType models.TaskType
 	switch data.Action {
