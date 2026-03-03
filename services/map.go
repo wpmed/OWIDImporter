@@ -746,26 +746,20 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 				utils.SendWSTaskProcess(task.ID, taskProcess)
 			} else {
 				taskProcess.FileName = Filename
-				taskProcess.Update()
 
 				switch status {
 				case "skipped":
 					taskProcess.Status = models.TaskProcessStatusSkipped
-					taskProcess.Update()
-					utils.SendWSTaskProcess(task.ID, taskProcess)
 				case "description_updated":
 					taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
-					taskProcess.Update()
-					utils.SendWSTaskProcess(task.ID, taskProcess)
 				case "overwritten":
 					taskProcess.Status = models.TaskProcessStatusOverwritten
-					taskProcess.Update()
-					utils.SendWSTaskProcess(task.ID, taskProcess)
 				case "uploaded":
 					taskProcess.Status = models.TaskProcessStatusUploaded
-					taskProcess.Update()
-					utils.SendWSTaskProcess(task.ID, taskProcess)
 				}
+
+				taskProcess.Update()
+				utils.SendWSTaskProcess(task.ID, taskProcess)
 			}
 
 			if !moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {

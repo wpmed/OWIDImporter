@@ -62,6 +62,17 @@ type QueryResponse struct {
 	} `json:"query"`
 }
 
+type QueryBySHA1Response struct {
+	BatchComplete bool `json:"batchcomplete"`
+	Query         struct {
+		AllImages []struct {
+			Name  string `json:"name"`
+			Title string `json:"title"`
+			Url   string `json:"url"`
+		} `json:"allimages"`
+	} `json:"query"`
+}
+
 type Page struct {
 	PageID          int    `json:"pageid"`
 	NS              int    `json:"ns"`
@@ -272,6 +283,8 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 	if err != nil {
 		return filename, "", err
 	}
+	fmt.Println("============ GOT FILE SHA1: ", fileInfo.FilePath, err, fileInfo.Sha1)
+
 	res, err := utils.DoApiReq[QueryResponse](user, map[string]string{
 		"action": "query",
 		"prop":   "imageinfo",
@@ -290,6 +303,24 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 
 	// Doesn't exist, upload and update description directly
 	if len(page.ImageInfo) == 0 {
+		// Checking if file already uploaded under a different name using sha1 query
+		shaRes, err := utils.DoApiReq[QueryBySHA1Response](user, map[string]string{
+			"action": "query",
+			"list":   "allimages",
+			"aisha1": fileInfo.Sha1,
+			"aiprop": "url|sha1|size",
+		}, nil)
+		if err != nil {
+			return filename, "", err
+		}
+
+		if len(shaRes.Query.AllImages) > 0 {
+			// Exists, then skip
+			fmt.Println("Image already exists under different name, skipping to prevent duplication")
+			fmt.Println("Sha1 query result: ", shaRes)
+			return shaRes.Query.AllImages[0].Name, "skipped", nil
+		}
+
 		// Do upload
 		res, err := utils.DoApiReq[UploadResponse](user, map[string]string{
 			"action":         "upload",
