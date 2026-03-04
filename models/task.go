@@ -55,6 +55,7 @@ type Task struct {
 	CommonsTemplateName                  string                        `json:"commonsTemplateName"`
 	CommonsTemplateNameFormat            string                        `json:"commonsTemplateNameFormat"`
 	Status                               TaskStatus                    `json:"status"`
+	Archived                             int                           `json:"archived"` // 0 for false, 1 for true
 	Type                                 TaskType                      `json:"type"`
 	ChartParameters                      string                        `json:"chartParameters"`
 	LastOperationAt                      int64                         `json:"lastOperationAt"`
@@ -128,13 +129,13 @@ func NewTask(userId, url, fileName, description string, descriptionOverwriteBeha
 }
 
 func (task *Task) Update() error {
-	stmt, err := db.Prepare("UPDATE task SET url=?, file_name=?, description=?, description_overwrite_behaviour=?, status=?, import_countries=?, chart_name=?, commons_template_name=?, last_operation_at=? WHERE id=?")
+	stmt, err := db.Prepare("UPDATE task SET url=?, file_name=?, description=?, description_overwrite_behaviour=?, status=?, import_countries=?, chart_name=?, commons_template_name=?, last_operation_at=?, archived=? WHERE id=?")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(task.URL, task.FileName, task.Description, task.DescriptionOverwriteBehaviour, task.Status, task.ImportCountries, task.ChartName, task.CommonsTemplateName, task.LastOperationAt, task.ID)
+	result, err := stmt.Exec(task.URL, task.FileName, task.Description, task.DescriptionOverwriteBehaviour, task.Status, task.ImportCountries, task.ChartName, task.CommonsTemplateName, task.LastOperationAt, task.Archived, task.ID)
 	if err != nil {
 		return err
 	}
@@ -217,12 +218,13 @@ func FindTaskById(id string) (*Task, error) {
 	return &task, nil
 }
 
-func FindTaskByUserId(id, taskType string) (*[]Task, error) {
+func FindTaskByUserId(id, taskType string, archived, skip, limit int) (*[]Task, int, error) {
 	tasks := make([]Task, 0)
-	rows, err := db.Query("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at FROM task where user_id=? AND type=? ORDER BY created_at DESC", id, taskType)
+	condition := "user_id=? AND type=? AND archived=?"
+	rows, err := db.Query(fmt.Sprintf("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, archived, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at FROM task WHERE %s ORDER BY created_at DESC LIMIT ? OFFSET ?", condition), id, taskType, archived, limit, skip)
 	if err != nil {
 		fmt.Println("Error scaning for id ", id, err)
-		return nil, fmt.Errorf("Cannot find requested record")
+		return nil, 0, fmt.Errorf("Cannot find requested record")
 	}
 	defer rows.Close()
 
@@ -239,6 +241,7 @@ func FindTaskByUserId(id, taskType string) (*[]Task, error) {
 			&task.Status,
 			&task.Type,
 			&task.ImportCountries,
+			&task.Archived,
 			&task.CountryFileName,
 			&task.CountryDescription,
 			&task.CountryDescriptionOverwriteBehaviour,
@@ -252,7 +255,10 @@ func FindTaskByUserId(id, taskType string) (*[]Task, error) {
 		tasks = append(tasks, task)
 	}
 
-	return &tasks, nil
+	row := db.QueryRow(fmt.Sprintf("SELECT COUNT(id) as c FROM task WHERE %s", condition), id, taskType, archived)
+	count := 0
+	row.Scan(&count)
+	return &tasks, count, nil
 }
 
 func FindStalledTasks() (*[]Task, error) {
@@ -344,6 +350,7 @@ func initTaskTable() {
 		chart_name TEXT,
 		status VARCHAR(50) NOT NULL,
 		import_countries INT,
+		archived INT NOT NULL DEFAULT 0,
 		country_file_name TEXT,
 		country_description TEXT,
 		country_description_overwrite_behaviour TEXT,

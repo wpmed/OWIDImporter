@@ -38,6 +38,7 @@ func BuildRoutes() *gin.Engine {
 	router.POST("/task/:id/cancel", CancelTask)
 	// router.POST("/task/:id/upload_commons_template", GenerateCommonsTemplate)
 	router.GET("/task/:id", GetTask)
+	router.PUT("/task/:id/archived", ArchiveTask)
 
 	// Chart related info
 	router.POST("/chart/parameters", GetChartParameters)

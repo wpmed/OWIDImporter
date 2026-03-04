@@ -1,17 +1,66 @@
-import { Box, Button, Card, CardContent, CircularProgress, Grid, Stack, Typography } from "@mui/material"
-import { Task, TaskStatusEnum, TaskTypeEnum } from "../types"
-import { formatDate, getStatusColor } from "../utils"
-import { CopyButton } from "./CopyButton"
-import { COMMONS_TEMPLATE_PREFIX } from "../constants"
+import { Box, Button, ButtonGroup, Grid, Stack } from "@mui/material"
+import { Task, TaskTypeEnum } from "../types"
+import { useEffect, useState } from "react"
+import { archiveTask, deleteTask, fetchTasks } from "../request/request"
+import { TaskListItem } from "./TaskListItem"
 
 interface TaskListProps {
-  tasks: Task[],
   taskType: TaskTypeEnum
   onTaskClick: (task: Task) => void
   onNew: () => void,
 }
 
-export function TaskList({ tasks, taskType, onTaskClick, onNew }: TaskListProps) {
+export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [archived, setArchived] = useState(0);
+  // const [page, setPage] = useState(1);
+
+  const onToggleTaskArchived = (task: Task) => {
+    const newArchived = task.archived === 0 ? 1 : 0;
+
+    archiveTask(task.id, newArchived)
+      .then((res) => {
+        if (res.task) {
+          setTasks((tasks) => {
+            const newTasks = tasks.slice().filter(t => t.id != task.id);
+            return newTasks;
+          });
+        }
+      })
+      .catch(err => {
+        console.log("Error updating archive: ", newArchived, err)
+      })
+  }
+
+  const onDeleteTask = (task: Task) => {
+    deleteTask(task.id)
+      .then((res) => {
+        if (res.task) {
+          setTasks((tasks) => {
+            const newTasks = tasks.slice().filter(t => t.id != task.id);
+            return newTasks;
+          });
+        }
+      })
+      .catch(err => {
+        console.log("Error deleting task: ", err)
+      })
+  }
+
+  useEffect(() => {
+    console.log("SHould get task list");
+    fetchTasks({ taskType, archived })
+      .then(res => {
+        if (res.tasks) {
+          setTasks(res.tasks);
+        }
+      })
+      .catch(err => {
+        console.log({ err });
+      })
+
+  }, [taskType, archived])
+
   return (
     <Stack spacing={2} textAlign={"left"}>
       <Box>
@@ -19,105 +68,22 @@ export function TaskList({ tasks, taskType, onTaskClick, onNew }: TaskListProps)
           Import New {taskType}
         </Button>
       </Box>
+      <hr />
+      <Box>
+        <ButtonGroup>
+          <Button onClick={() => setArchived(0)} variant={archived == 0 ? "contained" : undefined}>Recent</Button>
+          <Button onClick={() => setArchived(1)} variant={archived == 1 ? "contained" : undefined}>Archived</Button>
+        </ButtonGroup>
+      </Box>
       <Grid container spacing={4}>
         {tasks.map(task => (
           <Grid size={4} key={task.id}>
-            <Card sx={{ cursor: "pointer" }} onClick={() => onTaskClick(task)}>
-              <CardContent >
-                <Stack spacing={1}>
-                  {task.chartName && (
-                    <Grid container spacing={1}>
-                      <Grid size={3}>
-                        <Typography variant="body2">
-                          Chart Name:
-                        </Typography>
-                      </Grid>
-                      <Grid>
-                        <Typography variant="body2">
-                          {task.chartName}
-                        </Typography>
-                      </Grid>
-                    </Grid>
-                  )}
-                  <Grid container spacing={1}>
-                    <Grid size={3}>
-                      <Typography variant="body2">
-                        URL:
-                      </Typography>
-                    </Grid>
-                    <Grid onClick={(e) => e.stopPropagation()}>
-                      <Stack justifyContent={"space-between"} alignItems={"center"} flexDirection={"row"}>
-                        <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 14 }}>
-                          <a href={task.url} target="_blank">
-                            {task.url.split("/").pop()}
-                          </a>
-                        </Typography>
-                        <CopyButton text={task.url} />
-                      </Stack>
-                    </Grid>
-                  </Grid>
-                  {task.generateTemplateCommons == 1 && task.commonsTemplateName && task.status == TaskStatusEnum.Done ? (
-                    <Grid container spacing={1}>
-                      <Grid size={3}>
-                        <Typography variant="body2">
-                          Commons Template:
-                        </Typography>
-                      </Grid>
-                      <Grid onClick={(e) => e.stopPropagation()}>
-                        <Stack justifyContent={"space-between"} alignItems={"center"} flexDirection={"row"}>
-                          <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 14 }}>
-                            <a href={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`} target="_blank">
-                              {task.commonsTemplateName}
-                            </a>
-                          </Typography>
-                          <CopyButton text={`*[[${task.commonsTemplateName}|${task.commonsTemplateName.replace(COMMONS_TEMPLATE_PREFIX + "/", "")}]]`} />
-                        </Stack>
-                      </Grid>
-                    </Grid>
-                  ) : null}
-                  <Grid container spacing={1}>
-                    <Grid size={3}>
-                      <Typography variant="body2">
-                        File Name:
-                      </Typography>
-                    </Grid>
-                    <Grid>
-                      <Typography variant="body2">
-                        {task.filename}
-                      </Typography>
-                    </Grid>
-                  </Grid>
-                  <Grid container spacing={1}>
-                    <Grid size={3}>
-                      <Typography variant="body2">
-                        Status:
-                      </Typography>
-                    </Grid>
-                    <Grid>
-                      <Stack spacing={1} direction={"row"} alignItems={"center"} textTransform={"capitalize"}>
-                        <span style={{ color: getStatusColor(task.status), }}  >{task.status}</span>
-                        {task.status === TaskStatusEnum.Processing && (
-                          <CircularProgress size={12} color="primary" />
-                        )}
-                      </Stack>
-                    </Grid>
-                  </Grid>
-                  <Grid container spacing={1}>
-                    <Grid size={3}>
-                      <Typography variant="body2">
-                        Created At:
-                      </Typography>
-                    </Grid>
-                    <Grid>
-                      <Typography variant="body2">
-                        {formatDate(new Date(task.createdAt * 1000))}
-                      </Typography>
-
-                    </Grid>
-                  </Grid>
-                </Stack>
-              </CardContent>
-            </Card>
+            <TaskListItem
+              task={task}
+              onClick={() => onTaskClick(task)}
+              onToggleArchive={() => onToggleTaskArchived(task)}
+              onDelete={() => onDeleteTask(task)}
+            />
           </Grid>
         ))}
       </Grid>

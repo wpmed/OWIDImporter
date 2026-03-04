@@ -2,7 +2,9 @@ package routes
 
 import (
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
@@ -194,13 +196,90 @@ func GetTasks(c *gin.Context) {
 	queryParams := c.Request.URL.Query()
 	taskType := queryParams.Get("taskType")
 
-	tasks, err := models.FindTaskByUserId(user.ID, taskType)
+	archivedStr := queryParams.Get("archived")
+	archived := 0
+	if archivedStr == "1" {
+		archived = 1
+	}
+
+	pageStr := queryParams.Get("page")
+	page := 1
+	if pageStr != "" {
+		if num, err := strconv.Atoi(pageStr); err == nil && num > 0 {
+			page = num
+		}
+	}
+
+	perPageStr := queryParams.Get("perPage")
+	perPage := 1000
+	if perPageStr != "" {
+		if num, err := strconv.Atoi(perPageStr); err == nil {
+			perPage = num
+		}
+	}
+
+	skip := (page - 1) * perPage
+
+	tasks, count, err := models.FindTaskByUserId(user.ID, taskType, archived, skip, perPage)
 	if err != nil || tasks == nil {
 		c.JSON(http.StatusBadRequest, make([]string, 0))
 		return
 	}
+	totalPages := math.Ceil(float64(count) / float64(perPage))
 
-	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
+	c.JSON(http.StatusOK, gin.H{"tasks": tasks, "page": page, "perPage": perPage, "totalPages": totalPages})
+}
+
+type ArchiveTaskData struct {
+	Archived int `json:"archived"`
+}
+
+func ArchiveTask(c *gin.Context) {
+	sessionId := c.Request.Header.Get("sessionId")
+
+	if sessionId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session"})
+		return
+	}
+
+	session, ok := sessions.Sessions[sessionId]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown session"})
+		return
+	}
+	user, err := models.FindUserByUsername(session.Username)
+	if err != nil || user == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown user"})
+		return
+	}
+
+	taskId := c.Param("id")
+	task, err := models.FindTaskById(taskId)
+	if err != nil || task == nil {
+		fmt.Println("Error retrying task: ", err, task)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrying task"})
+		return
+	}
+
+	if task.Status == models.TaskStatusProcessing {
+		fmt.Println("Cannot archive processing task ", task.Status, task.ID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot archive a processing task"})
+		return
+	}
+
+	var data ArchiveTaskData
+	if err := c.BindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Error reading data"})
+		return
+	}
+
+	task.Archived = data.Archived
+	fmt.Println("SET ARCHIVED TO: ", data.Archived, task.Archived)
+	if err := task.Update(); err != nil {
+		fmt.Println("Error updating task", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"task": task})
 }
 
 func RetryTask(c *gin.Context) {

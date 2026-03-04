@@ -123,11 +123,22 @@ export async function cancelTask(id: string) {
 
 interface FetchTasksResopnse {
   tasks?: Task[]
+  page: number
+  perPage: number
+  totalPages: number
   error?: string
 }
-export async function fetchTasks(taskType: TaskTypeEnum) {
+
+interface FetchTasksRequest {
+  taskType: TaskTypeEnum
+  // page: number
+  // perPage: number
+  archived: number // 0 or 1
+}
+
+export async function fetchTasks({ taskType, archived }: FetchTasksRequest) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
-  const response = await fetch(`${API_BASE}/task?taskType=${taskType}`, {
+  const response = await fetch(`${API_BASE}/task?taskType=${taskType}&archived=${archived}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -162,6 +173,43 @@ export async function fetchTaskById(id: string) {
   });
 
   const responseData = await response.json() as FetchTaskByIdResponse;
+
+  return responseData;
+}
+
+export async function archiveTask(id: string, archived: number) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+
+  const response = await fetch(`${API_BASE}/task/${id}/archived`, {
+    method: "PUT",
+    body: JSON.stringify({ archived }),
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionId ? {
+        [SESSION_ID_KEY]: sessionId
+      } : {})
+    }
+  });
+
+  const responseData = await response.json() as { task: Task };
+
+  return responseData;
+}
+
+export async function deleteTask(id: string) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+
+  const response = await fetch(`${API_BASE}/task/${id}`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionId ? {
+        [SESSION_ID_KEY]: sessionId
+      } : {})
+    }
+  });
+
+  const responseData = await response.json() as { task: Task };
 
   return responseData;
 }

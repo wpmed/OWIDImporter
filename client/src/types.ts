@@ -49,6 +49,7 @@ export interface Task {
   countryDescription?: string,
   countryDescriptionOverwriteBehaviour?: DescriptionOverwriteBehaviour,
   importCountries: number,
+  archived: number,
   generateTemplateCommons: number,
   chartName: string,
   commonsTemplateName?: string,

@@ -17,9 +17,9 @@ import { Login } from './components/Login';
 import { useReplaceSession } from './hooks/useReplaceSession';
 import { SESSION_ID_KEY, USERNAME_KEY } from './constants';
 import { Logout } from '@mui/icons-material';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Task, TaskTypeEnum } from './types';
-import { fetchTasks, logout } from './request/request';
+import { logout } from './request/request';
 import { TaskList } from './components/TaskList';
 
 const drawerWidth = 240;
@@ -58,7 +58,6 @@ const LIST_ITEMS = [
 export default function App() {
   const [tab, setTab] = useState(TABS.MAP_LIST);
   const [selectedTaskId, setSelectedTaskId] = useState("");
-  const [tasks, setTasks] = useState<Task[]>([])
 
   useReplaceSession();
 
@@ -102,23 +101,6 @@ export default function App() {
     setTab(TABS.MAP_LIST);
     window.scrollTo({ left: 0, top: 0 })
   }, [setTab])
-
-  useEffect(() => {
-    if (sessionId && [TABS.MAP_LIST, TABS.CHART_LIST].includes(tab)) {
-      console.log("SHould get task list");
-      fetchTasks(selectedTaskType)
-        .then(res => {
-          if (res.tasks) {
-            console.log({ res });
-            setTasks(res.tasks);
-          }
-        })
-        .catch(err => {
-          console.log({ err });
-        })
-
-    }
-  }, [tab, setTasks, selectedTaskType, sessionId])
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -175,7 +157,7 @@ export default function App() {
           <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
             <Toolbar />
             {[TABS.MAP_LIST, TABS.CHART_LIST].includes(tab) ? (
-              <TaskList tasks={tasks} taskType={selectedTaskType} onNew={onNewClick} onTaskClick={onTaskClick} />
+              <TaskList taskType={selectedTaskType} onNew={onNewClick} onTaskClick={onTaskClick} />
             ) : [TABS.IMPORT_MAP, TABS.MAP_DETAILS].includes(tab) ? (
               <MapImporter taskId={selectedTaskId} onNavigateToList={onNavigateToList} />
             ) : null}
