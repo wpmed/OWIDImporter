@@ -409,7 +409,7 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 
 			fmt.Println("Got has countries")
 			if chartInfo.HasCountries {
-				chartInfo.CountriesList = GetCountryListFromPage(page)
+				chartInfo.CountriesList = getCountryListFromPage(page)
 			}
 
 			chartInfo.StableUrl = utils.CleanupTaskURLQueryParams(page.MustInfo().URL)
@@ -970,12 +970,12 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 	return &config, nil
 }
 
-func getMapHasCountriesFromPage(page *rod.Page) bool {
-	fmt.Println("Getting Has Countries From Page: ", page.MustInfo().URL)
+func getActivePageTab(page *rod.Page) *rod.Element {
+	return page.MustElement(".ContentSwitchers__Container div.Tabs div.Tabs__Tab.active")
+}
 
-	activeTab := page.MustElement(".ContentSwitchers__Container div.Tabs div.Tabs__Tab.active")
+func getTabByLabel(page *rod.Page, label string) *rod.Element {
 	lineElements := page.MustElements(".ContentSwitchers__Container div.Tabs div.Tabs__Tab .label")
-	hasLines := false
 
 	for _, el := range lineElements {
 		text, err := el.Text()
@@ -986,38 +986,31 @@ func getMapHasCountriesFromPage(page *rod.Page) bool {
 
 		fmt.Println("Tab item: ", text)
 		text = strings.ToLower(text)
-		if text == "line" {
-			el.Click(proto.InputMouseButtonLeft, 1)
-			time.Sleep(time.Second)
-
-			hasLines = true
-			break
+		if text == label {
+			return el
 		}
 	}
 
-	if !hasLines {
-		// Check for chart tab
-		for _, el := range lineElements {
-			text, err := el.Text()
-			if err != nil {
-				fmt.Println("Error parsing line text", err)
-				continue
-			}
+	return nil
+}
 
-			fmt.Println("Tab item: ", text)
-			text = strings.ToLower(text)
-			if text == "chart" {
-				el.Click(proto.InputMouseButtonLeft, 1)
-				time.Sleep(time.Second)
-				hasLines = page.MustHas("svg .LineChart")
-				break
-			}
-		}
-	}
-	if hasLines {
-		// Check for entity selector
+func getMapHasCountriesFromPage(page *rod.Page) bool {
+	fmt.Println("Getting Has Countries From Page: ", page.MustInfo().URL)
+
+	activeTab := getActivePageTab(page)
+	hasLines := false
+
+	lineTab := getTabByLabel(page, "line")
+	chartTab := getTabByLabel(page, "chart")
+	if lineTab != nil {
+		lineTab.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(time.Second)
 		hasLines = page.MustHas(".entity-selector .entity-section, .EntityPicker .EntityList")
 		fmt.Println("Has entity selector: ", hasLines)
+	} else if chartTab != nil {
+		chartTab.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(time.Second)
+		hasLines = page.MustHas("svg .LineChart")
 	}
 
 	if activeTab != nil {
@@ -1026,6 +1019,80 @@ func getMapHasCountriesFromPage(page *rod.Page) bool {
 	}
 
 	return hasLines
+}
+
+func getCountryListFromPage(page *rod.Page) []string {
+	activeTab := getActivePageTab(page)
+	lineTab := getTabByLabel(page, "line")
+	chartTab := getTabByLabel(page, "chart")
+
+	if lineTab != nil {
+		lineTab.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(time.Second)
+	} else if chartTab != nil {
+		chartTab.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(time.Second)
+	}
+
+	countries := []string{}
+
+	elements := page.MustElements(".entity-selector__content li")
+	// Is regular graph
+	if len(elements) > 0 {
+		for _, element := range elements {
+			label := element.MustElement(".label")
+			value := element.MustElement(".value")
+			if value != nil && value.MustText() != "" && strings.ToLower(value.MustText()) == "no data" {
+				fmt.Println("No data for country: ", element.MustText())
+				continue
+			}
+			country := strings.TrimSpace(label.MustText())
+			countryCode, ok := constants.COUNTRY_CODES[country]
+			if !ok {
+				fmt.Println("Country not found", country)
+				continue
+			}
+			// check if country is not already in list
+			if !utils.Contains(countries, countryCode) {
+				countries = append(countries, countryCode)
+			}
+		}
+
+		return countries
+	}
+
+	// Is explorer graph
+	elements = page.MustElements(".EntityList label.EntityPickerOption")
+	if len(elements) > 0 {
+		for _, element := range elements {
+			label := element.MustElement(".name")
+			classes := element.MustAttribute("class")
+			fmt.Println("Element: ", label, *classes)
+
+			if strings.Contains(*classes, "MissingData") {
+				fmt.Println("No data for country: ", element.MustText())
+				continue
+			}
+
+			country := strings.TrimSpace(label.MustText())
+			countryCode, ok := constants.COUNTRY_CODES[country]
+			if !ok {
+				fmt.Println("Country not found", country)
+				continue
+			}
+			// check if country is not already in list
+			if !utils.Contains(countries, countryCode) {
+				countries = append(countries, countryCode)
+			}
+		}
+	}
+
+	if activeTab != nil {
+		activeTab.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(time.Second)
+	}
+
+	return countries
 }
 
 func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
