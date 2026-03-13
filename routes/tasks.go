@@ -319,40 +319,44 @@ func RetryTask(c *gin.Context) {
 	task.Status = models.TaskStatusQueued
 	task.Update()
 
-	// go func() {
-	// 	switch task.Type {
-	// 	case models.TaskTypeMap:
-	// 		fmt.Println("Action message map", task)
-	// 		err := services.StartMap(task.ID, user, services.StartData{
-	// 			Url:                                  task.URL,
-	// 			FileName:                             task.FileName,
-	// 			Description:                          task.Description,
-	// 			DescriptionOverwriteBehaviour:        task.DescriptionOverwriteBehaviour,
-	// 			ImportCountries:                      task.ImportCountries == 1,
-	// 			CountryFileName:                      task.CountryFileName,
-	// 			CountryDescription:                   task.CountryDescription,
-	// 			CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-	// 			GenerateTemplateCommons:              task.GenerateTemplateCommons == 1,
-	// 			TemplateNameFormat:                   task.CommonsTemplateNameFormat,
-	// 		})
-	// 		if err != nil {
-	// 			log.Println("Error starting map", err)
-	// 		}
-	// 	case models.TaskTypeChart:
-	// 		fmt.Println("Action message chart", task)
-	// 		err := services.StartChart(task.ID, user, services.StartData{
-	// 			Url:                           task.URL,
-	// 			FileName:                      task.FileName,
-	// 			Description:                   task.Description,
-	// 			DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
-	// 		})
-	// 		if err != nil {
-	// 			log.Println("Error starting map", err)
-	// 		}
-	// 	}
-	// }()
-
 	c.JSON(http.StatusOK, gin.H{"taskId": task.ID})
+}
+
+func RetryAllFailed(c *gin.Context) {
+	sessionId := c.Request.Header.Get("sessionId")
+
+	if sessionId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session"})
+		return
+	}
+
+	session, ok := sessions.Sessions[sessionId]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown session"})
+		return
+	}
+	user, err := models.FindUserByUsername(session.Username)
+	if err != nil || user == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown user"})
+		return
+	}
+
+	tasks, err := models.FindFailedTasksByUserId(user.ID)
+	if err != nil {
+		fmt.Println("Error retrying tasks:", err)
+
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrying tasks"})
+		return
+	}
+
+	for _, task := range *tasks {
+		models.FailProcessingTaskProcesses(task.ID)
+		models.UpdateTaskLastOperationAt(task.ID)
+		task.Status = models.TaskStatusQueued
+		task.Update()
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 func CancelTask(c *gin.Context) {

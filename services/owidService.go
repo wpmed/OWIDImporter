@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/wpmed-videowiki/OWIDImporter/constants"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/owidparser"
 	"github.com/wpmed-videowiki/OWIDImporter/utils"
@@ -33,6 +34,12 @@ type StartData struct {
 type CountryTemplateDataItem struct {
 	FileName string
 	Country  string
+}
+
+type RegionChartTemplateDataItem struct {
+	FileName string
+	Country  string
+	Region   string
 }
 
 type TokenResponse struct {
@@ -608,6 +615,7 @@ func GetMapTemplate(taskId string) (string, error) {
 
 	data := make([]TemplateElement, 0)
 	countriesData := make([]CountryTemplateDataItem, 0)
+	regionsChartsData := make([]RegionChartTemplateDataItem, 0)
 	firstFileName := ""
 	endFileName := ""
 	startYear := time.Now().Unix()
@@ -675,10 +683,21 @@ func GetMapTemplate(taskId string) (string, error) {
 
 	for _, tp := range taskProcesses {
 		if tp.Type == models.TaskProcessTypeCountry && tp.Status != models.TaskProcessStatusFailed && tp.FileName != "" {
-			countriesData = append(countriesData, CountryTemplateDataItem{
-				Country:  tp.Region,
-				FileName: tp.FileName,
-			})
+			if strings.HasPrefix(tp.Region, "OWID_") {
+				region, has := constants.REGIONS_CODES_NAME_MAP[tp.Region]
+				if has {
+					regionsChartsData = append(regionsChartsData, RegionChartTemplateDataItem{
+						Country:  tp.Region,
+						FileName: tp.FileName,
+						Region:   region,
+					})
+				}
+			} else {
+				countriesData = append(countriesData, CountryTemplateDataItem{
+					Country:  tp.Region,
+					FileName: tp.FileName,
+				})
+			}
 		}
 	}
 
@@ -723,6 +742,14 @@ func GetMapTemplate(taskId string) (string, error) {
 
 		for _, el := range countriesData {
 			wikiText.WriteString(fmt.Sprintf("File:%s!country=%s\n", el.FileName, el.Country))
+		}
+	}
+
+	if len(regionsChartsData) > 0 {
+		wikiText.WriteString("|gallery-RegionsCharts=\n")
+
+		for _, el := range regionsChartsData {
+			wikiText.WriteString(fmt.Sprintf("File:%s!region=%s\n", el.FileName, strings.ReplaceAll(el.Region, " ", "")))
 		}
 	}
 

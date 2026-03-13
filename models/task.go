@@ -218,6 +218,46 @@ func FindTaskById(id string) (*Task, error) {
 	return &task, nil
 }
 
+func FindFailedTasksByUserId(id string) (*[]Task, error) {
+	tasks := make([]Task, 0)
+	condition := "user_id=? AND status=? AND archived=0"
+	rows, err := db.Query(fmt.Sprintf("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, archived, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at FROM task WHERE %s ORDER BY created_at DESC", condition), id, TaskStatusFailed)
+	if err != nil {
+		fmt.Println("Error scaning for id ", id, err)
+		return nil, fmt.Errorf("Cannot find requested record")
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var task Task
+		rows.Scan(
+			&task.ID,
+			&task.UserId,
+			&task.URL,
+			&task.FileName,
+			&task.Description,
+			&task.DescriptionOverwriteBehaviour,
+			&task.ChartName,
+			&task.Status,
+			&task.Type,
+			&task.ImportCountries,
+			&task.Archived,
+			&task.CountryFileName,
+			&task.CountryDescription,
+			&task.CountryDescriptionOverwriteBehaviour,
+			&task.GenerateTemplateCommons,
+			&task.CommonsTemplateName,
+			&task.CommonsTemplateNameFormat,
+			&task.ChartParameters,
+			&task.LastOperationAt,
+			&task.CreatedAt,
+		)
+		tasks = append(tasks, task)
+	}
+
+	return &tasks, nil
+}
+
 func FindTaskByUserId(id, taskType string, archived, skip, limit int) (*[]Task, int, error) {
 	tasks := make([]Task, 0)
 	condition := "user_id=? AND type=? AND archived=?"

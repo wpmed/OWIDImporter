@@ -1,8 +1,9 @@
 import { Box, Button, ButtonGroup, Grid, Stack } from "@mui/material"
-import { Task, TaskTypeEnum } from "../types"
-import { useEffect, useState } from "react"
-import { archiveTask, deleteTask, fetchTasks } from "../request/request"
+import { Task, TaskStatusEnum, TaskTypeEnum } from "../types"
+import { useEffect, useMemo, useState } from "react"
+import { archiveTask, deleteTask, fetchTasks, retryFailedTasks } from "../request/request"
 import { TaskListItem } from "./TaskListItem"
+import { Refresh } from "@mui/icons-material"
 
 interface TaskListProps {
   taskType: TaskTypeEnum
@@ -47,6 +48,29 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
       })
   }
 
+  const hasFailedTasks = useMemo(() => {
+    return tasks.some(t => t.status == TaskStatusEnum.Failed);
+  }, [tasks])
+
+  const onRetryFailedTasks = () => {
+    retryFailedTasks()
+      .then((res) => {
+        console.log("Retry res: ", res);
+        fetchTasks({ taskType, archived })
+          .then(res => {
+            if (res.tasks) {
+              setTasks(res.tasks);
+            }
+          })
+          .catch(err => {
+            console.log({ err });
+          })
+      })
+      .catch(err => {
+        console.log(err);
+      })
+  }
+
   useEffect(() => {
     console.log("SHould get task list");
     fetchTasks({ taskType, archived })
@@ -74,7 +98,11 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
           <Button onClick={() => setArchived(0)} variant={archived == 0 ? "contained" : undefined}>Recent</Button>
           <Button onClick={() => setArchived(1)} variant={archived == 1 ? "contained" : undefined}>Archived</Button>
         </ButtonGroup>
+        {hasFailedTasks ? (
+          <Button sx={{ marginLeft: 2 }} endIcon={<Refresh />} onClick={onRetryFailedTasks} >Retry Failed Tasks</Button>
+        ) : null}
       </Box>
+
       <Grid container spacing={4}>
         {tasks.map(task => (
           <Grid size={4} key={task.id}>

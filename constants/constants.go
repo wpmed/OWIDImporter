@@ -257,6 +257,25 @@ var COUNTRY_CODES = map[string]string{
 	"Yemen":                                "YEM",
 	"Zambia":                               "ZMB",
 	"Zimbabwe":                             "ZWE",
+
+	// OWID provided regions
+	"World":         "OWID_WRL",
+	"Africa":        "OWID_AFR",
+	"South America": "OWID_SAM",
+	"North America": "OWID_NAM",
+	"Asia":          "OWID_ASI",
+	"Europe":        "OWID_EUR",
+	"Oceania":       "OWID_OCE",
+}
+
+var REGIONS_CODES_NAME_MAP = map[string]string{
+	"OWID_WRL": "World",
+	"OWID_AFR": "Africa",
+	"OWID_SAM": "South America",
+	"OWID_NAM": "North America",
+	"OWID_ASI": "Asia",
+	"OWID_EUR": "Europe",
+	"OWID_OCE": "Oceania",
 }
 
 var REGIONS = []string{

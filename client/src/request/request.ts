@@ -106,6 +106,21 @@ export async function retryTask(id: string) {
   return responseData;
 }
 
+export async function retryFailedTasks() {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+  const response = await fetch(`${API_BASE}/task/retry_all`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [SESSION_ID_KEY]: sessionId
+    }
+  });
+
+  const responseData = await response.json();
+
+  return responseData;
+}
+
 export async function cancelTask(id: string) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
   const response = await fetch(`${API_BASE}/task/${id}/cancel`, {
