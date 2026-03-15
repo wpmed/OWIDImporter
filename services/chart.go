@@ -72,7 +72,6 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 		fmt.Println("Error fetching country list", err)
 		return err
 	}
-	fmt.Println("Countries:====================== ", countriesList)
 
 	done := false
 	defer func() {
@@ -96,7 +95,6 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 			if done {
 				break
 			}
-			fmt.Println("Gettng new token")
 			tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
 				"action": "query",
 				"meta":   "tokens",
@@ -106,7 +104,6 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 				fmt.Println("Error fetching edit token", err)
 			} else if tokenResponse.Query.Tokens.CsrfToken != "" {
 				token = tokenResponse.Query.Tokens.CsrfToken
-				fmt.Println("Got new token")
 			}
 		}
 	}()
@@ -128,9 +125,9 @@ func StartChart(taskId string, user *models.User, data StartData) error {
 		}(country, filepath.Join(tmpDir, country), &token))
 	}
 
-	fmt.Println("Started in", time.Since(startTime).String())
 	err = g.Wait()
 	elapsedTime := time.Since(startTime)
+	fmt.Println("Started in", time.Since(startTime).String())
 	fmt.Println("Finished in", elapsedTime.String())
 	if err != nil {
 		fmt.Println("Error processing countries", err)
@@ -161,7 +158,6 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 
 	go func() {
 		for !done {
-			fmt.Println("Gettng new token ProcessCountriesFromPopover")
 			tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
 				"action": "query",
 				"meta":   "tokens",
@@ -171,7 +167,6 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 				fmt.Println("Error fetching edit token", err)
 			} else if tokenResponse.Query.Tokens.CsrfToken != "" {
 				token = tokenResponse.Query.Tokens.CsrfToken
-				fmt.Println("Got new token")
 			}
 
 			time.Sleep(time.Second * 20)
@@ -286,13 +281,6 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 }
 
 func processCountry(user *models.User, task *models.Task, token, chartName, country, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
-	l, browser := GetBrowser()
-	blankPage := browser.MustPage("")
-
-	defer blankPage.Close()
-	defer l.Cleanup()
-	defer browser.Close()
-
 	var err error
 	var taskProcess *models.TaskProcess
 	// Try to find existing process, otherwise create one
@@ -326,7 +314,13 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 	fmt.Println("================== Processing country: ", url)
 	// utils.SendWSTaskProcess(taskId string, taskProcess *models.TaskProcess)
 	// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
-	fmt.Println("Processing", url)
+
+	l, browser := GetBrowser()
+	blankPage := browser.MustPage("")
+
+	defer blankPage.Close()
+	defer l.Cleanup()
+	defer browser.Close()
 
 	var page *rod.Page
 	var FileName string
@@ -340,13 +334,9 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 			page.MustSetViewport(1920, 1080, 1, false)
 			page.MustNavigate(url)
-			fmt.Println("Navigated to url", url)
-			fmt.Println("Before timeline startMarker")
 			page.Timeout(timeoutDuration).MustElement(START_MARKER_SELECTOR)
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
-			fmt.Println("After timeline startMarker")
 			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-			fmt.Println("After download labesls")
 
 			// title := page.MustElement(TITLE_SELECTOR).MustText()
 			// startYear := page.MustElement(".slider.clickable .handle.startMarker").MustAttribute("aria-valuenow")
@@ -356,13 +346,11 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			// TODO: Check if need to remove
 			time.Sleep(time.Second * 1)
 			wait := page.Browser().WaitDownload(downloadPath)
-			fmt.Println("Before clicking download button")
 			downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
 			downloadBtn.MustFocus()
 			time.Sleep(time.Millisecond * 200)
 			err = page.Keyboard.Press(input.Enter)
 			// err = downloadBtn.Click(proto.InputMouseButtonLeft, 1)
-			fmt.Println("Clicked download button")
 			if err != nil {
 				fmt.Println(country, "Error clicking download button", err)
 				// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
@@ -370,20 +358,15 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			}
 			downloadSelector := "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
 			page.MustWaitElementsMoreThan(downloadSelector, 0)
-			fmt.Println("Found elements")
 			elements := page.MustElements(downloadSelector)
-			fmt.Println("Got elements", elements)
 			err = elements[0].Click(proto.InputMouseButtonLeft, 1)
-			fmt.Println("Clicked Chart download button")
 			if err != nil {
 				// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 				fmt.Println(country, "Error clicking download svg button", err)
 				return
 			}
 
-			fmt.Println("Waiting for download")
 			wait()
-			fmt.Println("After waiting for download")
 			if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
 				// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 				taskProcess.Status = models.TaskProcessStatusFailed
@@ -510,7 +493,6 @@ func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
 
 		time.Sleep(time.Millisecond * 200)
 
-		fmt.Println("Key: ", name, " Code: ", code, " ID: ", id)
 		el, err := page.Element(fmt.Sprintf("#%s", id))
 		if err != nil {
 			fmt.Println("Error finding element: ", err)
@@ -595,13 +577,11 @@ func GetCountryListFromPage(page *rod.Page) []string {
 			label := element.MustElement(".label")
 			value := element.MustElement(".value")
 			if value != nil && value.MustText() != "" && strings.ToLower(value.MustText()) == "no data" {
-				fmt.Println("No data for country: ", element.MustText())
 				continue
 			}
 			country := strings.TrimSpace(label.MustText())
 			countryCode, ok := constants.COUNTRY_CODES[country]
 			if !ok {
-				fmt.Println("Country not found", country)
 				continue
 			}
 			// check if country is not already in list
@@ -619,17 +599,14 @@ func GetCountryListFromPage(page *rod.Page) []string {
 		for _, element := range elements {
 			label := element.MustElement(".name")
 			classes := element.MustAttribute("class")
-			fmt.Println("Element: ", label, *classes)
 
 			if strings.Contains(*classes, "MissingData") {
-				fmt.Println("No data for country: ", element.MustText())
 				continue
 			}
 
 			country := strings.TrimSpace(label.MustText())
 			countryCode, ok := constants.COUNTRY_CODES[country]
 			if !ok {
-				fmt.Println("Country not found", country)
 				continue
 			}
 			// check if country is not already in list
@@ -658,7 +635,6 @@ func GetCountryList(url string) ([]string, string, string, string, error) {
 
 	err := rod.Try(func() {
 		page := browser.MustPage("")
-		fmt.Println("Getting  country list")
 		page.MustSetViewport(1920, 1080, 1, false)
 		page.MustNavigate(url)
 		page.MustWaitIdle()
@@ -667,9 +643,7 @@ func GetCountryList(url string) ([]string, string, string, string, error) {
 		page = page.Timeout(time.Second * constants.CHART_WAIT_TIME_SECONDS)
 		page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 		page.MustWaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
-		fmt.Println("waiting for entity selector")
 		page.MustElement(".entity-selector__content")
-		fmt.Println("found entity selector")
 		title = page.MustElement(TITLE_SELECTOR).MustText()
 		title = strings.TrimSpace(title)
 		elements := page.MustElements(".entity-selector__content li")
@@ -677,7 +651,6 @@ func GetCountryList(url string) ([]string, string, string, string, error) {
 			label := element.MustElement(".label")
 			value := element.MustElement(".value")
 			if value != nil && value.MustText() != "" && strings.ToLower(value.MustText()) == "no data" {
-				fmt.Println("No data for country: ", element.MustText())
 				continue
 			}
 			country := strings.TrimSpace(label.MustText())
@@ -694,7 +667,6 @@ func GetCountryList(url string) ([]string, string, string, string, error) {
 
 		// Get start/end years
 		marker := page.MustElement(START_MARKER_SELECTOR)
-		fmt.Println("Got marker", marker)
 		startYear = *marker.MustAttribute("aria-valuemin")
 		endYear = *marker.MustAttribute("aria-valuemax")
 	})

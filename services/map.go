@@ -159,7 +159,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				return err
 			}
 			token := tokenResponse.Query.Tokens.CsrfToken
-			fmt.Println("Got edit token")
 
 			go func() {
 				for {
@@ -167,7 +166,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 					if done {
 						break
 					}
-					fmt.Println("Gettng new token")
 					tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
 						"action": "query",
 						"meta":   "tokens",
@@ -177,7 +175,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 						fmt.Println("Error fetching edit token", err)
 					} else if tokenResponse.Query.Tokens.CsrfToken != "" {
 						token = tokenResponse.Query.Tokens.CsrfToken
-						fmt.Println("Got new token")
 					}
 				}
 			}()
@@ -194,14 +191,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				g, _ := errgroup.WithContext(context.Background())
 				g.SetLimit(constants.CONCURRENT_REQUESTS)
 
-				fmt.Println("================================================")
-				fmt.Println("================================================")
-
-				fmt.Println(url)
-				fmt.Println(chartParamsMap)
-				fmt.Println("================================================")
-				fmt.Println("================================================")
-				fmt.Println("================================================")
 				for _, country := range chartInfo.CountriesList {
 					country := country
 					g.Go(func(country, downloadPath string, token *string) func() error {
@@ -219,9 +208,9 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 					}(country, filepath.Join(tmpDir, country), &token))
 				}
 
-				fmt.Println("Started in", time.Since(startTime).String())
 				err = g.Wait()
 				elapsedTime := time.Since(startTime)
+				fmt.Println("Started in", time.Since(startTime).String())
 				fmt.Println("Finished in", elapsedTime.String())
 				if err != nil {
 					fmt.Println("Error processing countries", err)
@@ -303,7 +292,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 					fmt.Println("Error fetching edit token", err)
 				} else if tokenResponse.Query.Tokens.CsrfToken != "" {
 					token := tokenResponse.Query.Tokens.CsrfToken
-					fmt.Println("Got new token")
 					title, err := createCommonsTemplatePage(user, token, task.CommonsTemplateName, wikiText)
 					if err == nil {
 						task.CommonsTemplateName = title
@@ -371,33 +359,25 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 			page.MustSetViewport(1920, 1080, 1, false)
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 
-			fmt.Println("Before navigate")
 			page.MustNavigate(url)
 			page.MustWaitIdle()
 			page.MustWaitLoad()
 
 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
-			fmt.Println("LOOKING FOR DOWNLOAD BTN")
 			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-			fmt.Println("FOUND DOWNLOAD BTN")
 			page.MustWaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
-			fmt.Println("FOUND PLAY TIMELAPSE BTN")
 			time.Sleep(time.Second * 1)
 
 			chartInfo.Params = GetChartParametersFromPage(page)
-			fmt.Println("Got chart params")
 			chartInfo.ParamsMap = GetChartParametersMapFromPage(page, selectedParams)
-			fmt.Println("Got chart params map")
 
 			startYear, endYear, title := getMapStartEndYearTitleFromPage(page)
-			fmt.Println("start/end year title", startYear, endYear, title)
 			chartInfo.StartYear = startYear
 			chartInfo.EndYear = endYear
 			chartInfo.Title = title
 			chartInfo.HasCountries = getMapHasCountriesFromPage(page)
 
 			chartName, err := GetChartNameFromUrl(url)
-			fmt.Println("================== GOT CHART NAME =============", chartName, err)
 
 			if err == nil && chartName != "" {
 				chartInfo.ChartName = utils.ToTitle(chartName)
@@ -407,13 +387,11 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 				chartInfo.TemplateName = GenerateTemplateCommonsNameNoPrefix(chartFormat, chartInfo.Title, chartInfo.ParamsMap)
 			}
 
-			fmt.Println("Got has countries")
 			if chartInfo.HasCountries {
 				chartInfo.CountriesList = getCountryListFromPage(page)
 			}
 
 			chartInfo.StableUrl = utils.CleanupTaskURLQueryParams(page.MustInfo().URL)
-			fmt.Println("============= CHART INTO ***************************************** ", chartInfo)
 			_, err = GetPageCanDownload(page)
 			if err != nil {
 				panic(err)
@@ -428,23 +406,18 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 }
 
 func GetPageCanDownload(page *rod.Page) (bool, error) {
-	fmt.Println("Checking if page can download")
 	startMarker := page.MustElement(START_MARKER_SELECTOR)
 	endMarker := page.MustElement(END_MARKER_SELECTOR)
-	fmt.Println("Got start")
 	if startMarker == nil && endMarker == nil {
 		return false, fmt.Errorf("No start & end markers")
 	}
 
-	fmt.Println("Waiting for download button")
 	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-	fmt.Println("Found for download button")
 	downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
 	downloadBtn.MustFocus()
 	time.Sleep(time.Millisecond * 200)
 
 	err := page.Keyboard.Press(input.Enter)
-	fmt.Println("Clicked download btn", err)
 	if err != nil {
 		fmt.Println(err)
 		return false, fmt.Errorf("Cannot find/click on download button")
@@ -495,12 +468,10 @@ func GetChartParameters(browser *rod.Browser, url string) *[]ChartParameter {
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
 
-			fmt.Println("Before navigate")
 			page.MustNavigate(url)
 			page.MustWaitIdle()
 			page.MustWaitLoad()
 			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-			fmt.Println("FOUND ELEMENT")
 			configJSON = page.MustEval(`() => {
 				if (window._OWID_MULTI_DIM_PROPS) {
 					return JSON.stringify(window._OWID_MULTI_DIM_PROPS.configObj.dimensions);
@@ -541,13 +512,11 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 	defer page.Close()
 	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 
-	fmt.Println("==================== Before navigate: Traversing to: ", url)
+	fmt.Println("==================== Traversing to: ", url)
 	page.MustNavigate(url)
 	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 	page.WaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
-	fmt.Println("FOUND ELEMENT")
 
-	fmt.Println("DOWNLOADING MAP FILE")
 	page.WaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 	// TODO: REMVOE THIS, just trying to scroll along
 	startMarker := page.MustElement(START_MARKER_SELECTOR)
@@ -580,11 +549,9 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 				defer page.Close()
 				page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 
-				fmt.Println("Before navigate")
 				page.MustNavigate(currentUrl)
 				page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 				page.WaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
-				fmt.Println("FOUND ELEMENT")
 
 				counter = 0
 			}
@@ -665,7 +632,6 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 				// panic(fmt.Sprintf("%s %s %v", url, "File not found", err))
 				break
 			}
-			fmt.Println("================= DOWNLOADED IN: ", mapPath)
 
 			// Close download modal
 			closeBtn := page.MustElement("div.download-modal-content button.close-button")
@@ -722,8 +688,6 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 				if err != nil {
 					fmt.Println("Error generating metadata: ", err)
 				} else if metadata != "" {
-					// fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
-					fmt.Println("GOT METADATA, YAAAAAAAAAAY")
 					if err := InjectMetadataIntoSVGSameFile(fileInfo.FilePath, metadata); err != nil {
 						fmt.Println("Error injecting metadata into svg: ", err)
 					} else {
@@ -783,28 +747,21 @@ func moveToNextYear(page *rod.Page, startMarker, endMarker *rod.Element, current
 	}
 
 	if startMarker != nil {
-		fmt.Println("Start marker value now: ", currentYear)
 		time.Sleep(time.Millisecond * 100)
 		startMarker.Focus()
-		fmt.Println("CLicking left on start")
 		time.Sleep(time.Millisecond * 100)
 		page.Keyboard.Press(input.ArrowLeft)
-		fmt.Println("Clicked left on start")
 		time.Sleep(time.Millisecond * 100)
 		startMarker.Blur()
 	}
 
 	if endMarker != nil {
-		fmt.Println("End marker value now: ", currentYear)
 		time.Sleep(time.Millisecond * 100)
-		fmt.Println("CLicking left on end")
 		endMarker.Focus()
 		time.Sleep(time.Millisecond * 100)
 		page.Keyboard.Press(input.ArrowLeft)
 		time.Sleep(time.Millisecond * 100)
 		endMarker.Blur()
-		fmt.Println("Clicked left on start")
-		fmt.Println("============ STEP DONE ===============")
 	}
 
 	return true
@@ -819,7 +776,6 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 	configUrl := ""
 	pageHtml := ""
 
-	fmt.Println("DOWNLOADING MAP DATA: ", url)
 	for trials := 0; trials < 2; trials++ {
 		err = rod.Try(func() {
 			page := browser.MustPage("")
@@ -830,7 +786,6 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 			router := browser.HijackRequests()
 			defer router.MustStop()
 
-			fmt.Println("Getting map data: ", url)
 			router.MustAdd("*.json", func(ctx *rod.Hijack) {
 				fmt.Println("Got req: ", ctx.Request.URL().String())
 				if ctx.Request.Method() == "GET" {
@@ -846,20 +801,16 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 					}
 				}
 
-				fmt.Println("Finished req: ", ctx.Request.URL().String())
 				ctx.MustLoadResponse()
 			})
 			go router.Run()
 
-			fmt.Println("Before navigate")
 			page.MustNavigate(url)
 			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-			fmt.Println("FOUND ELEMENT")
 			configJSON = page.MustEval(`() => {
 				return JSON.stringify(window._OWID_GRAPHER_CONFIG);
 			}`).String()
 
-			fmt.Println("DOWNLOADING MAP FILE")
 			page.WaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 			err := page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
 			if err != nil {
@@ -882,7 +833,6 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 			if _, err = os.Stat(mapPath); os.IsNotExist(err) {
 				panic(fmt.Sprintf("%s %s %v", url, "File not found", err))
 			}
-			fmt.Println("Finished", url)
 			pageHtml = page.MustHTML()
 		})
 
@@ -891,19 +841,13 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 		}
 	}
 
-	fmt.Println("Data URL: ", dataUrl)
-	fmt.Println("Metadata URL: ", metadataUrl)
-	fmt.Println("Config URL: ", configUrl)
-
 	if dataUrl == "" || metadataUrl == "" {
 		return nil, fmt.Errorf("Error getting data/metadata urls")
 	}
 
-	fmt.Println("DOWNLOADING DATA")
 	if err := utils.DownloadFile(dataUrl, dataPath); err != nil {
 		return nil, fmt.Errorf("ERROR DOWNLOADING DATA JSON %v", err)
 	}
-	fmt.Println("DOWNLOADING METADATA")
 	if err := utils.DownloadFile(metadataUrl, metadataPath); err != nil {
 		return nil, fmt.Errorf("ERROR DOWNLOADING METADATA JSON %v", err)
 	}
@@ -936,7 +880,6 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 				fmt.Printf("Error parsing JSON: %v\n", err)
 				return nil, err
 			}
-			fmt.Println("******************************************** GOT CONFIG FROM CONFIGURL: ==== ", config)
 
 			return &config, nil
 		} else if pageHtml != "" {
@@ -947,10 +890,6 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 			matches := re.FindStringSubmatch(pageHtml)
 			if len(matches) > 1 {
 				jsonString := matches[1] // The captured group
-				fmt.Println("===================== ************************* ")
-				fmt.Println("Captured JSON:")
-				fmt.Println("===================== ************************* ")
-				fmt.Println(jsonString)
 				err = json.Unmarshal([]byte(jsonString), &config)
 				if err != nil {
 					fmt.Println("Failed to parse config from page HTML", err)
@@ -958,7 +897,6 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 				}
 				return &config, nil
 			} else {
-				fmt.Println("No match found")
 				return nil, err
 			}
 
@@ -984,7 +922,6 @@ func getTabByLabel(page *rod.Page, label string) *rod.Element {
 			continue
 		}
 
-		fmt.Println("Tab item: ", text)
 		text = strings.ToLower(text)
 		if text == label {
 			return el
@@ -995,8 +932,6 @@ func getTabByLabel(page *rod.Page, label string) *rod.Element {
 }
 
 func getMapHasCountriesFromPage(page *rod.Page) bool {
-	fmt.Println("Getting Has Countries From Page: ", page.MustInfo().URL)
-
 	activeTab := getActivePageTab(page)
 	hasLines := false
 
@@ -1006,7 +941,6 @@ func getMapHasCountriesFromPage(page *rod.Page) bool {
 		lineTab.Click(proto.InputMouseButtonLeft, 1)
 		time.Sleep(time.Second)
 		hasLines = page.MustHas(".entity-selector .entity-section, .EntityPicker .EntityList")
-		fmt.Println("Has entity selector: ", hasLines)
 	} else if chartTab != nil {
 		chartTab.Click(proto.InputMouseButtonLeft, 1)
 		time.Sleep(time.Second)
@@ -1043,13 +977,11 @@ func getCountryListFromPage(page *rod.Page) []string {
 			label := element.MustElement(".label")
 			value := element.MustElement(".value")
 			if value != nil && value.MustText() != "" && strings.ToLower(value.MustText()) == "no data" {
-				fmt.Println("No data for country: ", element.MustText())
 				continue
 			}
 			country := strings.TrimSpace(label.MustText())
 			countryCode, ok := constants.COUNTRY_CODES[country]
 			if !ok {
-				fmt.Println("Country not found", country)
 				continue
 			}
 			// check if country is not already in list
@@ -1067,17 +999,14 @@ func getCountryListFromPage(page *rod.Page) []string {
 		for _, element := range elements {
 			label := element.MustElement(".name")
 			classes := element.MustAttribute("class")
-			fmt.Println("Element: ", label, *classes)
 
 			if strings.Contains(*classes, "MissingData") {
-				fmt.Println("No data for country: ", element.MustText())
 				continue
 			}
 
 			country := strings.TrimSpace(label.MustText())
 			countryCode, ok := constants.COUNTRY_CODES[country]
 			if !ok {
-				fmt.Println("Country not found", country)
 				continue
 			}
 			// check if country is not already in list
@@ -1096,32 +1025,24 @@ func getCountryListFromPage(page *rod.Page) []string {
 }
 
 func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
-	fmt.Println("Getting map start/end year + title: ", page.MustInfo().URL)
-
 	startYear := ""
 	endYear := ""
 	title := ""
 
 	marker := page.MustElement(START_MARKER_SELECTOR)
-	fmt.Println("Got marker", marker)
 	startYear = *marker.MustAttribute("aria-valuemin")
 	endYear = *marker.MustAttribute("aria-valuemax")
-	fmt.Println("Got start/end")
 	title = page.MustElement(TITLE_SELECTOR).MustText()
 	title = strings.TrimSpace(title)
-	fmt.Println("Got start/end title")
 	suffix := ", " + endYear
 	if strings.HasSuffix(title, suffix) {
 		title = strings.ReplaceAll(title, suffix, "")
 	}
 
-	fmt.Println("Start: ", startYear, " End: ", endYear, " Title: ", title)
 	return startYear, endYear, title
 }
 
 func getMapStartEndYearTitle(browser *rod.Browser, url string) (string, string, string) {
-	fmt.Println("Getting map start/end year + title: ", url)
-
 	startYear := ""
 	endYear := ""
 	title := ""
@@ -1133,17 +1054,12 @@ func getMapStartEndYearTitle(browser *rod.Browser, url string) (string, string, 
 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 			page.MustNavigate(url)
-			fmt.Println("Before idle")
 			page.MustWaitIdle()
-			fmt.Println("After idle")
 			marker := page.MustElement(START_MARKER_SELECTOR)
-			fmt.Println("Got marker", marker)
 			startYear = *marker.MustAttribute("aria-valuemin")
 			endYear = *marker.MustAttribute("aria-valuemax")
-			fmt.Println("Got start/end")
 			title = page.MustElement(TITLE_SELECTOR).MustText()
 			title = strings.TrimSpace(title)
-			fmt.Println("Got start/end title")
 			suffix := ", " + endYear
 			if strings.HasSuffix(title, suffix) {
 				title = strings.ReplaceAll(title, suffix, "")
@@ -1155,7 +1071,6 @@ func getMapStartEndYearTitle(browser *rod.Browser, url string) (string, string, 
 		}
 	}
 
-	fmt.Println("Start: ", startYear, " End: ", endYear, " Title: ", title)
 	return startYear, endYear, title
 }
 
@@ -1169,7 +1084,6 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, c
 
 	go func() {
 		for !done {
-			fmt.Println("Gettng new token processRegion ", region)
 			tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
 				"action": "query",
 				"meta":   "tokens",
@@ -1179,7 +1093,6 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, c
 				fmt.Println("Error fetching edit token", err)
 			} else if tokenResponse.Query.Tokens.CsrfToken != "" {
 				token = tokenResponse.Query.Tokens.CsrfToken
-				fmt.Println("Got new token")
 			}
 
 			time.Sleep(time.Second * 20)
@@ -1216,7 +1129,6 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, c
 	}
 
 	url = utils.AttachQueryParamToUrl(url, "time=latest")
-	fmt.Println("============== TRAVERSINGG NAVIGATE TO ", url)
 
 	traverseDownloadRegion(browser, task, data, user, chartParamsMap, &token, chartName, title, region, url, downloadPath)
 	task.Reload()
@@ -1444,7 +1356,6 @@ func downloadChartFile(browser *rod.Browser, url, downloadPath string) error {
 		if _, err = os.Stat(downloadPath); os.IsNotExist(err) {
 			panic(fmt.Sprintf("%s %s %v", url, "File not found", err))
 		}
-		fmt.Println("Finished", url)
 	})
 	return err
 }
@@ -1453,7 +1364,6 @@ func processRegionYearNewFlow(user *models.User, task *models.Task, data StartDa
 	var err error
 	var taskProcess *models.TaskProcess
 	mapPath := path.Join(mapDir, year)
-	fmt.Println("Map path: ", mapPath)
 	if err := models.UpdateTaskLastOperationAt(task.ID); err != nil {
 		fmt.Println("Error updating task last operation at ", task.ID, err)
 	}
@@ -1644,7 +1554,6 @@ func processRegionYear(browser *rod.Browser, user *models.User, task *models.Tas
 		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
 	}
 
-	fmt.Println(url)
 	regionStr := region
 	if regionStr == "NorthAmerica" {
 		regionStr = "North America"
@@ -1659,7 +1568,6 @@ func processRegionYear(browser *rod.Browser, user *models.User, task *models.Tas
 			if err = downloadChartFile(browser, url, downloadPath); err != nil {
 				panic(err)
 			}
-			fmt.Println("Finished", year, title)
 
 			replaceData := ReplaceVarsData{
 				Url:      data.Url,

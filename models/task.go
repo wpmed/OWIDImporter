@@ -135,11 +135,10 @@ func (task *Task) Update() error {
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(task.URL, task.FileName, task.Description, task.DescriptionOverwriteBehaviour, task.Status, task.ImportCountries, task.ChartName, task.CommonsTemplateName, task.LastOperationAt, task.Archived, task.ID)
+	_, err = stmt.Exec(task.URL, task.FileName, task.Description, task.DescriptionOverwriteBehaviour, task.Status, task.ImportCountries, task.ChartName, task.CommonsTemplateName, task.LastOperationAt, task.Archived, task.ID)
 	if err != nil {
 		return err
 	}
-	fmt.Println("UPDATED TASK ", result)
 
 	return nil
 }
@@ -164,11 +163,10 @@ func UpdateTaskStatus(id string, status TaskStatus) error {
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(status, id)
+	_, err = stmt.Exec(status, id)
 	if err != nil {
 		return err
 	}
-	fmt.Println("UPDATED TASK status", result)
 	return nil
 }
 
@@ -179,11 +177,10 @@ func UpdateTaskLastOperationAt(id string) error {
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(time.Now().Unix(), id)
+	_, err = stmt.Exec(time.Now().Unix(), id)
 	if err != nil {
 		return err
 	}
-	fmt.Println("UPDATED TASK last operation at", result)
 	return nil
 }
 

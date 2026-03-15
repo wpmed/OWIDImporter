@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/dghubble/oauth1"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
@@ -116,10 +115,8 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 			return nil, err
 		}
 
-		fmt.Println("SENDING POST REQUEST")
 		res, err = client.Post(url, "multipart/form-data; boundary="+writer.Boundary(), &b)
 	} else {
-		fmt.Println("SENDING GET REQUEST")
 		res, err = client.Get(url)
 	}
 
@@ -133,11 +130,11 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 		fmt.Println("Error reading body", err)
 		return nil, err
 	}
-	strRes := string(body)
-	if utf8.RuneCountInString(strRes) > MAX_RES_LOG_LENGTH {
-		strRes = strRes[:MAX_RES_LOG_LENGTH] + "..."
-	}
-	fmt.Println("Res body: ", res.StatusCode, strRes)
+	// strRes := string(body)
+	// // if utf8.RuneCountInString(strRes) > MAX_RES_LOG_LENGTH {
+	// // 	strRes = strRes[:MAX_RES_LOG_LENGTH] + "..."
+	// // }
+	// fmt.Println("Res body: ", res.StatusCode, strRes)
 
 	var result T
 	err = json.Unmarshal(body, &result)
@@ -168,7 +165,6 @@ func GetUsername(user *models.User) (string, error) {
 		fmt.Println("Error doing API request", err)
 		return "", err
 	}
-	fmt.Println("User info", result.Query.UserInfo)
 
 	return result.Query.UserInfo.Name, nil
 }
@@ -200,7 +196,6 @@ func sendWSTaskMessage(taskId string, messageType string, msg string) {
 			failedSessions := make([]string, 0)
 			for _, s := range sessions.TaskSessions[taskId] {
 				s.WsMutex.Lock()
-				fmt.Println("Sending msg ", messageType)
 				err := s.Ws.WriteJSON(map[string]string{
 					"type": messageType,
 					"msg":  msg,
@@ -226,7 +221,6 @@ func SendWSMessage(session *sessions.Session, messageType string, message string
 	go func() {
 		session.WsMutex.Lock()
 		defer session.WsMutex.Unlock()
-		fmt.Println("Sending msg", messageType, "-", message)
 		err := session.Ws.WriteJSON(map[string]string{
 			"type": messageType,
 			"msg":  message,
@@ -397,7 +391,6 @@ func CleanupTaskURLQueryParams(url string) string {
 		}
 
 		if len(params) > 0 {
-			fmt.Println("Params: ", params, len(params))
 			url = fmt.Sprintf("%s?", url)
 			addedParams := false
 			for _, param := range params {

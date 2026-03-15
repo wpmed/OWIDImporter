@@ -176,7 +176,7 @@ const (
 	START_MARKER_SELECTOR          = ".startMarker"
 	TITLE_SELECTOR                 = "h1.header__title, .HeaderHTML h1"
 	END_MARKER_SELECTOR            = ".endMarker"
-	HEADLESS                       = true
+	HEADLESS                       = false
 )
 
 func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[string]string) string {
@@ -290,7 +290,6 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 	if err != nil {
 		return filename, "", err
 	}
-	fmt.Println("============ GOT FILE SHA1: ", fileInfo.FilePath, err, fileInfo.Sha1)
 
 	res, err := utils.DoApiReq[QueryResponse](user, map[string]string{
 		"action": "query",

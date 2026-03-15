@@ -84,11 +84,10 @@ func NewTaskProcess(region string, date string, filename string, status TaskProc
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(taskProcess.ID, taskProcess.Region, taskProcess.Date, taskProcess.FileName, taskProcess.FillData, taskProcess.Status, taskProcess.Type, taskProcess.TaskId, taskProcess.CreatedAt)
+	_, err = stmt.Exec(taskProcess.ID, taskProcess.Region, taskProcess.Date, taskProcess.FileName, taskProcess.FillData, taskProcess.Status, taskProcess.Type, taskProcess.TaskId, taskProcess.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("CREATED TASK Process", result)
 
 	return &taskProcess, nil
 }
@@ -109,11 +108,10 @@ func FailProcessingTaskProcesses(taskId string) error {
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(TaskProcessStatusFailed, taskId, TaskProcessStatusProcessing)
+	_, err = stmt.Exec(TaskProcessStatusFailed, taskId, TaskProcessStatusProcessing)
 	if err != nil {
 		return err
 	}
-	fmt.Println("UPDATED TASK Process", result)
 
 	return nil
 }
@@ -125,11 +123,10 @@ func (taskProcess *TaskProcess) Update() error {
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(taskProcess.Region, taskProcess.Date, taskProcess.Status, taskProcess.FileName, taskProcess.FillData, taskProcess.ID)
+	_, err = stmt.Exec(taskProcess.Region, taskProcess.Date, taskProcess.Status, taskProcess.FileName, taskProcess.FillData, taskProcess.ID)
 	if err != nil {
 		return err
 	}
-	fmt.Println("UPDATED TASK Process", result)
 
 	return nil
 }

@@ -31,7 +31,6 @@ func GetBrowser() (*launcher.Launcher, *rod.Browser) {
 		b.RootDir = e.OWID_ROD_BROWSER_DIR // "/workspace/.cache/rod/browser";
 	}
 
-	fmt.Println("Dir is", b.Dir(), b.RootDir)
 	b.Hosts = []launcher.Host{launcher.HostNPM, launcher.HostPlaywright}
 	binPath, err := b.Get()
 	if err != nil {
