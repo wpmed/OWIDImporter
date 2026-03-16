@@ -176,7 +176,7 @@ const (
 	START_MARKER_SELECTOR          = ".startMarker"
 	TITLE_SELECTOR                 = "h1.header__title, .HeaderHTML h1"
 	END_MARKER_SELECTOR            = ".endMarker"
-	HEADLESS                       = false
+	HEADLESS                       = true
 )
 
 func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[string]string) string {
