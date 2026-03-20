@@ -599,6 +599,29 @@ func GetChartParametersMap(browser *rod.Browser, url string, selectedParams stri
 	return chartParamsMap
 }
 
+func GetActivePageTab(page *rod.Page) *rod.Element {
+	return page.MustElement(".ContentSwitchers__Container div.Tabs div.Tabs__Tab.active")
+}
+
+func GetTabByLabel(page *rod.Page, label string) *rod.Element {
+	lineElements := page.MustElements(".ContentSwitchers__Container div.Tabs div.Tabs__Tab .label")
+
+	for _, el := range lineElements {
+		text, err := el.Text()
+		if err != nil {
+			fmt.Println("Error parsing line text", err)
+			continue
+		}
+
+		text = strings.ToLower(text)
+		if text == label {
+			return el
+		}
+	}
+
+	return nil
+}
+
 func GetMapTemplate(taskId string) (string, error) {
 	taskProcesses, err := models.FindTaskProcessesByTaskId(taskId)
 	if err != nil {

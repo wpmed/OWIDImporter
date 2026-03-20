@@ -280,6 +280,253 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 	return nil
 }
 
+func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *string, chartName, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string, countriesCodes []string) error {
+	if len(countriesCodes) == 0 {
+		return nil
+	}
+
+	if task.Status != models.TaskStatusProcessing {
+		return fmt.Errorf("Task is not processing")
+	}
+
+	url := utils.AttachQueryParamToUrl(task.URL, fmt.Sprintf("tab=chart&country=~%s", countriesCodes[0]))
+	if task.ChartParameters != "" {
+		url = utils.AttachQueryParamToUrl(url, task.ChartParameters)
+	}
+
+	fmt.Println("================== Processing country: ", url)
+
+	// TODO: Handle charts where sidebar is closed by default
+
+	// Go to url
+	// Click on line/chart tab
+	//
+	// For each country code:
+	// 		Find selected countries if any, click to deselect
+	// 		Find Element for country and click
+	// 		Wait 200ms
+	// 		Download chart
+	// 		Upload to destination
+
+	l, browser := GetBrowser()
+	blankPage := browser.MustPage("")
+
+	defer blankPage.Close()
+	defer l.Cleanup()
+	defer browser.Close()
+
+	page := browser.MustPage("")
+	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+	page.MustSetViewport(1920, 1080, 1, false)
+	page.MustNavigate(url)
+	// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
+	page.MustWaitLoad()
+	page.MustWaitIdle()
+	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+
+	lineTab := GetTabByLabel(page, "line")
+	chartTab := GetTabByLabel(page, "chart")
+
+	if lineTab != nil {
+		lineTab.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(time.Second)
+	} else if chartTab != nil {
+		chartTab.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(time.Second)
+	}
+
+	countriesCodeNameMap := constants.GetCountryCodeNameMap()
+
+	// var selectedItems rod.Elements
+	for _, code := range countriesCodes {
+		if task.Status != models.TaskStatusProcessing {
+			break
+		}
+
+		name, found := countriesCodeNameMap[code]
+		if !found {
+			fmt.Println("Not found")
+			continue
+		}
+		fmt.Println("Processing code: ", code, name)
+		models.UpdateTaskLastOperationAt(task.ID)
+
+		var taskProcess *models.TaskProcess
+		// Try to find existing process, otherwise create one
+		existingTB, err := models.FindTaskProcessByTaskRegionDate(code, "", task.ID)
+		if existingTB != nil {
+			if existingTB.Status != models.TaskProcessStatusFailed {
+				// Not in a retry, skip
+				// existingTB.Status = models.TaskProcessStatusSkipped
+				// existingTB.Update()
+				continue
+			}
+			existingTB.Status = models.TaskProcessStatusProcessing
+			if err := existingTB.Update(); err != nil {
+				fmt.Println("Error updating task process to processing")
+			}
+			taskProcess = existingTB
+		} else {
+			taskProcess, err = models.NewTaskProcess(code, "", "", models.TaskProcessStatusProcessing, models.TaskProcessTypeCountry, task.ID)
+			if err != nil {
+				fmt.Println("ERROR finding task process for country code", code, err)
+				continue
+			}
+		}
+
+		utils.SendWSTaskProcess(task.ID, taskProcess)
+
+		nameLowerCase := strings.ToLower(strings.TrimSpace(name))
+		for {
+			selectedItems := page.MustElements(".entity-selector__content .entity-section ul li[data-flip-id^=\"selected_\"], .EntityList label.EntityPickerOption.selected .name")
+			if len(selectedItems) == 0 {
+				break
+			}
+
+			fmt.Println("Items length", len(selectedItems), selectedItems[0])
+			selectedItems[0].MustClick()
+			fmt.Println("Clicked on item to deselect", selectedItems[0].MustText())
+			time.Sleep(time.Millisecond * 200)
+		}
+
+		//
+		// clearSelectionBtn := page.MustElement(".EntityList .ClearSelectionButton")
+		// if clearSelectionBtn != nil {
+		// 	box := clearSelectionBtn.MustShape().Box()
+		// 	page.Mouse.Scroll(box.X, box.Y, 1)
+		// 	// clearSelectionBtn.ScrollIntoView()
+		// 	time.Sleep(time.Millisecond * 200)
+		// 	clearSelectionBtn.MustClick()
+		// 	time.Sleep(time.Millisecond * 200)
+		// } else {
+		// 	for {
+		// 		selectedItems := page.MustElements(".entity-selector__content .entity-section ul li[data-flip-id^=\"selected_\"], .EntityList label.EntityPickerOption.selected .name")
+		// 		if len(selectedItems) == 0 {
+		// 			break
+		// 		}
+		//
+		// 		fmt.Println("Items length", len(selectedItems), selectedItems[0])
+		// 		selectedItems[0].MustClick()
+		// 		fmt.Println("Clicked on item to deselect", selectedItems[0].MustText())
+		// 		time.Sleep(time.Millisecond * 200)
+		// 	}
+		// }
+		//
+		// Trigger search to reduce result count
+		searchInput := page.MustElement(".entity-selector__search-bar input, .EntityPicker .EntityPickerSearchInput input")
+		if searchInput != nil {
+			searchInput.SelectAllText()
+			searchInput.MustInput(name)
+
+			time.Sleep(time.Second)
+		}
+
+		// countryId := strings.ReplaceAll(name, " ", "-")
+		items := page.MustElements(".entity-selector__content ul li label, .EntityPicker .EntityList label.EntityPickerOption .name")
+		foundEl := false
+		for _, el := range items {
+			fmt.Println("Text content is:", el.MustText())
+			if nameLowerCase == strings.ToLower(strings.TrimSpace(el.MustText())) {
+				el.MustClick()
+				foundEl = true
+				break
+			}
+		}
+
+		if !foundEl {
+			fmt.Println("=================== CANT FIND MENU ITEM FOR COUNTRY: ", code, name)
+			continue
+		}
+
+		countryDownloadPath := path.Join(downloadPath, code)
+
+		if _, err := os.Stat(countryDownloadPath); err == nil {
+			os.RemoveAll(countryDownloadPath)
+		}
+
+		if err := os.Mkdir(countryDownloadPath, 0755); err != nil {
+			fmt.Println("Error creating download directory: ", code, err)
+			continue
+		}
+		wait := page.Browser().WaitDownload(countryDownloadPath)
+
+		downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
+		downloadBtn.MustFocus()
+		time.Sleep(time.Millisecond * 200)
+
+		if err := page.Keyboard.Press(input.Enter); err != nil {
+			fmt.Println(code, "Error clicking download button", err)
+			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+			continue
+		}
+
+		page.MustWaitElementsMoreThan(DOWNLOAD_SVG_SELECTOR, 0)
+		elements := page.MustElements(DOWNLOAD_SVG_SELECTOR)
+
+		if err := elements[0].Click(proto.InputMouseButtonLeft, 1); err != nil {
+			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+			fmt.Println(code, "Error clicking download svg button", err)
+			continue
+		}
+
+		wait()
+		fmt.Println("============= DOWNLOAD DONE =============")
+
+		closeBtn := page.MustElement("div.download-modal-content button.close-button")
+		if closeBtn != nil {
+			closeBtn.Click(proto.InputMouseButtonLeft, 1)
+		}
+		if _, err := os.Stat(countryDownloadPath); os.IsNotExist(err) {
+			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+			taskProcess.Status = models.TaskProcessStatusFailed
+			taskProcess.Update()
+			utils.SendWSTaskProcess(task.ID, taskProcess)
+			fmt.Println(code, "File not found", err)
+			continue
+		}
+
+		replaceData := ReplaceVarsData{
+			Url:       data.Url,
+			Title:     title,
+			Region:    code,
+			StartYear: startYear,
+			EndYear:   endYear,
+			FileName:  GetFileNameFromChartName(chartName),
+			Comment:   "Importing from " + data.Url,
+			Params:    chartParams,
+		}
+		filename, status, err := uploadMapFile(user, *token, replaceData, countryDownloadPath, data)
+		if err != nil {
+			taskProcess.Status = models.TaskProcessStatusFailed
+			taskProcess.Update()
+			utils.SendWSTaskProcess(task.ID, taskProcess)
+			continue
+		}
+
+		taskProcess.FileName = filename
+		switch status {
+		case "skipped":
+			taskProcess.Status = models.TaskProcessStatusSkipped
+		case "description_updated":
+			taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
+		case "overwritten":
+			taskProcess.Status = models.TaskProcessStatusOverwritten
+		case "uploaded":
+			taskProcess.Status = models.TaskProcessStatusUploaded
+		default:
+			taskProcess.Status = models.TaskProcessStatusFailed
+		}
+
+		taskProcess.Update()
+		utils.SendWSTaskProcess(task.ID, taskProcess)
+
+		time.Sleep(time.Millisecond * 200)
+	}
+	fmt.Println("===================== COUNTRIES ALL DONE ==========================")
+
+	return nil
+}
+
 func processCountry(user *models.User, task *models.Task, token, chartName, country, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
 	var err error
 	var taskProcess *models.TaskProcess

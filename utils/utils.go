@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/dghubble/oauth1"
+	"github.com/go-rod/rod"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/sessions"
@@ -420,4 +421,47 @@ func CleanupTaskURLQueryParams(url string) string {
 	}
 
 	return url
+}
+
+func WaitElementWithTimeout(page *rod.Page, selector string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for element %q after %s", selector, timeout)
+		case <-ticker.C:
+			has, _, err := page.Has(selector)
+			if err != nil {
+				return fmt.Errorf("error checking for element %s: %w", selector, err)
+			}
+			if has {
+				return nil
+			}
+		}
+	}
+}
+
+func SplitSlice[T any](slice []T, numChunks int) [][]T {
+	if numChunks <= 0 {
+		return nil
+	}
+
+	length := len(slice)
+	chunkSize := (length + numChunks - 1) / numChunks
+	result := make([][]T, 0, numChunks)
+
+	for i := 0; i < length; i += chunkSize {
+		end := i + chunkSize
+		if end > length {
+			end = length
+		}
+		result = append(result, slice[i:end])
+	}
+
+	return result
 }

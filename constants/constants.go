@@ -268,6 +268,16 @@ var COUNTRY_CODES = map[string]string{
 	"Oceania":       "OWID_OCE",
 }
 
+func GetCountryCodeNameMap() map[string]string {
+	result := make(map[string]string)
+
+	for name, code := range COUNTRY_CODES {
+		result[code] = name
+	}
+
+	return result
+}
+
 var REGIONS_CODES_NAME_MAP = map[string]string{
 	"OWID_WRL": "World",
 	"OWID_AFR": "Africa",

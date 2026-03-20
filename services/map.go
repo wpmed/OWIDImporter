@@ -179,53 +179,41 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				}
 			}()
 
-			result := func() error {
-				// countriesList, title, startYear, endYear, err := GetCountryList(url)
-				// if err != nil {
-				// 	fmt.Println("Error fetching country list", err)
-				// 	return err
-				// }
-				fmt.Println("Countries:====================== ", chartInfo.CountriesList)
+			fmt.Println("Countries:====================== ", chartInfo.CountriesList)
 
-				startTime := time.Now()
-				g, _ := errgroup.WithContext(context.Background())
-				g.SetLimit(constants.CONCURRENT_REQUESTS)
+			countryGroup, _ := errgroup.WithContext(context.Background())
+			countryGroup.SetLimit(constants.CONCURRENT_REQUESTS)
+			// countryGroup.SetLimit(1)
 
-				for _, country := range chartInfo.CountriesList {
-					country := country
-					g.Go(func(country, downloadPath string, token *string) func() error {
-						return func() error {
-							if task.Status == models.TaskStatusProcessing {
-								processCountry(user, task, *token, task.ChartName, country, title, startYear, endYear, downloadPath, StartData{
-									Url:                           data.Url,
-									FileName:                      task.CountryFileName,
-									Description:                   task.CountryDescription,
-									DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-								}, chartParamsMap)
-							}
-							return nil
+			countrySlices := utils.SplitSlice(chartInfo.CountriesList, constants.CONCURRENT_REQUESTS)
+			startTime := time.Now()
+
+			for _, countryList := range countrySlices {
+				if task.Status != models.TaskStatusProcessing {
+					break
+				}
+				countryList := countryList
+				countryGroup.Go(func(countryList []string) func() error {
+					return func() error {
+						err = TraverseDownloadCountriesList(user, task, &token, task.ChartName, title, startYear, endYear, tmpDir, StartData{
+							Url:                           data.Url,
+							FileName:                      task.CountryFileName,
+							Description:                   task.CountryDescription,
+							DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
+						}, chartParamsMap, countryList)
+						if err != nil {
+							fmt.Println("Error processing countries", err)
+							return err
 						}
-					}(country, filepath.Join(tmpDir, country), &token))
-				}
-
-				err = g.Wait()
-				elapsedTime := time.Since(startTime)
-				fmt.Println("Started in", time.Since(startTime).String())
-				fmt.Println("Finished in", elapsedTime.String())
-				if err != nil {
-					fmt.Println("Error processing countries", err)
-					return err
-				}
-				return nil
-			}()
-
-			if result != nil {
-				fmt.Print("================== ERROR IMPORTING COUNTRIES: ", err)
-				task.Status = models.TaskStatusFailed
-				task.Update()
-				utils.SendWSTask(task)
-				return err
+						return nil
+					}
+				}(countryList))
 			}
+			countryGroup.Wait()
+
+			elapsedTime := time.Since(startTime)
+			fmt.Println("Started in", time.Since(startTime).String())
+			fmt.Println("Finished in", elapsedTime.String())
 		} else {
 			fmt.Println("============= Doesn't have countries, downloading popup chart instead ===============")
 			countriesDir := path.Join(tmpDir, "countries")
@@ -534,8 +522,6 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 
 		fmt.Println("00000000000000000000000000 GOT START MARKER 00000000000000000000000000000", startYear, endYear)
 
-		downloadSelector := "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
-
 		counter := 0
 		for task.Status == models.TaskStatusProcessing {
 			counter = counter + 1
@@ -615,10 +601,10 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			// TODO:  Check if need to remove
 			wait := page.Browser().WaitDownload(mapPath)
 
-			page.MustWaitElementsMoreThan(downloadSelector, 0)
+			page.MustWaitElementsMoreThan(DOWNLOAD_SVG_SELECTOR, 0)
 			time.Sleep(time.Millisecond * 500)
 
-			err = page.MustElements(downloadSelector)[0].Click(proto.InputMouseButtonLeft, 1)
+			err = page.MustElements(DOWNLOAD_SVG_SELECTOR)[0].Click(proto.InputMouseButtonLeft, 1)
 			if err != nil {
 				// utils.SendWSProgress(session, taskProcess)
 				fmt.Printf("%s, %s, %v", url, "Error clicking download svg button", err)
@@ -908,35 +894,12 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 	return &config, nil
 }
 
-func getActivePageTab(page *rod.Page) *rod.Element {
-	return page.MustElement(".ContentSwitchers__Container div.Tabs div.Tabs__Tab.active")
-}
-
-func getTabByLabel(page *rod.Page, label string) *rod.Element {
-	lineElements := page.MustElements(".ContentSwitchers__Container div.Tabs div.Tabs__Tab .label")
-
-	for _, el := range lineElements {
-		text, err := el.Text()
-		if err != nil {
-			fmt.Println("Error parsing line text", err)
-			continue
-		}
-
-		text = strings.ToLower(text)
-		if text == label {
-			return el
-		}
-	}
-
-	return nil
-}
-
 func getMapHasCountriesFromPage(page *rod.Page) bool {
-	activeTab := getActivePageTab(page)
+	activeTab := GetActivePageTab(page)
 	hasLines := false
 
-	lineTab := getTabByLabel(page, "line")
-	chartTab := getTabByLabel(page, "chart")
+	lineTab := GetTabByLabel(page, "line")
+	chartTab := GetTabByLabel(page, "chart")
 	if lineTab != nil {
 		lineTab.Click(proto.InputMouseButtonLeft, 1)
 		time.Sleep(time.Second)
@@ -956,9 +919,9 @@ func getMapHasCountriesFromPage(page *rod.Page) bool {
 }
 
 func getCountryListFromPage(page *rod.Page) []string {
-	activeTab := getActivePageTab(page)
-	lineTab := getTabByLabel(page, "line")
-	chartTab := getTabByLabel(page, "chart")
+	activeTab := GetActivePageTab(page)
+	lineTab := GetTabByLabel(page, "line")
+	chartTab := GetTabByLabel(page, "chart")
 
 	if lineTab != nil {
 		lineTab.Click(proto.InputMouseButtonLeft, 1)
