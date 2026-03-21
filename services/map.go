@@ -193,6 +193,8 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 					break
 				}
 				countryList := countryList
+				// countryList := make([]string, 0)
+				// countryList = append(countryList, "NAM")
 				countryGroup.Go(func(countryList []string) func() error {
 					return func() error {
 						err = TraverseDownloadCountriesList(user, task, &token, task.ChartName, title, startYear, endYear, tmpDir, StartData{
@@ -234,23 +236,24 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	regionGroup, _ := errgroup.WithContext(context.Background())
 	regionGroup.SetLimit(constants.CONCURRENT_REQUESTS)
 
-	for _, region := range constants.REGIONS {
+	for index, region := range constants.REGIONS {
 		if task.Status != models.TaskStatusProcessing {
 			break
 		}
 		region := region
-		regionGroup.Go(func(region string) func() error {
+		regionGroup.Go(func(region string, index int) func() error {
 			return func() error {
 				if task.Status != models.TaskStatusProcessing {
 					return nil
 				}
+				time.Sleep(time.Second * time.Duration(index*3))
 				l, browser := GetBrowser()
 				blankPage := browser.MustPage("")
 
 				defer blankPage.Close()
 				defer l.Cleanup()
 				defer browser.Close()
-				err := processRegion(browser, user, task, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, startYear, endYear, title, data)
+				err := processRegion(browser, user, task, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, title, data)
 				fmt.Print("============= FINISHED PROCESSING REGION: ", region)
 				if err != nil {
 					fmt.Println("Error in processing some of the region", region)
@@ -258,7 +261,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				}
 				return nil
 			}
-		}(region))
+		}(region, index))
 	}
 	regionGroup.Wait()
 	fmt.Println("================= FINISHED PROCESSING ALL REGIONS ==================")
@@ -411,7 +414,7 @@ func GetPageCanDownload(page *rod.Page) (bool, error) {
 		return false, fmt.Errorf("Cannot find/click on download button")
 	}
 
-	page.MustWaitElementsMoreThan(DOWNLOAD_SVG_SELECTOR, 0)
+	page.MustWaitElementsMoreThan(DOWNLOAD_SVG_ICON_SELECTOR, 0)
 	downloadIcon := page.MustElement(DOWNLOAD_SVG_ICON_SELECTOR)
 	if downloadIcon == nil {
 		return false, fmt.Errorf("SVG Download icon not found")
@@ -502,22 +505,41 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 
 	fmt.Println("==================== Traversing to: ", url)
 	page.MustNavigate(url)
-	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-	page.WaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
+	page.MustWaitLoad()
+	page.MustWaitIdle()
 
-	page.WaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-	// TODO: REMVOE THIS, just trying to scroll along
+	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
+		fmt.Println("ERROR waiting for DOWNLOAD_BUTTON_SELECTOR for region: ", region)
+		return
+	}
+	if err := utils.WaitElementWithTimeout(page, PLAY_TIMELAPSE_BUTTON_SELECTOR, time.Second*5); err != nil {
+		fmt.Println("ERROR waiting for PLAY_TIMELAPSE_BUTTON_SELECTOR for region: ", region)
+		return
+	}
+	if err := utils.WaitElementWithTimeout(page, fmt.Sprintf("%s, %s", START_MARKER_SELECTOR, END_MARKER_SELECTOR), time.Second*5); err != nil {
+		fmt.Println("ERROR waiting for EITHER START_MARKER_SELECTOR or END_MARKER_SELECTOR for region: ", region)
+		return
+	}
+
 	startMarker := page.MustElement(START_MARKER_SELECTOR)
 	endMarker := page.MustElement(END_MARKER_SELECTOR)
 	if startMarker != nil || endMarker != nil {
 		startYear := ""
 		endYear := ""
 		if startMarker != nil {
-			startYear = *startMarker.MustAttribute("aria-valuemin")
-			endYear = *startMarker.MustAttribute("aria-valuemax")
+			if attr, err := startMarker.Attribute("aria-valuemin"); err == nil {
+				startYear = *attr
+			}
+			if attr, err := startMarker.Attribute("aria-valuemax"); err == nil {
+				endYear = *attr
+			}
 		} else if endMarker != nil {
-			startYear = *endMarker.MustAttribute("aria-valuemin")
-			endYear = *endMarker.MustAttribute("aria-valuemax")
+			if attr, err := endMarker.Attribute("aria-valuemin"); err == nil {
+				startYear = *attr
+			}
+			if attr, err := endMarker.Attribute("aria-valuemax"); err == nil {
+				endYear = *attr
+			}
 		}
 
 		fmt.Println("00000000000000000000000000 GOT START MARKER 00000000000000000000000000000", startYear, endYear)
@@ -536,31 +558,37 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 				page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 
 				page.MustNavigate(currentUrl)
-				page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-				page.WaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
-
+				if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
+					fmt.Println("ERROR waiting for DOWNLOAD_BUTTON_SELECTOR for region: ", region)
+					break
+				}
+				if err := utils.WaitElementWithTimeout(page, PLAY_TIMELAPSE_BUTTON_SELECTOR, time.Second*5); err != nil {
+					fmt.Println("ERROR waiting for PLAY_TIMELAPSE_BUTTON_SELECTOR for region: ", region)
+					break
+				}
 				counter = 0
 			}
-			startMarker = page.MustElement(".startMarker")
-			endMarker = page.MustElement(".endMarker")
+
+			if err := utils.WaitElementWithTimeout(page, fmt.Sprintf("%s, %s", START_MARKER_SELECTOR, END_MARKER_SELECTOR), time.Second*5); err != nil {
+				fmt.Println("ERROR waiting for EITHER START_MARKER_SELECTOR or END_MARKER_SELECTOR for region: ", region)
+				return
+			}
+			startMarker = page.MustElement(START_MARKER_SELECTOR)
+			endMarker = page.MustElement(END_MARKER_SELECTOR)
 
 			currentYear := ""
 			if startMarker != nil {
-				currentYear = *startMarker.MustAttribute("aria-valuenow")
+				if attr, err := startMarker.Attribute("aria-valuenow"); err == nil && *attr != "" {
+					currentYear = *attr
+				}
 			}
 
 			if endMarker != nil {
-				currentYear = *endMarker.MustAttribute("aria-valuenow")
+				if attr, err := endMarker.Attribute("aria-valuenow"); err == nil && *attr != "" {
+					currentYear = *attr
+				}
 			}
 
-			// int64Year, err := strconv.ParseInt(currentYear, 10, 32)
-			// if err != nil {
-			// 	// TODO: Check breaking here
-			// 	fmt.Println("Error converting current year to int", currentYear, err)
-			// 	break
-			// }
-
-			// year := int(int64Year)
 			year := currentYear
 
 			var taskProcess *models.TaskProcess
@@ -589,11 +617,16 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			}
 
 			mapPath := filepath.Join(downloadPath, currentYear)
-			// err = page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
+			if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*5); err != nil {
+				fmt.Println("ERROR waiting for DOWNLOAD_BUTTON_SELECTOR for region: ", region, currentYear)
+				FailTaskProcess(taskProcess)
+				return
+			}
+
 			downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
 			downloadBtn.MustFocus()
 			time.Sleep(time.Millisecond * 200)
-			page.Keyboard.Press(input.Enter)
+			// page.Keyboard.Press(input.Enter)
 			err = page.Keyboard.Press(input.Enter)
 			if err != nil {
 				panic(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
@@ -601,14 +634,29 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			// TODO:  Check if need to remove
 			wait := page.Browser().WaitDownload(mapPath)
 
-			page.MustWaitElementsMoreThan(DOWNLOAD_SVG_SELECTOR, 0)
-			time.Sleep(time.Millisecond * 500)
+			if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
+				fmt.Println("ERROR waiting for DOWNLOAD_SVG_ICON_SELECTOR for region: ", region, currentYear)
+				FailTaskProcess(taskProcess)
+				CloseDownloadPopup(page)
+				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
+					continue
+				} else {
+					break
+				}
+			}
+			time.Sleep(time.Millisecond * 200)
 
-			err = page.MustElements(DOWNLOAD_SVG_SELECTOR)[0].Click(proto.InputMouseButtonLeft, 1)
+			err = page.MustElements(DOWNLOAD_SVG_ICON_SELECTOR)[0].Click(proto.InputMouseButtonLeft, 1)
 			if err != nil {
 				// utils.SendWSProgress(session, taskProcess)
 				fmt.Printf("%s, %s, %v", url, "Error clicking download svg button", err)
-				break
+				FailTaskProcess(taskProcess)
+				CloseDownloadPopup(page)
+				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
+					continue
+				} else {
+					break
+				}
 			}
 
 			wait()
@@ -616,14 +664,17 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			if _, err = os.Stat(mapPath); os.IsNotExist(err) {
 				// TODO: Check this
 				// panic(fmt.Sprintf("%s %s %v", url, "File not found", err))
-				break
+				FailTaskProcess(taskProcess)
+				CloseDownloadPopup(page)
+				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
+					continue
+				} else {
+					break
+				}
 			}
 
 			// Close download modal
-			closeBtn := page.MustElement("div.download-modal-content button.close-button")
-			if closeBtn != nil {
-				closeBtn.Click(proto.InputMouseButtonLeft, 1)
-			}
+			CloseDownloadPopup(page)
 
 			// TODO: DOWNLOAD FILE AND UPLOAD
 			replaceData := ReplaceVarsData{
@@ -638,6 +689,7 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 
 			fileInfo, err := getFileInfo(mapPath)
 			if err != nil {
+				FailTaskProcess(taskProcess)
 				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
 					continue
 				} else {
@@ -649,6 +701,7 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			if strings.Contains(lowerCaseContent, "missing map column") {
 				os.Remove(fileInfo.FilePath)
 				fmt.Printf("Missing map column %s %s %s, retrying", replaceData.Region, replaceData.Year, replaceData.FileName)
+				FailTaskProcess(taskProcess)
 				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
 					continue
 				} else {
@@ -683,17 +736,19 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			}
 
 			Filename, status, err := uploadMapFile(user, *token, replaceData, mapPath, data)
-			//  Retry once
+			//  Retry twice
 			if err != nil {
 				time.Sleep(time.Second * 2)
 				Filename, status, err = uploadMapFile(user, *token, replaceData, mapPath, data)
+				if err != nil {
+					time.Sleep(time.Second * 4)
+					Filename, status, err = uploadMapFile(user, *token, replaceData, mapPath, data)
+				}
 			}
 
 			if err != nil {
 				fmt.Println("Error processing", region, year)
-				taskProcess.Status = models.TaskProcessStatusFailed
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
+				FailTaskProcess(taskProcess)
 			} else {
 				taskProcess.FileName = Filename
 
@@ -1037,7 +1092,7 @@ func getMapStartEndYearTitle(browser *rod.Browser, url string) (string, string, 
 	return startYear, endYear, title
 }
 
-func processRegion(browser *rod.Browser, user *models.User, task *models.Task, chartName string, region, downloadPath string, chartParamsMap map[string]string, startYear, endYear string, title string, data StartData) error {
+func processRegion(browser *rod.Browser, user *models.User, task *models.Task, chartName string, region, downloadPath string, chartParamsMap map[string]string, title string, data StartData) error {
 	token := ""
 	done := false
 

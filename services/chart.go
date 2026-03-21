@@ -188,6 +188,7 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 
 	models.UpdateTaskLastOperationAt(task.ID)
 	result := DownloadCountryGraphsFromPopover(url, downloadPath)
+	models.UpdateTaskLastOperationAt(task.ID)
 
 	for country, path := range result {
 		if task.Status != models.TaskStatusProcessing {
@@ -349,7 +350,6 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 			continue
 		}
 		fmt.Println("Processing code: ", code, name)
-		models.UpdateTaskLastOperationAt(task.ID)
 
 		var taskProcess *models.TaskProcess
 		// Try to find existing process, otherwise create one
@@ -375,10 +375,13 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 		}
 
 		utils.SendWSTaskProcess(task.ID, taskProcess)
+		models.UpdateTaskLastOperationAt(task.ID)
 
 		nameLowerCase := strings.ToLower(strings.TrimSpace(name))
-		for {
-			selectedItems := page.MustElements(".entity-selector__content .entity-section ul li[data-flip-id^=\"selected_\"], .EntityList label.EntityPickerOption.selected .name")
+
+		selectedItemCounter := 0
+		for selectedItemCounter < 100 {
+			selectedItems := page.MustElements(COUNTRY_SELECTED_OPTIONS_LIST)
 			if len(selectedItems) == 0 {
 				break
 			}
@@ -387,33 +390,23 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 			selectedItems[0].MustClick()
 			fmt.Println("Clicked on item to deselect", selectedItems[0].MustText())
 			time.Sleep(time.Millisecond * 200)
+			selectedItemCounter = selectedItemCounter + 1
 		}
 
-		//
-		// clearSelectionBtn := page.MustElement(".EntityList .ClearSelectionButton")
-		// if clearSelectionBtn != nil {
-		// 	box := clearSelectionBtn.MustShape().Box()
-		// 	page.Mouse.Scroll(box.X, box.Y, 1)
-		// 	// clearSelectionBtn.ScrollIntoView()
-		// 	time.Sleep(time.Millisecond * 200)
-		// 	clearSelectionBtn.MustClick()
-		// 	time.Sleep(time.Millisecond * 200)
-		// } else {
-		// 	for {
-		// 		selectedItems := page.MustElements(".entity-selector__content .entity-section ul li[data-flip-id^=\"selected_\"], .EntityList label.EntityPickerOption.selected .name")
-		// 		if len(selectedItems) == 0 {
-		// 			break
-		// 		}
-		//
-		// 		fmt.Println("Items length", len(selectedItems), selectedItems[0])
-		// 		selectedItems[0].MustClick()
-		// 		fmt.Println("Clicked on item to deselect", selectedItems[0].MustText())
-		// 		time.Sleep(time.Millisecond * 200)
-		// 	}
-		// }
-		//
+		if selectedItemCounter > 100 {
+			fmt.Println("Something is wrong with deselecting selected items, aborting country loop")
+			FailTaskProcess(taskProcess)
+			break
+		}
+
+		if err := utils.WaitElementWithTimeout(page, COUNTRY_SEARCH_INPUT, time.Second*5); err != nil {
+			fmt.Println("Cannot find search input in the page, aborting country loop")
+			FailTaskProcess(taskProcess)
+			break
+		}
+
 		// Trigger search to reduce result count
-		searchInput := page.MustElement(".entity-selector__search-bar input, .EntityPicker .EntityPickerSearchInput input")
+		searchInput := page.MustElement(COUNTRY_SEARCH_INPUT)
 		if searchInput != nil {
 			searchInput.SelectAllText()
 			searchInput.MustInput(name)
@@ -422,10 +415,9 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 		}
 
 		// countryId := strings.ReplaceAll(name, " ", "-")
-		items := page.MustElements(".entity-selector__content ul li label, .EntityPicker .EntityList label.EntityPickerOption .name")
+		items := page.MustElements(COUNTRY_SEARCH_RESULT_LIST)
 		foundEl := false
 		for _, el := range items {
-			fmt.Println("Text content is:", el.MustText())
 			if nameLowerCase == strings.ToLower(strings.TrimSpace(el.MustText())) {
 				el.MustClick()
 				foundEl = true
@@ -435,6 +427,7 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 
 		if !foundEl {
 			fmt.Println("=================== CANT FIND MENU ITEM FOR COUNTRY: ", code, name)
+			FailTaskProcess(taskProcess)
 			continue
 		}
 
@@ -446,9 +439,16 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 
 		if err := os.Mkdir(countryDownloadPath, 0755); err != nil {
 			fmt.Println("Error creating download directory: ", code, err)
+			FailTaskProcess(taskProcess)
 			continue
 		}
 		wait := page.Browser().WaitDownload(countryDownloadPath)
+
+		if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*5); err != nil {
+			fmt.Println(code, "Cannot find download button", err)
+			FailTaskProcess(taskProcess)
+			continue
+		}
 
 		downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
 		downloadBtn.MustFocus()
@@ -456,31 +456,36 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 
 		if err := page.Keyboard.Press(input.Enter); err != nil {
 			fmt.Println(code, "Error clicking download button", err)
-			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+			FailTaskProcess(taskProcess)
 			continue
 		}
 
-		page.MustWaitElementsMoreThan(DOWNLOAD_SVG_SELECTOR, 0)
-		elements := page.MustElements(DOWNLOAD_SVG_SELECTOR)
+		fmt.Println("GOT DOWNLOAD BTN SELECTOR, WAITING FOR SVG")
+		if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
+			fmt.Println("Can't find DOWNLOAD_SVG_SELECTOR")
+			FailTaskProcess(taskProcess)
+			CloseDownloadPopup(page)
+			continue
+		}
+
+		elements := page.MustElements(DOWNLOAD_SVG_ICON_SELECTOR)
 
 		if err := elements[0].Click(proto.InputMouseButtonLeft, 1); err != nil {
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 			fmt.Println(code, "Error clicking download svg button", err)
+			FailTaskProcess(taskProcess)
+			CloseDownloadPopup(page)
 			continue
 		}
 
 		wait()
 		fmt.Println("============= DOWNLOAD DONE =============")
 
-		closeBtn := page.MustElement("div.download-modal-content button.close-button")
-		if closeBtn != nil {
-			closeBtn.Click(proto.InputMouseButtonLeft, 1)
-		}
+		CloseDownloadPopup(page)
+
 		if _, err := os.Stat(countryDownloadPath); os.IsNotExist(err) {
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
-			taskProcess.Status = models.TaskProcessStatusFailed
-			taskProcess.Update()
-			utils.SendWSTaskProcess(task.ID, taskProcess)
+			FailTaskProcess(taskProcess)
 			fmt.Println(code, "File not found", err)
 			continue
 		}
@@ -497,9 +502,7 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 		}
 		filename, status, err := uploadMapFile(user, *token, replaceData, countryDownloadPath, data)
 		if err != nil {
-			taskProcess.Status = models.TaskProcessStatusFailed
-			taskProcess.Update()
-			utils.SendWSTaskProcess(task.ID, taskProcess)
+			FailTaskProcess(taskProcess)
 			continue
 		}
 
@@ -714,12 +717,15 @@ func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
 	time.Sleep(time.Second * 2)
 	fmt.Println("Url", page.MustInfo().URL)
 
-	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
+	result := make(map[string]string, 0)
+	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*5); err != nil {
+		fmt.Println("Timeout waiting for download btn")
+		return result
+	}
 
 	foundCountries := make([]string, 0)
 	notFoundCountries := make([]string, 0)
 	gotSvg := make([]string, 0)
-	result := make(map[string]string, 0)
 
 	for name, code := range constants.COUNTRY_CODES {
 		time.Sleep(time.Millisecond * 200)
@@ -737,8 +743,6 @@ func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
 
 		}
 		foundCountries = append(foundCountries, name)
-
-		time.Sleep(time.Millisecond * 200)
 
 		el, err := page.Element(fmt.Sprintf("#%s", id))
 		if err != nil {
@@ -759,13 +763,13 @@ func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
 		}
 
 		page.Mouse.MustMoveTo(pointInside.X, pointInside.Y)
-		time.Sleep(time.Millisecond * 200)
-		if !page.MustHas("#mapTooltip svg") {
+
+		if err := utils.WaitElementWithTimeout(page, MAP_TOOLTIP_SELECTOR, time.Millisecond*500); err != nil {
 			fmt.Println("Country doesn't have chart to download: ", name)
 			continue
 		}
 
-		countrySvg := page.MustElement("#mapTooltip svg")
+		countrySvg := page.MustElement(MAP_TOOLTIP_SELECTOR)
 		_, err = countrySvg.Eval(`(styles) => {
 			// Attach style
 			const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');

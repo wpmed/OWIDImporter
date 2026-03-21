@@ -433,10 +433,12 @@ func WaitElementWithTimeout(page *rod.Page, selector string, timeout time.Durati
 	for {
 		select {
 		case <-ctx.Done():
+			fmt.Println("timeout waiting for element after ", selector, timeout)
 			return fmt.Errorf("timeout waiting for element %q after %s", selector, timeout)
 		case <-ticker.C:
 			has, _, err := page.Has(selector)
 			if err != nil {
+				fmt.Println("error checking for element : ", selector, err)
 				return fmt.Errorf("error checking for element %s: %w", selector, err)
 			}
 			if has {

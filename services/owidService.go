@@ -169,14 +169,7 @@ type ContentSlot struct {
 }
 
 const (
-	DOWNLOAD_BUTTON_SELECTOR       = `figure div[data-track-note="chart_click_download"] button, .Explorer .ActionButtons div[data-track-note="chart_click_download"] button`
-	PLAY_TIMELAPSE_BUTTON_SELECTOR = `.GrapherTimeline`
-	DOWNLOAD_SVG_SELECTOR          = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
-	DOWNLOAD_SVG_ICON_SELECTOR     = "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2) .download-modal__download-preview-img"
-	START_MARKER_SELECTOR          = ".startMarker"
-	TITLE_SELECTOR                 = "h1.header__title, .HeaderHTML h1"
-	END_MARKER_SELECTOR            = ".endMarker"
-	HEADLESS                       = true
+	HEADLESS = true
 )
 
 func GenerateTemplateCommonsName(chartFormat, chartName string, chartParams map[string]string) string {
@@ -282,7 +275,6 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 	if err != nil {
 		return filename, "", err
 	}
-	fmt.Println("Uploading file: ", fileInfo.FilePath)
 
 	// Cleanup file and load it again
 	owidparser.CleanupSVGForUpload(fileInfo.FilePath)
