@@ -346,17 +346,25 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 	for i := 0; i < 2; i++ {
 		err = rod.Try(func() {
 			page := browser.MustPage("")
+			time.Sleep(time.Second * time.Duration(i*5))
+
 			defer page.Close()
 			page.MustSetViewport(1920, 1080, 1, false)
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 
 			page.MustNavigate(url)
-			page.MustWaitIdle()
 			page.MustWaitLoad()
+			page.MustWaitIdle()
 
+			if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
+				fmt.Println("Timeout waiting for DOWNLOAD_BUTTON_SELECTOR")
+				panic(err)
+			}
+			if err := utils.WaitElementWithTimeout(page, PLAY_TIMELAPSE_BUTTON_SELECTOR, time.Second*10); err != nil {
+				fmt.Println("Timeout waiting for PLAY_TIMELAPSE_BUTTON_SELECTOR")
+				panic(err)
+			}
 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
-			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-			page.MustWaitElementsMoreThan(PLAY_TIMELAPSE_BUTTON_SELECTOR, 0)
 			time.Sleep(time.Second * 1)
 
 			chartInfo.Params = GetChartParametersFromPage(page)
