@@ -277,6 +277,8 @@ func ArchiveTask(c *gin.Context) {
 	fmt.Println("SET ARCHIVED TO: ", data.Archived, task.Archived)
 	if err := task.Update(); err != nil {
 		fmt.Println("Error updating task", err)
+	} else {
+		utils.SendWSTask(task)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"task": task})
@@ -318,6 +320,7 @@ func RetryTask(c *gin.Context) {
 	models.UpdateTaskLastOperationAt(task.ID)
 	task.Status = models.TaskStatusQueued
 	task.Update()
+	utils.SendWSTask(task)
 
 	c.JSON(http.StatusOK, gin.H{"taskId": task.ID})
 }
@@ -354,6 +357,7 @@ func RetryAllFailed(c *gin.Context) {
 		models.UpdateTaskLastOperationAt(task.ID)
 		task.Status = models.TaskStatusQueued
 		task.Update()
+		utils.SendWSTask(&task)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
@@ -391,6 +395,7 @@ func CancelTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Error stopping task"})
 		return
 	}
+	utils.SendWSTask(task)
 
 	c.JSON(http.StatusOK, gin.H{"taskId": task.ID})
 }

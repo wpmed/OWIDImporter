@@ -188,14 +188,16 @@ func SendWSTask(task *models.Task) error {
 		return err
 	}
 	sendWSTaskMessage(task.ID, "task", string(msgJson))
+	sendWSTaskMessage(fmt.Sprintf("%s_task_list", task.UserId), "task", string(msgJson))
 	return nil
 }
 
 func sendWSTaskMessage(taskId string, messageType string, msg string) {
 	go func() {
-		if len(sessions.TaskSessions[taskId]) > 0 {
+		if len(sessions.SubscriptionSessions[taskId]) > 0 {
 			failedSessions := make([]string, 0)
-			for _, s := range sessions.TaskSessions[taskId] {
+			for _, s := range sessions.SubscriptionSessions[taskId] {
+				fmt.Println("======== Sending msg: ", " to: ", taskId, s.Id, messageType)
 				s.WsMutex.Lock()
 				err := s.Ws.WriteJSON(map[string]string{
 					"type": messageType,
@@ -211,27 +213,11 @@ func sendWSTaskMessage(taskId string, messageType string, msg string) {
 			// Remove failed receives, most probably disconnected
 			if len(failedSessions) > 0 {
 				for _, id := range failedSessions {
-					sessions.RemoveTaskSession(taskId, id)
+					sessions.RemoveSubscriptionSession(taskId, id)
 				}
 			}
 		}
 	}()
-}
-
-func SendWSMessage(session *sessions.Session, messageType string, message string) error {
-	go func() {
-		session.WsMutex.Lock()
-		defer session.WsMutex.Unlock()
-		err := session.Ws.WriteJSON(map[string]string{
-			"type": messageType,
-			"msg":  message,
-		})
-		if err != nil {
-			fmt.Println("Error sending msg", messageType, "-", message, ": ", err)
-		}
-	}()
-
-	return nil
 }
 
 func Contains(slice []string, item string) bool {

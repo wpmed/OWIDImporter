@@ -1,6 +1,6 @@
 import { Accordion, AccordionDetails, AccordionSummary, Box, Button, CircularProgress, Grid, Snackbar, Stack, Typography } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SocketMessage, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
+import { SocketMessage, SocketMessageActionEnum, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
 import { cancelTask, createTask, fetchTaskById, retryTask } from "../request/request";
 import { DescriptionOverwriteBehaviour, MapImporterFormItem, Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum, TaskTypeEnum } from "../types";
 import { copyText, extractAndReplaceCategoriesFromDescription, getStatusColor, getTaskProcessStatusColor } from "../utils";
@@ -117,8 +117,7 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
     if (task) {
       setCancelLoading(true);
       cancelTask(task.id)
-        .then((res) => {
-          console.log("Cancel response", res)
+        .then(() => {
           getTask(task.id)
         })
         .catch((err) => {
@@ -221,7 +220,6 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
       function listener(event: MessageEvent<any>) {
         const info = JSON.parse(event.data) as SocketMessage;
         const taskProcess = JSON.parse(info.msg) as TaskProcess;
-        console.log("Got websocket message: ", info)
         switch (info.type) {
           case SocketMessageTypeEnum.TASK_PROCESS:
             setItems((items) => {
@@ -253,10 +251,18 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
   useEffect(() => {
     if (ws && taskId) {
       ws.send(JSON.stringify({
-        action: "subscribe_task",
+        action: SocketMessageActionEnum.SUBSCRIBE_TASK,
         content: taskId
       }))
+
+      return () => {
+        ws.send(JSON.stringify({
+          action: SocketMessageActionEnum.UNSUBSCRIBE_TASK,
+          content: taskId
+        }))
+      }
     }
+    return () => { }
   }, [ws, taskId])
 
   useEffect(() => {

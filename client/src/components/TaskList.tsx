@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { archiveTask, deleteTask, fetchTasks, retryFailedTasks } from "../request/request"
 import { TaskListItem } from "./TaskListItem"
 import { Refresh } from "@mui/icons-material"
+import { SocketMessage, SocketMessageActionEnum, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket"
 
 interface TaskListProps {
   taskType: TaskTypeEnum
@@ -14,7 +15,7 @@ interface TaskListProps {
 export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [archived, setArchived] = useState(0);
-  // const [page, setPage] = useState(1);
+  const { ws, connect, disconnect } = useWebsocket();
 
   const onToggleTaskArchived = (task: Task) => {
     const newArchived = task.archived === 0 ? 1 : 0;
@@ -54,8 +55,7 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
 
   const onRetryFailedTasks = () => {
     retryFailedTasks()
-      .then((res) => {
-        console.log("Retry res: ", res);
+      .then(() => {
         fetchTasks({ taskType, archived })
           .then(res => {
             if (res.tasks) {
@@ -72,7 +72,6 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
   }
 
   useEffect(() => {
-    console.log("SHould get task list");
     fetchTasks({ taskType, archived })
       .then(res => {
         if (res.tasks) {
@@ -84,6 +83,56 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
       })
 
   }, [taskType, archived])
+
+  useEffect(() => {
+    if (ws) {
+      function listener(event: MessageEvent<any>) {
+        const info = JSON.parse(event.data) as SocketMessage;
+        const task = JSON.parse(info.msg) as Task;
+        setTasks((tasks) => {
+          const newTasks = tasks.slice();
+          const taskIndex = newTasks.findIndex(t => t.id === task.id)
+          console.log({taskIndex})
+          if (taskIndex !== -1) {
+            newTasks[taskIndex] = task;
+          }
+
+          return newTasks;
+        })
+      }
+
+      ws.addEventListener("message", listener);
+      console.log("Added listener")
+      return () => {
+        ws.removeEventListener("message", listener)
+        console.log("Removed listener")
+      }
+    }
+
+    return () => {}
+  }, [ws, setTasks])
+
+  useEffect(() => {
+    if (ws) {
+      ws.send(JSON.stringify({
+        action: SocketMessageActionEnum.SUBSCRIBE_TASK_LIST,
+      }))
+
+      return () => {
+        ws.send(JSON.stringify({
+          action: SocketMessageActionEnum.UNSUBSCRIBE_TASK_LIST,
+        }))
+      }
+    }
+    return () => { }
+  }, [ws])
+
+  useEffect(() => {
+    connect()
+    return () => {
+      disconnect();
+    }
+  }, [connect, disconnect])
 
   return (
     <Stack spacing={2} textAlign={"left"}>

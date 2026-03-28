@@ -17,43 +17,51 @@ type Session struct {
 	WsMutex                 *sync.Mutex
 }
 
-type TaskSession struct {
+type SubscriptionSession struct {
 	Ws      *websocket.Conn
 	WsMutex *sync.Mutex
+	Topic   string
 	Id      string
 }
 
 var (
-	Sessions     = make(map[string]*Session)
-	TaskSessions = make(map[string][]*TaskSession)
+	Sessions             = make(map[string]*Session)
+	SubscriptionSessions = make(map[string][]*SubscriptionSession)
 )
 
-var assignTaskSessionMutex = sync.Mutex{}
+var assignSubscriptionSessionMutex = sync.Mutex{}
 
-func AddTaskSession(taskId string, session *TaskSession) {
-	assignTaskSessionMutex.Lock()
+func AddSubscriptionSession(subscriptionId string, session *SubscriptionSession) {
+	assignSubscriptionSessionMutex.Lock()
 
-	TaskSessions[taskId] = append(TaskSessions[taskId], session)
+	SubscriptionSessions[subscriptionId] = append(SubscriptionSessions[subscriptionId], session)
 
-	assignTaskSessionMutex.Unlock()
+	assignSubscriptionSessionMutex.Unlock()
 }
 
-func RemoveTaskSession(taskId, id string) {
-	assignTaskSessionMutex.Lock()
+func RemoveSubscriptionSession(subscriptionId, id string) {
+	assignSubscriptionSessionMutex.Lock()
 	index := -1
 
-	for i := 0; i < len(TaskSessions[taskId]); i++ {
-		if TaskSessions[taskId][i].Id == id {
+	for i := 0; i < len(SubscriptionSessions[subscriptionId]); i++ {
+		if SubscriptionSessions[subscriptionId][i].Id == id {
 			index = i
 			break
 		}
 	}
 
 	if index != -1 {
-		TaskSessions[taskId] = append(TaskSessions[taskId][:index], TaskSessions[taskId][index+1:]...)
+		SubscriptionSessions[subscriptionId] = append(SubscriptionSessions[subscriptionId][:index], SubscriptionSessions[subscriptionId][index+1:]...)
 	}
 
-	assignTaskSessionMutex.Unlock()
+	assignSubscriptionSessionMutex.Unlock()
+}
+
+func RemoveFullSubscription(subscriptionId string) {
+	assignSubscriptionSessionMutex.Lock()
+	delete(SubscriptionSessions, subscriptionId)
+
+	assignSubscriptionSessionMutex.Unlock()
 }
 
 func RemoveUserSession(username string) {

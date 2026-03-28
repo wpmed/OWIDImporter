@@ -10,6 +10,14 @@ export enum SocketMessageTypeEnum {
   TASK = "task"
 }
 
+export enum SocketMessageActionEnum {
+  SUBSCRIBE_TASK = "subscribe_task",
+  UNSUBSCRIBE_TASK = "unsubscribe_task",
+
+  SUBSCRIBE_TASK_LIST = "subscribe_task_list",
+  UNSUBSCRIBE_TASK_LIST = "unsubscribe_task_list",
+}
+
 export interface SocketMessage {
   type: SocketMessageTypeEnum,
   msg: string
@@ -23,7 +31,6 @@ export const useWebsocket = () => {
 
 
   const connect = useCallback(() => {
-    console.log("Connecting WS");
     const sessionId = window.localStorage.getItem(SESSION_ID_KEY);
     const url = import.meta.env.VITE_BASE_URL + `/ws?${SESSION_ID_KEY}=${sessionId}`;
 
@@ -61,7 +68,6 @@ export const useWebsocket = () => {
     setWS(ws => {
       if (ws) {
         ws.close(1000)
-        console.log("Socket disconnected");
       }
 
       return null;

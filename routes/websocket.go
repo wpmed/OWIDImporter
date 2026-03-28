@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/sessions"
 )
 
@@ -38,11 +39,14 @@ func Websocket(c *gin.Context) {
 			fmt.Println("MT: ", mt)
 			if err != nil {
 				log.Println("Error reading message", err)
+				if websocket.IsCloseError(err, websocket.CloseGoingAway) {
+					sessions.RemoveFullSubscription(sessionId)
+				}
 				break
 			}
 			if mt == websocket.CloseMessage {
 				log.Println("Received close message", mt)
-				delete(sessions.Sessions, sessionId)
+				sessions.RemoveFullSubscription(sessionId)
 				break
 			}
 			if mt == websocket.TextMessage {
@@ -55,15 +59,34 @@ func Websocket(c *gin.Context) {
 				switch actionMessage.Action {
 				case "subscribe_task":
 					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
-					taskSession := sessions.TaskSession{
+					taskSession := sessions.SubscriptionSession{
 						Id:      sessionId,
 						Ws:      ws,
 						WsMutex: &sync.Mutex{},
 					}
-					sessions.AddTaskSession(actionMessage.Content, &taskSession)
+					sessions.AddSubscriptionSession(actionMessage.Content, &taskSession)
 				case "unsubscribe_task":
 					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
-					sessions.RemoveTaskSession(actionMessage.Content, sessionId)
+					sessions.RemoveSubscriptionSession(actionMessage.Content, sessionId)
+				case "subscribe_task_list":
+					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
+					user, err := models.FindUserByUsername(session.Username)
+					if err != nil || user == nil {
+						continue
+					}
+					taskSession := sessions.SubscriptionSession{
+						Id:      sessionId,
+						Ws:      ws,
+						WsMutex: &sync.Mutex{},
+					}
+					sessions.AddSubscriptionSession(fmt.Sprintf("%s_task_list", user.ID), &taskSession)
+				case "unsubscribe_task_list":
+					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
+					user, err := models.FindUserByUsername(session.Username)
+					if err != nil || user == nil {
+						continue
+					}
+					sessions.RemoveSubscriptionSession(fmt.Sprintf("%s_task_list", user.ID), sessionId)
 				}
 				break
 			}

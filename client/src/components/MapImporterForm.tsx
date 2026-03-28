@@ -355,7 +355,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
                     If a file with the same name exists:
                   </Typography>
                   {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
-                    <Stack spacing={1}>
+                    <Stack spacing={1} key={`country-${option.value}`}>
                       <Stack direction={"row"} alignItems={"flex-start"}>
                         <Radio disabled={disabled} checked={value.countryDescriptionOverwriteBehaviour == option.value} onClick={() => handleChange("countryDescriptionOverwriteBehaviour", option.value)} />
                         < Box >

@@ -80,7 +80,6 @@ export default function App() {
   }
 
   const onNewClick = () => {
-    console.log("On New Click")
     setSelectedTaskId("");
     setTab(TABS.BLANK);
     setTimeout(() => {
@@ -127,7 +126,6 @@ export default function App() {
                 {LIST_ITEMS.map(item => (
                   <ListItem key={item.id} disablePadding>
                     <ListItemButton onClick={() => {
-                      console.log("On Click ", item)
                       if (item.id === TABS.IMPORT_MAP) {
                         onNewClick()
                       } else {

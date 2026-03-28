@@ -141,10 +141,11 @@ export function TaskListItem({ task, onClick, onToggleArchive }: TaskListItemPro
           {/*     } */}
           {/*   /> */}
           {/* )} */}
-          <Button startIcon={<Archive />} aria-describedby={`archive-${task.id}`} size="medium" onClick={toggleArchive}>
-            {task.archived == 0 ? <span>Archive</span> : <span>UnArchive</span>}
-          </Button>
-
+          {![TaskStatusEnum.Processing, TaskStatusEnum.Queued].includes(task.status) && (
+            <Button startIcon={<Archive />} aria-describedby={`archive-${task.id}`} size="medium" onClick={toggleArchive}>
+              {task.archived == 0 ? <span>Archive</span> : <span>UnArchive</span>}
+            </Button>
+          )}
           {/* <PopoverConfirmationButton */}
           {/*   id={`archive-${task.id}`} */}
           {/*   trigger={( */}
