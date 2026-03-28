@@ -12,6 +12,7 @@ import (
 	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/routes"
 	"github.com/wpmed-videowiki/OWIDImporter/services"
+	"github.com/wpmed-videowiki/OWIDImporter/utils"
 )
 
 func main() {
@@ -56,6 +57,7 @@ func monitorStalledTasks() {
 			for _, task := range *tasks {
 				task.Status = models.TaskStatusFailed
 				task.Update()
+				utils.SendWSTask(&task)
 			}
 		}
 		time.Sleep(time.Second * 60)
@@ -95,6 +97,7 @@ func monitorQueuedTasks() {
 				// Fail the task to get the next
 				task.Status = models.TaskStatusFailed
 				task.Update()
+				utils.SendWSTask(task)
 				continue
 			}
 

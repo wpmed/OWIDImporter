@@ -211,16 +211,19 @@ func GetTasks(c *gin.Context) {
 	}
 
 	perPageStr := queryParams.Get("perPage")
-	perPage := 1000
+	perPage := 20
 	if perPageStr != "" {
 		if num, err := strconv.Atoi(perPageStr); err == nil {
 			perPage = num
 		}
 	}
 
+	search := queryParams.Get("search")
+	status := queryParams.Get("status")
+
 	skip := (page - 1) * perPage
 
-	tasks, count, err := models.FindTaskByUserId(user.ID, taskType, archived, skip, perPage)
+	tasks, count, err := models.FindTaskByUserId(user.ID, taskType, archived, skip, perPage, search, status)
 	if err != nil || tasks == nil {
 		c.JSON(http.StatusBadRequest, make([]string, 0))
 		return

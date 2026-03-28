@@ -255,10 +255,24 @@ func FindFailedTasksByUserId(id string) (*[]Task, error) {
 	return &tasks, nil
 }
 
-func FindTaskByUserId(id, taskType string, archived, skip, limit int) (*[]Task, int, error) {
+func FindTaskByUserId(id, taskType string, archived, skip, limit int, search, status string) (*[]Task, int, error) {
 	tasks := make([]Task, 0)
 	condition := "user_id=? AND type=? AND archived=?"
-	rows, err := db.Query(fmt.Sprintf("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, archived, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at FROM task WHERE %s ORDER BY created_at DESC LIMIT ? OFFSET ?", condition), id, taskType, archived, limit, skip)
+	args := []interface{}{id, taskType, archived}
+
+	if search != "" {
+		pattern := "%" + search + "%"
+		condition += " AND (chart_name LIKE ? OR url LIKE ? OR file_name LIKE ?)"
+		args = append(args, pattern, pattern, pattern)
+	}
+
+	if status != "" {
+		condition += " AND status=?"
+		args = append(args, status)
+	}
+
+	queryArgs := append(args, limit, skip)
+	rows, err := db.Query(fmt.Sprintf("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, archived, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at FROM task WHERE %s ORDER BY created_at DESC LIMIT ? OFFSET ?", condition), queryArgs...)
 	if err != nil {
 		fmt.Println("Error scaning for id ", id, err)
 		return nil, 0, fmt.Errorf("Cannot find requested record")
@@ -292,7 +306,7 @@ func FindTaskByUserId(id, taskType string, archived, skip, limit int) (*[]Task, 
 		tasks = append(tasks, task)
 	}
 
-	row := db.QueryRow(fmt.Sprintf("SELECT COUNT(id) as c FROM task WHERE %s", condition), id, taskType, archived)
+	row := db.QueryRow(fmt.Sprintf("SELECT COUNT(id) as c FROM task WHERE %s", condition), args...)
 	count := 0
 	row.Scan(&count)
 	return &tasks, count, nil

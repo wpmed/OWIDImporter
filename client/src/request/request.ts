@@ -146,14 +146,28 @@ interface FetchTasksResopnse {
 
 interface FetchTasksRequest {
   taskType: TaskTypeEnum
-  // page: number
-  // perPage: number
+  page: number
+  perPage: number
   archived: number // 0 or 1
+  search?: string
+  status?: string
 }
 
-export async function fetchTasks({ taskType, archived }: FetchTasksRequest) {
+export async function fetchTasks({ taskType, archived, page, perPage, search, status }: FetchTasksRequest) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
-  const response = await fetch(`${API_BASE}/task?taskType=${taskType}&archived=${archived}`, {
+  const params = new URLSearchParams({
+    taskType,
+    archived: String(archived),
+    page: String(page),
+    perPage: String(perPage),
+  });
+  if (search) {
+    params.set("search", search);
+  }
+  if (status) {
+    params.set("status", status);
+  }
+  const response = await fetch(`${API_BASE}/task?${params.toString()}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
