@@ -349,7 +349,7 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 			time.Sleep(time.Second * time.Duration(i*5))
 
 			defer page.Close()
-			page.MustSetViewport(1920, 1080, 1, false)
+			page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 
 			page.MustNavigate(url)
@@ -367,16 +367,29 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
 			time.Sleep(time.Second * 1)
 
+			_, err = GetPageCanDownload(page)
+			fmt.Println("CAN DOWNLOAD ERR", err)
+			if err != nil {
+				panic(err)
+			}
+
 			chartInfo.Params = GetChartParametersFromPage(page)
+			fmt.Println("GOT PARAMS")
 			chartInfo.ParamsMap = GetChartParametersMapFromPage(page, selectedParams)
+			fmt.Println("GOT PARAMSMAP")
 
 			startYear, endYear, title := getMapStartEndYearTitleFromPage(page)
+			fmt.Println("GOT title", startYear, endYear, title)
 			chartInfo.StartYear = startYear
 			chartInfo.EndYear = endYear
 			chartInfo.Title = title
-			chartInfo.HasCountries = getMapHasCountriesFromPage(page)
+			hasCountries, countriesList := getMapHasCountriesFromPage(page)
+			chartInfo.HasCountries = hasCountries
+			chartInfo.CountriesList = countriesList
+			fmt.Println("GOT HasCountries", chartInfo.HasCountries)
 
 			chartName, err := GetChartNameFromUrl(url)
+			fmt.Println("GOT ChartName", chartName)
 
 			if err == nil && chartName != "" {
 				chartInfo.ChartName = utils.ToTitle(chartName)
@@ -386,15 +399,7 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 				chartInfo.TemplateName = GenerateTemplateCommonsNameNoPrefix(chartFormat, chartInfo.Title, chartInfo.ParamsMap)
 			}
 
-			if chartInfo.HasCountries {
-				chartInfo.CountriesList = getCountryListFromPage(page)
-			}
-
 			chartInfo.StableUrl = utils.CleanupTaskURLQueryParams(page.MustInfo().URL)
-			_, err = GetPageCanDownload(page)
-			if err != nil {
-				panic(err)
-			}
 		})
 		if err == nil {
 			break
@@ -405,8 +410,19 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 }
 
 func GetPageCanDownload(page *rod.Page) (bool, error) {
+	mapTab := GetTabByLabel(page, "map")
+	if mapTab != nil {
+		mapTab.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(time.Second)
+	}
+
+	defer func() {
+		CloseDownloadPopup(page)
+	}()
+
 	startMarker := page.MustElement(START_MARKER_SELECTOR)
 	endMarker := page.MustElement(END_MARKER_SELECTOR)
+	fmt.Println("Getting page can download markers: ", startMarker, endMarker)
 	if startMarker == nil && endMarker == nil {
 		return false, fmt.Errorf("No start & end markers")
 	}
@@ -415,6 +431,7 @@ func GetPageCanDownload(page *rod.Page) (bool, error) {
 	downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
 	downloadBtn.MustFocus()
 	time.Sleep(time.Millisecond * 200)
+	fmt.Println("Focused download btn")
 
 	err := page.Keyboard.Press(input.Enter)
 	if err != nil {
@@ -422,8 +439,10 @@ func GetPageCanDownload(page *rod.Page) (bool, error) {
 		return false, fmt.Errorf("Cannot find/click on download button")
 	}
 
+	fmt.Println("CLICKED ENTER")
 	page.MustWaitElementsMoreThan(DOWNLOAD_SVG_ICON_SELECTOR, 0)
 	downloadIcon := page.MustElement(DOWNLOAD_SVG_ICON_SELECTOR)
+	fmt.Println("GOT DOWNLOAD ICON", downloadIcon)
 	if downloadIcon == nil {
 		return false, fmt.Errorf("SVG Download icon not found")
 	}
@@ -553,8 +572,13 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 		fmt.Println("00000000000000000000000000 GOT START MARKER 00000000000000000000000000000", startYear, endYear)
 
 		counter := 0
+		owidEnv := env.GetEnv().OWID_ENV
 		for task.Status == models.TaskStatusProcessing {
 			counter = counter + 1
+			if owidEnv == "development" && counter >= 5 {
+				break
+			}
+
 			models.UpdateTaskLastOperationAt(task.ID)
 			if counter == 50 {
 				currentUrl := page.MustInfo().URL
@@ -957,8 +981,9 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 	return &config, nil
 }
 
-func getMapHasCountriesFromPage(page *rod.Page) bool {
+func getMapHasCountriesFromPage(page *rod.Page) (bool, []string) {
 	activeTab := GetActivePageTab(page)
+	countriesList := make([]string, 0)
 	hasLines := false
 
 	lineTab := GetTabByLabel(page, "line")
@@ -973,26 +998,30 @@ func getMapHasCountriesFromPage(page *rod.Page) bool {
 		hasLines = page.MustHas("svg .LineChart")
 	}
 
+	if hasLines {
+		countriesList = getCountryListFromPage(page)
+	}
+
 	if activeTab != nil {
 		activeTab.Click(proto.InputMouseButtonLeft, 1)
 		time.Sleep(time.Millisecond * 200)
 	}
 
-	return hasLines
+	return hasLines, countriesList
 }
 
 func getCountryListFromPage(page *rod.Page) []string {
-	activeTab := GetActivePageTab(page)
-	lineTab := GetTabByLabel(page, "line")
-	chartTab := GetTabByLabel(page, "chart")
+	// activeTab := GetActivePageTab(page)
+	// lineTab := GetTabByLabel(page, "line")
+	// chartTab := GetTabByLabel(page, "chart")
 
-	if lineTab != nil {
-		lineTab.Click(proto.InputMouseButtonLeft, 1)
-		time.Sleep(time.Second)
-	} else if chartTab != nil {
-		chartTab.Click(proto.InputMouseButtonLeft, 1)
-		time.Sleep(time.Second)
-	}
+	// if lineTab != nil {
+	// 	lineTab.Click(proto.InputMouseButtonLeft, 1)
+	// 	time.Sleep(time.Second)
+	// } else if chartTab != nil {
+	// 	chartTab.Click(proto.InputMouseButtonLeft, 1)
+	// 	time.Sleep(time.Second)
+	// }
 
 	countries := []string{}
 
@@ -1042,10 +1071,10 @@ func getCountryListFromPage(page *rod.Page) []string {
 		}
 	}
 
-	if activeTab != nil {
-		activeTab.Click(proto.InputMouseButtonLeft, 1)
-		time.Sleep(time.Second)
-	}
+	// if activeTab != nil {
+	// 	activeTab.Click(proto.InputMouseButtonLeft, 1)
+	// 	time.Sleep(time.Second)
+	// }
 
 	return countries
 }

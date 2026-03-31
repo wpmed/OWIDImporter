@@ -318,7 +318,7 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 
 	page := browser.MustPage("")
 	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-	page.MustSetViewport(1920, 1080, 1, false)
+	page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
 	page.MustNavigate(url)
 	// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
 	page.MustWaitLoad()
@@ -338,6 +338,8 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 
 	countriesCodeNameMap := constants.GetCountryCodeNameMap()
 
+	counter := 0
+	owidEnv := env.GetEnv().OWID_ENV
 	// var selectedItems rod.Elements
 	for _, code := range countriesCodes {
 		if task.Status != models.TaskStatusProcessing {
@@ -350,6 +352,10 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 			continue
 		}
 		fmt.Println("Processing code: ", code, name)
+		counter = counter + 1
+		if owidEnv == "development" && counter >= 5 {
+			break
+		}
 
 		var taskProcess *models.TaskProcess
 		// Try to find existing process, otherwise create one
@@ -582,7 +588,7 @@ func processCountry(user *models.User, task *models.Task, token, chartName, coun
 			defer page.Close()
 
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-			page.MustSetViewport(1920, 1080, 1, false)
+			page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
 			page.MustNavigate(url)
 			page.Timeout(timeoutDuration).MustElement(START_MARKER_SELECTOR)
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
@@ -710,7 +716,7 @@ func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
 
 	// Max 3 minutes for the process to complete
 	page = page.Timeout(time.Minute * 3)
-	page.MustSetViewport(1920, 1080, 1, false)
+	page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
 	page.MustNavigate(url)
 	page.MustWaitLoad()
 	page.MustWaitIdle()
@@ -886,7 +892,7 @@ func GetCountryList(url string) ([]string, string, string, string, error) {
 
 	err := rod.Try(func() {
 		page := browser.MustPage("")
-		page.MustSetViewport(1920, 1080, 1, false)
+		page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
 		page.MustNavigate(url)
 		page.MustWaitIdle()
 		page.MustWaitLoad()

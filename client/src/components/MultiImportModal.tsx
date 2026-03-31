@@ -211,15 +211,16 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
                   Some links are invalid.
                 </Typography>
               )}
-              <Stack spacing={1}>
+              <Stack spacing={1} sx={{ maxHeight: "500px", overflowY: "auto", overflowX: "clip"}}>
                 {processedLinks.map(url => (
                   <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
                     <Typography color={url.status == "done" ? "success" : "primary"} noWrap>
-                      {url.url}
+                      <a href={url.url} target="_blank">
+                        {url.url}
+                      </a>
                     </Typography>
                     {url.status == "done" && (
                       <CheckCircle color="success" />
-
                     )}
                     {url.status == "loading" && (
                       <CircularProgress size={20} />

@@ -67,6 +67,8 @@ func GetChartParameters(c *gin.Context) {
 	fmt.Println("Final url: ", url)
 
 	l, browser := services.GetBrowser()
+	blankPage := browser.MustPage("")
+	defer blankPage.Close()
 	defer l.Cleanup()
 	defer browser.Close()
 	info, err := services.GetChartInfo(browser, url, "$CHART_NAME", "")
