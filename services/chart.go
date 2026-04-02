@@ -354,7 +354,7 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 		fmt.Println("Processing code: ", code, name)
 		counter = counter + 1
 		if owidEnv == "development" && counter >= 5 {
-			break
+			// break
 		}
 
 		var taskProcess *models.TaskProcess

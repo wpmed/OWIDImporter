@@ -140,7 +140,8 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 	var result T
 	err = json.Unmarshal(body, &result)
 	if err != nil {
-		fmt.Println("Error unmarshalling", err)
+		fmt.Println("Error unmarshalling api response", url, params, err)
+		fmt.Println(string(body))
 		return nil, err
 	}
 	return &result, nil
@@ -197,7 +198,6 @@ func sendWSTaskMessage(taskId string, messageType string, msg string) {
 		if len(sessions.SubscriptionSessions[taskId]) > 0 {
 			failedSessions := make([]string, 0)
 			for _, s := range sessions.SubscriptionSessions[taskId] {
-				fmt.Println("======== Sending msg: ", " to: ", taskId, s.Id, messageType)
 				s.WsMutex.Lock()
 				err := s.Ws.WriteJSON(map[string]string{
 					"type": messageType,
@@ -349,6 +349,19 @@ func AttachQueryParamToUrl(url, queryStr string) string {
 	}
 
 	return url
+}
+
+func RemoveQueryParamFromUrl(rawURL, paramKey string) string {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+
+	query := parsedURL.Query()
+	query.Del(paramKey)
+	parsedURL.RawQuery = query.Encode()
+
+	return parsedURL.String()
 }
 
 func CleanupTaskURLQueryParams(url string) string {

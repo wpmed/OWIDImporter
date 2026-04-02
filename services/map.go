@@ -247,13 +247,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 					return nil
 				}
 				time.Sleep(time.Second * time.Duration(index*3))
-				l, browser := GetBrowser()
-				blankPage := browser.MustPage("")
-
-				defer blankPage.Close()
-				defer l.Cleanup()
-				defer browser.Close()
-				err := processRegion(browser, user, task, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, title, data)
+				err := processRegion(user, task, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, title, data)
 				fmt.Print("============= FINISHED PROCESSING REGION: ", region)
 				if err != nil {
 					fmt.Println("Error in processing some of the region", region)
@@ -517,7 +511,7 @@ func GetChartParameters(browser *rod.Browser, url string) *[]ChartParameter {
 	return &params
 }
 
-func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartData, user *models.User, chartParams map[string]string, token *string, chartName, title, region, url, downloadPath string) {
+func traverseDownloadRegion(task *models.Task, data StartData, user *models.User, chartParams map[string]string, token *string, chartName, title, region, url, downloadPath string) {
 	regionStr := region
 	if regionStr == "NorthAmerica" {
 		regionStr = "North America"
@@ -526,9 +520,12 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 		regionStr = "South America"
 	}
 
+	l, browser := GetBrowser()
+	blankPage := browser.MustPage("")
+
 	page := browser.MustPage("")
-	defer page.Close()
 	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+	page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
 
 	fmt.Println("==================== Traversing to: ", url)
 	page.MustNavigate(url)
@@ -576,20 +573,28 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 		for task.Status == models.TaskStatusProcessing {
 			counter = counter + 1
 			if owidEnv == "development" && counter >= 5 {
-				break
+				// break
 			}
 
 			models.UpdateTaskLastOperationAt(task.ID)
-			if counter == 50 {
+			if counter >= 50 {
 				currentUrl := page.MustInfo().URL
-				fmt.Println("========================= RELOADIN PAGE ===================", currentUrl)
+
 				page.Close()
+				browser.Close()
+				l.Cleanup()
+
+				l, browser = GetBrowser()
+				blankPage = browser.MustPage("")
 
 				page = browser.MustPage("")
-				defer page.Close()
 				page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+				page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
 
 				page.MustNavigate(currentUrl)
+				page.MustWaitLoad()
+				page.MustWaitIdle()
+
 				if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
 					fmt.Println("ERROR waiting for DOWNLOAD_BUTTON_SELECTOR for region: ", region)
 					break
@@ -603,7 +608,8 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 
 			if err := utils.WaitElementWithTimeout(page, fmt.Sprintf("%s, %s", START_MARKER_SELECTOR, END_MARKER_SELECTOR), time.Second*5); err != nil {
 				fmt.Println("ERROR waiting for EITHER START_MARKER_SELECTOR or END_MARKER_SELECTOR for region: ", region)
-				return
+				break
+
 			}
 			startMarker = page.MustElement(START_MARKER_SELECTOR)
 			endMarker = page.MustElement(END_MARKER_SELECTOR)
@@ -652,7 +658,7 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*5); err != nil {
 				fmt.Println("ERROR waiting for DOWNLOAD_BUTTON_SELECTOR for region: ", region, currentYear)
 				FailTaskProcess(taskProcess)
-				return
+				break
 			}
 
 			downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
@@ -661,7 +667,8 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			// page.Keyboard.Press(input.Enter)
 			err = page.Keyboard.Press(input.Enter)
 			if err != nil {
-				panic(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
+				fmt.Println(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
+				break
 			}
 			// TODO:  Check if need to remove
 			wait := page.Browser().WaitDownload(mapPath)
@@ -695,7 +702,6 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			time.Sleep(time.Millisecond * 100)
 			if _, err = os.Stat(mapPath); os.IsNotExist(err) {
 				// TODO: Check this
-				// panic(fmt.Sprintf("%s %s %v", url, "File not found", err))
 				FailTaskProcess(taskProcess)
 				CloseDownloadPopup(page)
 				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
@@ -770,9 +776,17 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			Filename, status, err := uploadMapFile(user, *token, replaceData, mapPath, data)
 			//  Retry twice
 			if err != nil {
+				taskProcess.Status = models.TaskProcessStatusRetrying
+				taskProcess.Update()
+				utils.SendWSTaskProcess(task.ID, taskProcess)
+
 				time.Sleep(time.Second * 2)
 				Filename, status, err = uploadMapFile(user, *token, replaceData, mapPath, data)
 				if err != nil {
+					taskProcess.Status = models.TaskProcessStatusRetrying
+					taskProcess.Update()
+					utils.SendWSTaskProcess(task.ID, taskProcess)
+
 					time.Sleep(time.Second * 4)
 					Filename, status, err = uploadMapFile(user, *token, replaceData, mapPath, data)
 				}
@@ -804,6 +818,10 @@ func traverseDownloadRegion(browser *rod.Browser, task *models.Task, data StartD
 			}
 		}
 	}
+
+	blankPage.Close()
+	browser.Close()
+	l.Cleanup()
 }
 
 func didReachStartYear(startMarker, endMarker *rod.Element, startYear string) bool {
@@ -1129,7 +1147,7 @@ func getMapStartEndYearTitle(browser *rod.Browser, url string) (string, string, 
 	return startYear, endYear, title
 }
 
-func processRegion(browser *rod.Browser, user *models.User, task *models.Task, chartName string, region, downloadPath string, chartParamsMap map[string]string, title string, data StartData) error {
+func processRegion(user *models.User, task *models.Task, chartName string, region, downloadPath string, chartParamsMap map[string]string, title string, data StartData) error {
 	token := ""
 	done := false
 
@@ -1185,7 +1203,7 @@ func processRegion(browser *rod.Browser, user *models.User, task *models.Task, c
 
 	url = utils.AttachQueryParamToUrl(url, "time=latest")
 
-	traverseDownloadRegion(browser, task, data, user, chartParamsMap, &token, chartName, title, region, url, downloadPath)
+	traverseDownloadRegion(task, data, user, chartParamsMap, &token, chartName, title, region, url, downloadPath)
 	task.Reload()
 	// Sleep for 10 seconds to avoid API complains of reuploading
 	// Attach country data to the first file metadata on commons
