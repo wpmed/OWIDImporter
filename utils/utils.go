@@ -351,19 +351,6 @@ func AttachQueryParamToUrl(url, queryStr string) string {
 	return url
 }
 
-func RemoveQueryParamFromUrl(rawURL, paramKey string) string {
-	parsedURL, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-
-	query := parsedURL.Query()
-	query.Del(paramKey)
-	parsedURL.RawQuery = query.Encode()
-
-	return parsedURL.String()
-}
-
 func CleanupTaskURLQueryParams(url string) string {
 	if !strings.Contains(url, "?") {
 		return url
