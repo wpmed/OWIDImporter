@@ -265,6 +265,7 @@ export interface ChartInfo {
   hasCountries: boolean
   startYear: string
   endYear: string
+  singleImage: boolean
 }
 
 export interface ChartParamteres {

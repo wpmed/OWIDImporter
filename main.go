@@ -73,7 +73,7 @@ func monitorQueuedTasks() {
 			continue
 		}
 
-		if count < 2 {
+		if count < 1 {
 			task, err := models.FindNextTaskToProcess()
 			if err != nil {
 				fmt.Println("Error finding next task to process", err)
@@ -116,17 +116,6 @@ func monitorQueuedTasks() {
 						CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
 						GenerateTemplateCommons:              task.GenerateTemplateCommons == 1,
 						TemplateNameFormat:                   task.CommonsTemplateNameFormat,
-					})
-					if err != nil {
-						log.Println("Error starting map", err)
-					}
-				case models.TaskTypeChart:
-					fmt.Println("Action message chart", task)
-					err := services.StartChart(task.ID, user, services.StartData{
-						Url:                           task.URL,
-						FileName:                      task.FileName,
-						Description:                   task.Description,
-						DescriptionOverwriteBehaviour: task.DescriptionOverwriteBehaviour,
 					})
 					if err != nil {
 						log.Println("Error starting map", err)

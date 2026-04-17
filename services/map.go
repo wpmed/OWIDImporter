@@ -89,10 +89,34 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		}
 	}
 
+	fmt.Println("Chart Name:", task.ChartName)
+
+	tmpDir, err := os.MkdirTemp("", "owid-exporter")
+	if err != nil {
+		fmt.Println("Error creating temp directory", err)
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Check for being a single image
+	if chartInfo.SingleImage {
+		// Direct upload
+		if err := processSingleImage(task, user, chartInfo, tmpDir, data); err != nil {
+			task.Status = models.TaskStatusFailed
+			task.Update()
+			utils.SendWSTask(task)
+			return err
+		}
+
+		task.Status = models.TaskStatusDone
+		task.Update()
+		utils.SendWSTask(task)
+		return nil
+	}
+
 	chartParamsMap := chartInfo.ParamsMap
 	templateName := GenerateTemplateCommonsName(data.TemplateNameFormat, task.ChartName, chartParamsMap)
 	task.CommonsTemplateName = templateName
-	fmt.Println("==================== COMMONS TEMPLATE NAME: ", templateName, "=====================")
 	models.UpdateTaskLastOperationAt(task.ID)
 	task.Update()
 	utils.SendWSTask(task)
@@ -113,15 +137,6 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		return fmt.Errorf("failed to get start and end years")
 	}
 
-	fmt.Println("Chart Name:", task.ChartName)
-
-	tmpDir, err := os.MkdirTemp("", "owid-exporter")
-	if err != nil {
-		fmt.Println("Error creating temp directory", err)
-		return err
-	}
-	defer os.RemoveAll(tmpDir)
-
 	// startTime := time.Now()
 
 	done := false
@@ -137,8 +152,7 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 				break
 			}
 			task.Reload()
-			if task.Status == models.TaskStatusDone || task.Status == models.TaskStatusFailed || task.Status == models.TaskStatusCancelled {
-				done = true
+			if task.Status != models.TaskStatusProcessing {
 				break
 			}
 		}
@@ -146,93 +160,194 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 
 	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
 		fmt.Print("================= STARTED IMPORTING COUNTRIES")
-		if chartInfo.HasCountries {
-			fmt.Println("======= Has Countries, using regular flow ========")
-
-			tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
-				"action": "query",
-				"meta":   "tokens",
-				"format": "json",
-			}, nil)
-			if err != nil {
-				fmt.Println("Error fetching edit token", err)
-				return err
-			}
-			token := tokenResponse.Query.Tokens.CsrfToken
-
-			go func() {
-				for {
-					time.Sleep(time.Second * 20)
-					if done {
-						break
-					}
-					tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
-						"action": "query",
-						"meta":   "tokens",
-						"format": "json",
-					}, nil)
-					if err != nil {
-						fmt.Println("Error fetching edit token", err)
-					} else if tokenResponse.Query.Tokens.CsrfToken != "" {
-						token = tokenResponse.Query.Tokens.CsrfToken
-					}
-				}
-			}()
-
-			fmt.Println("Countries:====================== ", chartInfo.CountriesList)
-
-			countryGroup, _ := errgroup.WithContext(context.Background())
-			countryGroup.SetLimit(constants.CONCURRENT_REQUESTS)
-			// countryGroup.SetLimit(1)
-
-			countrySlices := utils.SplitSlice(chartInfo.CountriesList, constants.CONCURRENT_REQUESTS)
-			startTime := time.Now()
-
-			for _, countryList := range countrySlices {
-				if task.Status != models.TaskStatusProcessing {
-					break
-				}
-				countryList := countryList
-				// countryList := make([]string, 0)
-				// countryList = append(countryList, "NAM")
-				countryGroup.Go(func(countryList []string) func() error {
-					return func() error {
-						err = TraverseDownloadCountriesList(user, task, &token, task.ChartName, title, startYear, endYear, tmpDir, StartData{
-							Url:                           data.Url,
-							FileName:                      task.CountryFileName,
-							Description:                   task.CountryDescription,
-							DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-						}, chartParamsMap, countryList)
-						if err != nil {
-							fmt.Println("Error processing countries", err)
-							return err
-						}
-						return nil
-					}
-				}(countryList))
-			}
-			countryGroup.Wait()
-
-			elapsedTime := time.Since(startTime)
-			fmt.Println("Started in", time.Since(startTime).String())
-			fmt.Println("Finished in", elapsedTime.String())
-		} else {
-			fmt.Println("============= Doesn't have countries, downloading popup chart instead ===============")
-			countriesDir := path.Join(tmpDir, "countries")
-			err := os.Mkdir(countriesDir, 0755)
-			if err == nil {
-				ProcessCountriesFromPopover(user, task, task.ChartName, title, startYear, endYear, countriesDir, StartData{
-					Url:                           data.Url,
-					FileName:                      task.CountryFileName,
-					Description:                   task.CountryDescription,
-					DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-				}, chartParamsMap)
-			} else {
-				fmt.Println("Error creating countries directory: ", err)
-			}
+		if err := processCountries(chartInfo, user, task, data.Url, tmpDir, title, startYear, endYear, chartParamsMap); err != nil {
+			task.Status = models.TaskStatusFailed
+			task.Update()
+			utils.SendWSTask(task)
+			return err
 		}
 	}
 
+	if task.Status == models.TaskStatusProcessing {
+		// Process regions
+		processRegions(task, user, tmpDir, title, chartParamsMap, data)
+	}
+
+	if task.Status == models.TaskStatusProcessing {
+		if data.GenerateTemplateCommons {
+			processCommonsTemplate(task, user)
+		}
+
+		task.Status = models.TaskStatusDone
+		if err := task.Update(); err != nil {
+			fmt.Println("Error saving task staus to done: ", err)
+		}
+	}
+
+	utils.SendWSTask(task)
+
+	return nil
+}
+
+func processSingleImage(task *models.Task, user *models.User, chartInfo *ChartInfo, tmpDir string, data StartData) error {
+	fmt.Println("===================== Prcessing Single Image ===============", task.URL)
+	tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
+		"action": "query",
+		"meta":   "tokens",
+		"format": "json",
+	}, nil)
+	if err != nil {
+		fmt.Println("Error fetching edit token", err)
+		return err
+	}
+	token := tokenResponse.Query.Tokens.CsrfToken
+
+	var taskProcess *models.TaskProcess
+	// Try to find existing process, otherwise create one
+	existingTB, err := models.FindTaskProcessByTaskRegionDate("ALL", "", task.ID)
+	if existingTB != nil {
+		existingTB.Status = models.TaskProcessStatusProcessing
+		if err := existingTB.Update(); err != nil {
+			fmt.Println("Error updating task process to processing")
+		}
+		taskProcess = existingTB
+	} else {
+		taskProcess, err = models.NewTaskProcess("ALL", "", "", models.TaskProcessStatusProcessing, models.TaskProcessTypeCountry, task.ID)
+		if err != nil {
+			fmt.Println("ERROR finding task process for country code", "ALL", err)
+			return fmt.Errorf("Couldn't create task process")
+		}
+	}
+
+	utils.SendWSTaskProcess(task.ID, taskProcess)
+	models.UpdateTaskLastOperationAt(task.ID)
+	downloadPath := path.Join(tmpDir, "ALL")
+	if err := os.Mkdir(downloadPath, 0755); err != nil {
+		fmt.Println("Error creating download directory: ", "ALL", err)
+		FailTaskProcess(taskProcess)
+		return fmt.Errorf("Error creating download directory")
+	}
+
+	l, browser := GetBrowser()
+	blankPage := browser.MustPage("")
+
+	defer blankPage.Close()
+	defer l.Cleanup()
+	defer browser.Close()
+
+	page := browser.MustPage("")
+	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+	page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
+	page.MustNavigate(task.URL)
+	// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
+	page.MustWaitLoad()
+	page.MustWaitIdle()
+	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
+		return fmt.Errorf("Cannot find download button in page")
+	}
+
+	wait := page.Browser().WaitDownload(downloadPath)
+	downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
+	downloadBtn.MustFocus()
+	time.Sleep(time.Millisecond * 200)
+
+	if err := page.Keyboard.Press(input.Enter); err != nil {
+		FailTaskProcess(taskProcess)
+		return fmt.Errorf("Error clicking download button")
+	}
+
+	fmt.Println("GOT DOWNLOAD BTN SELECTOR, WAITING FOR SVG")
+	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
+		FailTaskProcess(taskProcess)
+		CloseDownloadPopup(page)
+		return fmt.Errorf("Can't find DOWNLOAD_SVG_SELECTOR")
+	}
+
+	elements := page.MustElements(DOWNLOAD_SVG_ICON_SELECTOR)
+
+	if err := elements[0].Click(proto.InputMouseButtonLeft, 1); err != nil {
+		// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+		FailTaskProcess(taskProcess)
+		CloseDownloadPopup(page)
+		return fmt.Errorf("Error clicking download svg button")
+	}
+
+	wait()
+	fmt.Println("============= DOWNLOAD DONE =============")
+
+	CloseDownloadPopup(page)
+	if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
+		// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+		FailTaskProcess(taskProcess)
+		fmt.Println(err)
+		return fmt.Errorf("File not found")
+	}
+
+	replaceData := ReplaceVarsData{
+		Url:      data.Url,
+		Title:    chartInfo.Title,
+		FileName: GetFileNameFromChartName(chartInfo.Title),
+		Comment:  "Importing from " + data.Url,
+	}
+
+	filename, status, err := uploadMapFile(user, token, replaceData, downloadPath, data)
+	if err != nil {
+		FailTaskProcess(taskProcess)
+		fmt.Println("Uplaod error: ", err)
+		return fmt.Errorf("Upload error")
+	}
+
+	taskProcess.FileName = filename
+	switch status {
+	case "skipped":
+		taskProcess.Status = models.TaskProcessStatusSkipped
+	case "description_updated":
+		taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
+	case "overwritten":
+		taskProcess.Status = models.TaskProcessStatusOverwritten
+	case "uploaded":
+		taskProcess.Status = models.TaskProcessStatusUploaded
+	default:
+		taskProcess.Status = models.TaskProcessStatusFailed
+	}
+
+	taskProcess.Update()
+	utils.SendWSTaskProcess(task.ID, taskProcess)
+
+	return nil
+}
+
+func processCommonsTemplate(task *models.Task, user *models.User) {
+	// Create template page in commons
+	fmt.Print("============= GENERTING COMMONS TEMPLATE")
+	wikiText, err := GetMapTemplate(task.ID)
+	fmt.Println("GOT WIKITEXT: ", err)
+	if err == nil {
+		tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
+			"action": "query",
+			"meta":   "tokens",
+			"format": "json",
+		}, nil)
+
+		if err != nil {
+			fmt.Println("Error fetching edit token", err)
+		} else if tokenResponse.Query.Tokens.CsrfToken != "" {
+			token := tokenResponse.Query.Tokens.CsrfToken
+			title, err := createCommonsTemplatePage(user, token, task.CommonsTemplateName, wikiText)
+			if err == nil {
+				task.CommonsTemplateName = title
+				fmt.Print("=============== DONE CREATING COMMONS TEMPLATE")
+			} else {
+				fmt.Println("Error creating commons template page: ", err)
+			}
+		}
+	} else {
+		fmt.Println("Error getting task wikitext", task.ID, err)
+	}
+
+}
+
+func processRegions(task *models.Task, user *models.User, tmpDir, title string, chartParamsMap map[string]string, data StartData) {
 	regionGroup, _ := errgroup.WithContext(context.Background())
 	regionGroup.SetLimit(constants.CONCURRENT_REQUESTS)
 
@@ -257,46 +372,104 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 			}
 		}(region, index))
 	}
+
 	regionGroup.Wait()
 	fmt.Println("================= FINISHED PROCESSING ALL REGIONS ==================")
+}
 
-	if task.Status == models.TaskStatusProcessing {
-		if data.GenerateTemplateCommons {
-			// Create template page in commons
-			fmt.Print("============= GENERTING COMMONS TEMPLATE")
-			wikiText, err := GetMapTemplate(task.ID)
-			fmt.Println("GOT WIKITEXT: ", err)
-			if err == nil {
+func processCountries(chartInfo *ChartInfo, user *models.User, task *models.Task, url, tmpDir, title, startYear, endYear string, chartParamsMap map[string]string) error {
+	if chartInfo.HasCountries {
+		fmt.Println("======= Has Countries, using regular flow ========")
+
+		tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
+			"action": "query",
+			"meta":   "tokens",
+			"format": "json",
+		}, nil)
+		if err != nil {
+			fmt.Println("Error fetching edit token", err)
+			return err
+		}
+		token := tokenResponse.Query.Tokens.CsrfToken
+
+		done := false
+
+		defer func() {
+			done = true
+		}()
+
+		go func() {
+			for {
+				time.Sleep(time.Second * 20)
+				if task.Status != models.TaskStatusProcessing || done {
+					break
+				}
 				tokenResponse, err := utils.DoApiReq[TokenResponse](user, map[string]string{
 					"action": "query",
 					"meta":   "tokens",
 					"format": "json",
 				}, nil)
-
 				if err != nil {
 					fmt.Println("Error fetching edit token", err)
 				} else if tokenResponse.Query.Tokens.CsrfToken != "" {
-					token := tokenResponse.Query.Tokens.CsrfToken
-					title, err := createCommonsTemplatePage(user, token, task.CommonsTemplateName, wikiText)
-					if err == nil {
-						task.CommonsTemplateName = title
-						fmt.Print("=============== DONE CREATING COMMONS TEMPLATE")
-					} else {
-						fmt.Println("Error creating commons template page: ", err)
-					}
+					token = tokenResponse.Query.Tokens.CsrfToken
 				}
-			} else {
-				fmt.Println("Error getting task wikitext", task.ID, err)
 			}
-		}
+		}()
 
-		task.Status = models.TaskStatusDone
-		if err := task.Update(); err != nil {
-			fmt.Println("Error saving task staus to done: ", err)
+		fmt.Println("Countries:====================== ", chartInfo.CountriesList)
+
+		countryGroup, _ := errgroup.WithContext(context.Background())
+		countryGroup.SetLimit(constants.CONCURRENT_REQUESTS)
+
+		countrySlices := utils.SplitSlice(chartInfo.CountriesList, constants.CONCURRENT_REQUESTS)
+		startTime := time.Now()
+
+		for _, countryList := range countrySlices {
+			if task.Status != models.TaskStatusProcessing {
+				break
+			}
+			countryList := countryList
+			// countryList := make([]string, 0)
+			// countryList = append(countryList, "NAM")
+			countryGroup.Go(func(countryList []string) func() error {
+				return func() error {
+					countriesStartData := StartData{
+						Url:                           url,
+						FileName:                      task.CountryFileName,
+						Description:                   task.CountryDescription,
+						DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
+					}
+					err = TraverseDownloadCountriesList(user, task, &token, task.ChartName, title, startYear, endYear, tmpDir, countriesStartData, chartParamsMap, countryList)
+
+					if err != nil {
+						fmt.Println("Error processing countries", err)
+						return err
+					}
+					return nil
+				}
+			}(countryList))
+		}
+		countryGroup.Wait()
+
+		elapsedTime := time.Since(startTime)
+		fmt.Println("Started in", time.Since(startTime).String())
+		fmt.Println("Finished in", elapsedTime.String())
+	} else {
+		fmt.Println("============= Doesn't have countries, downloading popup chart instead ===============")
+		countriesDir := path.Join(tmpDir, "countries")
+		err := os.Mkdir(countriesDir, 0755)
+		if err == nil {
+			ProcessCountriesFromPopover(user, task, task.ChartName, title, startYear, endYear, countriesDir, StartData{
+				Url:                           url,
+				FileName:                      task.CountryFileName,
+				Description:                   task.CountryDescription,
+				DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
+			}, chartParamsMap)
+		} else {
+			fmt.Println("Error creating countries directory: ", err)
 		}
 	}
-
-	utils.SendWSTask(task)
 
 	return nil
 }
@@ -324,6 +497,7 @@ type ChartInfo struct {
 	HasCountries  bool              `json:"hasCountries"`
 	CountriesList []string          `json:"countriesList"`
 	StableUrl     string            `json:"stableUrl"`
+	SingleImage   bool              `json:"singleImage"`
 }
 
 /*
@@ -354,10 +528,35 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 				fmt.Println("Timeout waiting for DOWNLOAD_BUTTON_SELECTOR")
 				panic(err)
 			}
-			if err := utils.WaitElementWithTimeout(page, PLAY_TIMELAPSE_BUTTON_SELECTOR, time.Second*10); err != nil {
-				fmt.Println("Timeout waiting for PLAY_TIMELAPSE_BUTTON_SELECTOR")
-				panic(err)
+			if err := utils.WaitElementWithTimeout(page, PLAY_TIMELAPSE_BUTTON_SELECTOR, time.Second*5); err != nil {
+				fmt.Println("Timeout waiting for PLAY_TIMELAPSE_BUTTON_SELECTOR, might be a single image")
+				chartInfo.HasCountries = false
+				chartInfo.SingleImage = true
+
+				chartInfo.Title = getMapTitleFromPage(page)
+				if chartInfo.Title != "" {
+					// for single image charts, we'll use the title as the chartName
+					chartInfo.ChartName = chartInfo.Title
+					chartInfo.TemplateName = GenerateTemplateCommonsNameNoPrefix(chartFormat, chartInfo.Title, chartInfo.ParamsMap)
+				} else {
+					chartName, err := GetChartNameFromUrl(url)
+					if err == nil && chartName != "" {
+						chartInfo.ChartName = utils.ToTitle(chartName)
+						chartInfo.TemplateName = GenerateTemplateCommonsNameNoPrefix(chartFormat, chartName, chartInfo.ParamsMap)
+					} else if chartInfo.Title != "" {
+						chartInfo.ChartName = utils.ToTitle(chartInfo.Title)
+						chartInfo.TemplateName = GenerateTemplateCommonsNameNoPrefix(chartFormat, chartInfo.Title, chartInfo.ParamsMap)
+					}
+				}
+				_, err = TestDownloadPage(page)
+				fmt.Println("CAN DOWNLOAD ERR", err)
+				if err != nil {
+					panic(err)
+				}
+
+				return
 			}
+
 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
 			time.Sleep(time.Second * 1)
 
@@ -403,25 +602,14 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 	return &chartInfo, err
 }
 
-func GetPageCanDownload(page *rod.Page) (bool, error) {
-	mapTab := GetTabByLabel(page, "map")
-	if mapTab != nil {
-		mapTab.Click(proto.InputMouseButtonLeft, 1)
-		time.Sleep(time.Second)
-	}
-
+func TestDownloadPage(page *rod.Page) (bool, error) {
 	defer func() {
 		CloseDownloadPopup(page)
 	}()
 
-	startMarker := page.MustElement(START_MARKER_SELECTOR)
-	endMarker := page.MustElement(END_MARKER_SELECTOR)
-	fmt.Println("Getting page can download markers: ", startMarker, endMarker)
-	if startMarker == nil && endMarker == nil {
-		return false, fmt.Errorf("No start & end markers")
+	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
+		return false, err
 	}
-
-	page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
 	downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
 	downloadBtn.MustFocus()
 	time.Sleep(time.Millisecond * 200)
@@ -434,7 +622,9 @@ func GetPageCanDownload(page *rod.Page) (bool, error) {
 	}
 
 	fmt.Println("CLICKED ENTER")
-	page.MustWaitElementsMoreThan(DOWNLOAD_SVG_ICON_SELECTOR, 0)
+	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
+		return false, err
+	}
 	downloadIcon := page.MustElement(DOWNLOAD_SVG_ICON_SELECTOR)
 	fmt.Println("GOT DOWNLOAD ICON", downloadIcon)
 	if downloadIcon == nil {
@@ -442,6 +632,26 @@ func GetPageCanDownload(page *rod.Page) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func GetPageCanDownload(page *rod.Page) (bool, error) {
+	mapTab, err := GetTabByLabel(page, "map")
+	if err != nil {
+		return false, err
+	}
+	if mapTab != nil {
+		mapTab.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(time.Second)
+	}
+
+	startMarker := page.MustElement(START_MARKER_SELECTOR)
+	endMarker := page.MustElement(END_MARKER_SELECTOR)
+	fmt.Println("Getting page can download markers: ", startMarker, endMarker)
+	if startMarker == nil && endMarker == nil {
+		return false, fmt.Errorf("No start & end markers")
+	}
+
+	return TestDownloadPage(page)
 }
 
 func GetChartParametersFromPage(page *rod.Page) *[]ChartParameter {
@@ -1000,12 +1210,12 @@ func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath 
 }
 
 func getMapHasCountriesFromPage(page *rod.Page) (bool, []string) {
-	activeTab := GetActivePageTab(page)
+	activeTab, _ := GetActivePageTab(page)
 	countriesList := make([]string, 0)
 	hasLines := false
 
-	lineTab := GetTabByLabel(page, "line")
-	chartTab := GetTabByLabel(page, "chart")
+	lineTab, _ := GetTabByLabel(page, "line")
+	chartTab, _ := GetTabByLabel(page, "chart")
 	if lineTab != nil {
 		lineTab.Click(proto.InputMouseButtonLeft, 1)
 		time.Sleep(time.Second)
@@ -1115,36 +1325,11 @@ func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
 	return startYear, endYear, title
 }
 
-func getMapStartEndYearTitle(browser *rod.Browser, url string) (string, string, string) {
-	startYear := ""
-	endYear := ""
-	title := ""
+func getMapTitleFromPage(page *rod.Page) string {
+	title := page.MustElement(TITLE_SELECTOR).MustText()
+	title = strings.TrimSpace(title)
 
-	for i := 0; i < constants.RETRY_COUNT; i++ {
-		err := rod.Try(func() {
-			page := browser.MustPage("")
-			defer page.Close()
-			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
-			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-			page.MustNavigate(url)
-			page.MustWaitIdle()
-			marker := page.MustElement(START_MARKER_SELECTOR)
-			startYear = *marker.MustAttribute("aria-valuemin")
-			endYear = *marker.MustAttribute("aria-valuemax")
-			title = page.MustElement(TITLE_SELECTOR).MustText()
-			title = strings.TrimSpace(title)
-			suffix := ", " + endYear
-			if strings.HasSuffix(title, suffix) {
-				title = strings.ReplaceAll(title, suffix, "")
-			}
-		})
-
-		if err == nil {
-			break
-		}
-	}
-
-	return startYear, endYear, title
+	return title
 }
 
 func processRegion(user *models.User, task *models.Task, chartName string, region, downloadPath string, chartParamsMap map[string]string, title string, data StartData) error {

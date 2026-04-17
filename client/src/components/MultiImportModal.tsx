@@ -1,6 +1,6 @@
 import { Box, Button, CircularProgress, Modal, Stack, Typography } from "@mui/material"
 import { useCallback, useMemo, useState } from "react";
-import { COMMONS_TEMPLATE_PREFIX, generateBlankImport, OWID_CHART_URL_PREFIX } from "../constants";
+import { COMMONS_TEMPLATE_PREFIX, generateBlankImport, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX } from "../constants";
 import { getChartParameters } from "../request/request";
 import pLimit from 'p-limit';
 import { CheckCircle, Close as CloseIcon } from "@mui/icons-material";
@@ -93,54 +93,68 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
           imp.linkVerified = true;
           imp.url = url;
 
-          if (result && result.params && result.params.length > 0) {
-            const paramsKeys = result.params.map(param => param.slug);
-            const parts = url.split("?").pop()?.split("&")
-            const selectedParams: SelectedParameter[] = []
-            let newInitialFilenameMap = "$NAME";
-            let newInitialFilenameChart = "$NAME";
-            let newTemplateName = "$CHART_NAME"
-            parts?.forEach(part => {
-              const [key, val] = part.split("=");
-              if (key && val && paramsKeys.includes(key)) {
-                const param = result.params.find(p => p.slug == key)
-                const choice = param?.choices.find(c => c.slug == val)
-                if (param && choice) {
-                  selectedParams.push({ key: param.slug, keyName: param.name, value: val, valueName: choice.name })
-                } else {
-                  selectedParams.push({ key, keyName: key, value: val, valueName: val })
-                }
-                newInitialFilenameMap += `, $${key.toUpperCase()}`;
-                newInitialFilenameChart += `, $${key.toUpperCase()}`;
-                newTemplateName += `, $${key.toUpperCase()}`;
+          if (result) {
+            if (result.info.singleImage) {
+              imp.fileName = INITIAL_FILENAME_MAP_SINGLE_IMAGE;
+              imp.countryFileName = INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE;
+              imp.categories = INITIAL_CATEGORIES_MAP_SINGLE_IMAGE;
+              imp.singleImage = true;
+            } else {
+
+              if (result.params && result.params.length > 0) {
+                const paramsKeys = result.params.map(param => param.slug);
+                const parts = url.split("?").pop()?.split("&")
+                const selectedParams: SelectedParameter[] = []
+                let newInitialFilenameMap = "$NAME";
+                let newInitialFilenameChart = "$NAME";
+                let newTemplateName = "$CHART_NAME"
+                parts?.forEach(part => {
+                  const [key, val] = part.split("=");
+                  if (key && val && paramsKeys.includes(key)) {
+                    const param = result.params.find(p => p.slug == key)
+                    const choice = param?.choices.find(c => c.slug == val)
+                    if (param && choice) {
+                      selectedParams.push({ key: param.slug, keyName: param.name, value: val, valueName: choice.name })
+                    } else {
+                      selectedParams.push({ key, keyName: key, value: val, valueName: val })
+                    }
+                    newInitialFilenameMap += `, $${key.toUpperCase()}`;
+                    newInitialFilenameChart += `, $${key.toUpperCase()}`;
+                    newTemplateName += `, $${key.toUpperCase()}`;
+                  }
+                })
+
+                newInitialFilenameMap += ", $REGION, $YEAR.svg";
+                newInitialFilenameChart += ", $START_YEAR to $END_YEAR, $REGION.svg";
+
+                imp.fileName = newInitialFilenameMap;
+                imp.countryFileName = newInitialFilenameChart;
+                imp.selectedChartParameters = selectedParams;
+                imp.templateNameFormat = newTemplateName;
               }
-            })
 
-            newInitialFilenameMap += ", $REGION, $YEAR.svg";
-            newInitialFilenameChart += ", $START_YEAR to $END_YEAR, $REGION.svg";
+              if (result.info?.title) {
+                let templateName = `${COMMONS_TEMPLATE_PREFIX}/${imp.templateNameFormat}`;
+                templateName = templateName.replace("$CHART_NAME", result.info?.title);
+                if (imp.selectedChartParameters.length > 0) {
+                  imp.selectedChartParameters.forEach((param) => {
+                    templateName = templateName.replace(`$${param.key.toUpperCase()}`, param.valueName);
+                  })
+                }
 
-            imp.fileName = newInitialFilenameMap;
-            imp.countryFileName = newInitialFilenameChart;
-            imp.selectedChartParameters = selectedParams;
-            imp.templateNameFormat = newTemplateName;
-          }
+                try {
+                  const templateExists = await searchPageExists(templateName);
+                  imp.templateExists = templateExists;
+                } catch (err) {
+                  console.log("Error checking if template exists: ", { url: imp.url, templateName, err });
+                }
+              }
 
-          if (result && result.info?.title) {
-            let templateName = `${COMMONS_TEMPLATE_PREFIX}/${imp.templateNameFormat}`;
-            templateName = templateName.replace("$CHART_NAME", result.info?.title);
-            if (imp.selectedChartParameters.length > 0) {
-              imp.selectedChartParameters.forEach((param) => {
-                templateName = templateName.replace(`$${param.key.toUpperCase()}`, param.valueName);
-              })
-            }
 
-            try {
-              const templateExists = await searchPageExists(templateName);
-              imp.templateExists = templateExists;
-            } catch (err) {
-              console.log("Error checking if template exists: ", { url: imp.url, templateName, err });
             }
           }
+
+
 
           if (!result.error) {
             imp.canImport = true;
@@ -211,7 +225,7 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
                   Some links are invalid.
                 </Typography>
               )}
-              <Stack spacing={1} sx={{ maxHeight: "500px", overflowY: "auto", overflowX: "clip"}}>
+              <Stack spacing={1} sx={{ maxHeight: "500px", overflowY: "auto", overflowX: "clip" }}>
                 {processedLinks.map(url => (
                   <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
                     <Typography color={url.status == "done" ? "success" : "primary"} noWrap>

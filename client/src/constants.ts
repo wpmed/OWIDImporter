@@ -19,8 +19,8 @@ export const INITIAL_CATEGORIES_CHART = ["Uploaded by OWID importer tool"]
 export const CHART_INFO_CHART = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders`;
 
 
-const INITIAL_TEMPLATE_NAME = `$CHART_NAME`
-const INITIAL_DESCRIPTION_MAP = `=={{int:filedesc}}==
+export const INITIAL_TEMPLATE_NAME = `$CHART_NAME`
+export const INITIAL_DESCRIPTION_MAP = `=={{int:filedesc}}==
 {{Information
 |description={{en|1=$TITLE, $REGION}}
 |author = Our World In Data
@@ -34,9 +34,28 @@ const INITIAL_DESCRIPTION_MAP = `=={{int:filedesc}}==
 {{cc-by-4.0}}
 `;
 
-const INITIAL_FILENAME_MAP = `$NAME, $REGION, $YEAR.svg`;
+export const INITIAL_FILENAME_MAP = `$NAME, $REGION, $YEAR.svg`;
 
-const INITIAL_DESCRIPTION_CHART = `=={{int:filedesc}}==
+// Single image constants
+export const INITIAL_FILENAME_MAP_SINGLE_IMAGE = `$NAME.svg`;
+export const INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE = `=={{int:filedesc}}==
+{{Information
+|description={{en|1=$TITLE}}
+|author = Our World In Data
+|source = $URL
+|permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
+|other versions =
+}}
+=={{int:license-header}}==
+{{cc-by-4.0}}
+`;
+export const INITIAL_CATEGORIES_MAP_SINGLE_IMAGE = [
+  "SVG maps by Our World in Data",
+  "Uploaded by OWID importer tool"
+]
+
+// CHART
+export const INITIAL_DESCRIPTION_CHART = `=={{int:filedesc}}==
 {{Information
 |description={{en|1=$TITLE, $REGION}}
 |author = Our World In Data
@@ -49,7 +68,7 @@ const INITIAL_DESCRIPTION_CHART = `=={{int:filedesc}}==
 {{cc-by-4.0}}
 `;
 // [[Category:Uploaded by OWID importer tool]]
-const INITIAL_FILENAME_CHART = `$NAME, $START_YEAR to $END_YEAR, $REGION.svg`;
+export const INITIAL_FILENAME_CHART = `$NAME, $START_YEAR to $END_YEAR, $REGION.svg`;
 
 const initialImport: MapImporterFormItem = {
   id: Date.now().toString(),
@@ -70,7 +89,8 @@ const initialImport: MapImporterFormItem = {
   countryDescriptionOverwriteBehaviour: DescriptionOverwriteBehaviour.ALL,
   linkVerified: false,
   templateExists: false,
-  canImport: false
+  canImport: false,
+  singleImage: false,
 }
 
 export function generateBlankImport(): MapImporterFormItem {

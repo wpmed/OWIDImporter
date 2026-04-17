@@ -301,7 +301,6 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
               </Typography>
             </Stack>
             {!task && (
-
               <Stack spacing={2}>
                 <MultiImportModal onAdd={(newImports) => setImports((oldImports) => {
                   const allImports = [...oldImports, ...newImports].filter(imp => imp.url.trim())

@@ -5,7 +5,7 @@ import { useDebounce } from "use-debounce";
 import { useCallback, useEffect, useState } from "react";
 import { ChartInfo, getChartParameters } from "../request/request";
 import { Delete } from "@mui/icons-material";
-import { CHART_INFO_CHART, CHART_INFO_MAP, COMMONS_TEMPLATE_PREFIX, INITIAL_CATEGORIES_CHART, INITIAL_CATEGORIES_MAP, OWID_CHART_URL_PREFIX, URL_PLACEHOLDER } from "../constants";
+import { CHART_INFO_CHART, CHART_INFO_MAP, COMMONS_TEMPLATE_PREFIX, INITIAL_CATEGORIES_CHART, INITIAL_CATEGORIES_MAP, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX, URL_PLACEHOLDER } from "../constants";
 import { searchPageExists } from "../request/commons";
 import { FieldLoading } from "./FieldLoader";
 
@@ -99,6 +99,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
 
             onChange({
               ...value,
+              singleImage: res.info.singleImage,
               fileName: newInitialFilenameMap,
               countryFileName: newInitialFilenameChart,
               selectedChartParameters: selectedParams,
@@ -107,8 +108,22 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
               canImport: true
             });
           } else {
+            let fileName = INITIAL_FILENAME_MAP;
+            let description = INITIAL_DESCRIPTION_MAP;
+            let categories = INITIAL_CATEGORIES_MAP;
+
+            if (res.info.singleImage) {
+              fileName = INITIAL_FILENAME_MAP_SINGLE_IMAGE;
+              description = INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE;
+              categories = INITIAL_CATEGORIES_MAP_SINGLE_IMAGE;
+            }
+
             onChange({
               ...value,
+              fileName,
+              description,
+              categories,
+              singleImage: res.info.singleImage,
               linkVerified: true,
               canImport: true
             });
@@ -190,6 +205,11 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
             )}
           </Box>
         </Stack>
+        {chartInfo?.singleImage ? (
+          <Stack spacing={1}>
+            <Typography color="warning" variant="subtitle2">This chart is composed of a single image and will be uploaded as such</Typography>
+          </Stack>
+        ) : null}
         {chartInfo?.chartName ? (
           <Stack spacing={1}>
             <Typography sx={{ textTransform: "capitalize" }} variant="subtitle2">Chart Name: <strong>{chartInfo.chartName}</strong></Typography>
@@ -268,110 +288,116 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
           ))}
         </Stack>
 
-        <Stack spacing={1}>
-          <Stack direction="row" alignItems={"center"} >
-            <Checkbox checked={value.generateTemplateCommons} onClick={() => handleChange("generateTemplateCommons", !value.generateTemplateCommons)} disabled={disabled} />
-            <Typography>Automatically Create Template Page On Commons</Typography>
-          </Stack>
-          {value.generateTemplateCommons && (
-            <>
-              <Stack spacing={1}>
-                <Typography>Template name</Typography>
-                <Box sx={{ position: "relative" }}>
-                  <TextField
-                    size="small"
-                    value={value.templateNameFormat}
-                    onChange={e => handleChange("templateNameFormat", e.target.value)}
-                    fullWidth
-                    disabled={disabled}
-                    slotProps={{
-                      input: {
-                        startAdornment: <InputAdornment position="start">Template:OWID/</InputAdornment>,
-                      },
-                    }}
-                  />
-                  {templateExistsLoading && (
-                    <FieldLoading />
-                  )}
-                </Box>
-              </Stack>
-              {templateExists && lastCheckedTemplateName ? (
-                <Typography color="warning">A template with this name <a style={{ textDecoration: "underline" }} href={`${import.meta.env.VITE_MW_BASE_URL}/${lastCheckedTemplateName}`} target="_blank" >already exists</a></Typography>
-              ) : null}
-            </>
-          )}
-        </Stack>
-
-        <Stack>
-          <Stack direction="row" alignItems={"center"} >
-            <Checkbox checked={value.importCountries} disabled={disabled} onClick={() => handleChange("importCountries", !value.importCountries)} />
-            <Typography>Import Countries</Typography>
-          </Stack>
-        </Stack>
-        <>
-          {
-            value.importCountries && (
+        {!value.singleImage && (
+          <Stack spacing={1}>
+            <Stack direction="row" alignItems={"center"} >
+              <Checkbox checked={value.generateTemplateCommons} onClick={() => handleChange("generateTemplateCommons", !value.generateTemplateCommons)} disabled={disabled} />
+              <Typography>Automatically Create Template Page On Commons</Typography>
+            </Stack>
+            {value.generateTemplateCommons && (
               <>
-                <Stack spacing={2}>
-                  <Typography variant="h4">
-                    <span>Country Chart</span>
-                  </Typography>
-                  {chartInfo && !chartInfo.hasCountries ? (
-                    <Typography color="warning">This chart doesn't support Countries line charts. We'll try with popover charts.</Typography>
-                  ) : null}
-                  <Typography>
-                    <span dangerouslySetInnerHTML={{ __html: CHART_INFO_CHART }} />
-                  </Typography>
-                </Stack>
                 <Stack spacing={1}>
-                  <Typography>File name</Typography>
-                  <TextField
-                    size="small"
-                    value={value.countryFileName}
-                    onChange={e => handleChange("countryFileName", e.target.value)}
-                    fullWidth
-                    disabled={disabled}
-                  />
+                  <Typography>Template name</Typography>
+                  <Box sx={{ position: "relative" }}>
+                    <TextField
+                      size="small"
+                      value={value.templateNameFormat}
+                      onChange={e => handleChange("templateNameFormat", e.target.value)}
+                      fullWidth
+                      disabled={disabled}
+                      slotProps={{
+                        input: {
+                          startAdornment: <InputAdornment position="start">Template:OWID/</InputAdornment>,
+                        },
+                      }}
+                    />
+                    {templateExistsLoading && (
+                      <FieldLoading />
+                    )}
+                  </Box>
                 </Stack>
-                <Stack spacing={1}>
-                  <Typography>Description</Typography>
-                  <TextareaAutosize
-                    value={value.countryDescription}
-                    onChange={e => handleChange("countryDescription", e.target.value)}
-                    style={{ width: "100%", backgroundColor: "white", color: "black" }}
-                    minRows={5}
-                    disabled={disabled}
-                  />
-                </Stack>
-                <Stack spacing={1}>
-                  <Stack direction="row" justifyContent="space-between">
-                    <Typography>Categories</Typography>
-                    <Button onClick={() => handleChange("countryCategories", INITIAL_CATEGORIES_CHART)} disabled={disabled} size="small" >Reset</Button>
-                  </Stack>
-                  <CategoriesSearchInput value={value.countryCategories} onChange={(newCategories) => handleChange("countryCategories", newCategories)} disabled={disabled} />
-                </Stack>
-                <Stack spacing={1}>
-                  <Typography>
-                    If a file with the same name exists:
-                  </Typography>
-                  {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
-                    <Stack spacing={1} key={`country-${option.value}`}>
-                      <Stack direction={"row"} alignItems={"flex-start"}>
-                        <Radio disabled={disabled} checked={value.countryDescriptionOverwriteBehaviour == option.value} onClick={() => handleChange("countryDescriptionOverwriteBehaviour", option.value)} />
-                        < Box >
-                          <Typography>
-                            {option.title}
-                          </Typography>
-                          <Typography variant="subtitle2">{option.description}</Typography>
-                        </Box>
-                      </Stack>
-                    </Stack>
-                  ))}
-                </Stack>
+                {templateExists && lastCheckedTemplateName ? (
+                  <Typography color="warning">A template with this name <a style={{ textDecoration: "underline" }} href={`${import.meta.env.VITE_MW_BASE_URL}/${lastCheckedTemplateName}`} target="_blank" >already exists</a></Typography>
+                ) : null}
               </>
-            )
-          }
-        </>
+            )}
+          </Stack>
+        )}
+
+        {!value.singleImage && (
+          <>
+            <Stack>
+              <Stack direction="row" alignItems={"center"} >
+                <Checkbox checked={value.importCountries} disabled={disabled} onClick={() => handleChange("importCountries", !value.importCountries)} />
+                <Typography>Import Countries</Typography>
+              </Stack>
+            </Stack>
+            <>
+              {
+                value.importCountries && (
+                  <>
+                    <Stack spacing={2}>
+                      <Typography variant="h4">
+                        <span>Country Chart</span>
+                      </Typography>
+                      {chartInfo && !chartInfo.hasCountries ? (
+                        <Typography color="warning">This chart doesn't support Countries line charts. We'll try with popover charts.</Typography>
+                      ) : null}
+                      <Typography>
+                        <span dangerouslySetInnerHTML={{ __html: CHART_INFO_CHART }} />
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={1}>
+                      <Typography>File name</Typography>
+                      <TextField
+                        size="small"
+                        value={value.countryFileName}
+                        onChange={e => handleChange("countryFileName", e.target.value)}
+                        fullWidth
+                        disabled={disabled}
+                      />
+                    </Stack>
+                    <Stack spacing={1}>
+                      <Typography>Description</Typography>
+                      <TextareaAutosize
+                        value={value.countryDescription}
+                        onChange={e => handleChange("countryDescription", e.target.value)}
+                        style={{ width: "100%", backgroundColor: "white", color: "black" }}
+                        minRows={5}
+                        disabled={disabled}
+                      />
+                    </Stack>
+                    <Stack spacing={1}>
+                      <Stack direction="row" justifyContent="space-between">
+                        <Typography>Categories</Typography>
+                        <Button onClick={() => handleChange("countryCategories", INITIAL_CATEGORIES_CHART)} disabled={disabled} size="small" >Reset</Button>
+                      </Stack>
+                      <CategoriesSearchInput value={value.countryCategories} onChange={(newCategories) => handleChange("countryCategories", newCategories)} disabled={disabled} />
+                    </Stack>
+                    <Stack spacing={1}>
+                      <Typography>
+                        If a file with the same name exists:
+                      </Typography>
+                      {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
+                        <Stack spacing={1} key={`country-${option.value}`}>
+                          <Stack direction={"row"} alignItems={"flex-start"}>
+                            <Radio disabled={disabled} checked={value.countryDescriptionOverwriteBehaviour == option.value} onClick={() => handleChange("countryDescriptionOverwriteBehaviour", option.value)} />
+                            < Box >
+                              <Typography>
+                                {option.title}
+                              </Typography>
+                              <Typography variant="subtitle2">{option.description}</Typography>
+                            </Box>
+                          </Stack>
+                        </Stack>
+                      ))}
+                    </Stack>
+                  </>
+                )
+              }
+            </>
+          </>
+        )}
       </Stack>
     </Stack >
   )

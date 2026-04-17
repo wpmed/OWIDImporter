@@ -591,12 +591,20 @@ func GetChartParametersMap(browser *rod.Browser, url string, selectedParams stri
 	return chartParamsMap
 }
 
-func GetActivePageTab(page *rod.Page) *rod.Element {
-	return page.MustElement(".ContentSwitchers__Container div.Tabs div.Tabs__Tab.active")
+func GetActivePageTab(page *rod.Page) (*rod.Element, error) {
+	if err := utils.WaitElementWithTimeout(page, TABS_LABELS_ACTIVE_TAB_SELECTOR, time.Second*5); err != nil {
+		return nil, fmt.Errorf("Timeout finding tabs in page: %s", TABS_LABELS_ACTIVE_TAB_SELECTOR)
+	}
+
+	return page.MustElement(TABS_LABELS_ACTIVE_TAB_SELECTOR), nil
 }
 
-func GetTabByLabel(page *rod.Page, label string) *rod.Element {
-	lineElements := page.MustElements(".ContentSwitchers__Container div.Tabs div.Tabs__Tab .label")
+func GetTabByLabel(page *rod.Page, label string) (*rod.Element, error) {
+	if err := utils.WaitElementWithTimeout(page, TABS_LABELS_SELECTOR, time.Second*5); err != nil {
+		return nil, fmt.Errorf("Timeout finding tabs in page: %s", TABS_LABELS_SELECTOR)
+	}
+
+	lineElements := page.MustElements(TABS_LABELS_SELECTOR)
 
 	for _, el := range lineElements {
 		text, err := el.Text()
@@ -607,11 +615,11 @@ func GetTabByLabel(page *rod.Page, label string) *rod.Element {
 
 		text = strings.ToLower(text)
 		if text == label {
-			return el
+			return el, nil
 		}
 	}
 
-	return nil
+	return nil, fmt.Errorf("Cannot finding with label: %s", label)
 }
 
 func GetMapTemplate(taskId string) (string, error) {

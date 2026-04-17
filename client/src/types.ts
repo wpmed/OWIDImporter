@@ -76,6 +76,7 @@ export interface MapImporterFormItem {
   description: string
   categories: string[]
   descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour
+  singleImage: boolean
 
   countryFileName: string
   countryDescription: string
