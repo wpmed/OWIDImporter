@@ -42,8 +42,6 @@ func uploadCountryChart(user *models.User, token *string, replaceData ReplaceVar
 			time.Sleep(time.Second * 2)
 		}
 
-	} else {
-		fmt.Println("========== ERROR SEARCHING FOR OLD COUNTRY NAMED FILES: ", err)
 	}
 
 	filename, status, err := uploadMapFile(user, *token, replaceData, countryDownloadPath, data)

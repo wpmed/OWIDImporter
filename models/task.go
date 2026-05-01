@@ -149,8 +149,8 @@ func (task *Task) Reload() error {
 		task.ID,
 	).Scan(&task.ID, &task.UserId, &task.URL, &task.FileName, &task.Description, &task.DescriptionOverwriteBehaviour, &task.ChartName, &task.Status, &task.Type, &task.ImportCountries, &task.GenerateTemplateCommons, &task.CommonsTemplateName, &task.CommonsTemplateNameFormat, &task.ChartParameters, &task.LastOperationAt, &task.CreatedAt)
 	if err != nil {
-		println("Error reloading task for id ", task.ID, err)
-		return fmt.Errorf("Error reloading task")
+		fmt.Println("Error reloading task for id: ", task.ID, err)
+		return fmt.Errorf("error reloading task: %w", err)
 	}
 
 	return nil
