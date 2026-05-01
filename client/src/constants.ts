@@ -68,7 +68,7 @@ export const INITIAL_DESCRIPTION_CHART = `=={{int:filedesc}}==
 {{cc-by-4.0}}
 `;
 // [[Category:Uploaded by OWID importer tool]]
-export const INITIAL_FILENAME_CHART = `$NAME, $START_YEAR to $END_YEAR, $REGION.svg`;
+export const INITIAL_FILENAME_CHART = `$NAME, $REGION.svg`;
 
 const initialImport: MapImporterFormItem = {
   id: Date.now().toString(),

@@ -16,6 +16,40 @@ import (
 	"github.com/wpmed-videowiki/OWIDImporter/utils"
 )
 
+func uploadCountryChart(user *models.User, token *string, replaceData ReplaceVarsData, countryDownloadPath string, data StartData) (string, string, error) {
+	oldFileNameFormatMatcher := "$NAME, $START_YEAR to $REGION.svg"
+	/**
+		Check if the country graph was uploaded before with a past year (year != endYear)
+		Old files had the format "$NAME, $START_YEAR to $END_YEAR, $REGION.svg"
+		We will search by "$NAME, $START_YEAR to $REGION.svg"
+		$END_YEAR is excluded as it might have changed
+	**/
+	searchFileName := strings.TrimSpace("File:" + replaceVars(oldFileNameFormatMatcher, replaceData))
+	newFileName := strings.TrimSpace("File:" + replaceVars(data.FileName, replaceData))
+	titles, err := SearchPageWithPrefix(user, searchFileName)
+	if err == nil && len(titles) > 0 {
+		fmt.Println("============ FOUND FILE WITH OLD PREFIX: ", titles)
+		existingTitle := titles[0]
+		if !strings.EqualFold(strings.TrimSpace(newFileName), strings.TrimSpace(existingTitle)) {
+			//  strings.ToLower(strings.TrimSpace(newFileName)) != strings.ToLower(strings.TrimSpace(existingTitle))
+			// Move the page to the newFileName
+			fmt.Println("============== MOVING TO THE NEW NAME", newFileName)
+			if err := MovePage(user, *token, existingTitle, newFileName); err != nil {
+				fmt.Println("Error moving country page from old title to new title", existingTitle, newFileName, err)
+			} else {
+				fmt.Println("============ Moved From: ", existingTitle, " to: ", newFileName)
+			}
+			time.Sleep(time.Second * 2)
+		}
+
+	} else {
+		fmt.Println("========== ERROR SEARCHING FOR OLD COUNTRY NAMED FILES: ", err)
+	}
+
+	filename, status, err := uploadMapFile(user, *token, replaceData, countryDownloadPath, data)
+	return filename, status, err
+}
+
 func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string) error {
 	token := ""
 	done := false
@@ -102,7 +136,7 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 			Params:    chartParams,
 		}
 
-		filename, status, err := uploadMapFile(user, token, replaceData, path, data)
+		filename, status, err := uploadCountryChart(user, &token, replaceData, path, data)
 		if err != nil {
 			fmt.Println("Error country first upload", country, err)
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
@@ -110,7 +144,7 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 			taskProcess.Update()
 			utils.SendWSTaskProcess(task.ID, taskProcess)
 			time.Sleep(time.Second * 2)
-			filename, status, err = uploadMapFile(user, token, replaceData, downloadPath, data)
+			filename, status, err = uploadCountryChart(user, &token, replaceData, downloadPath, data)
 			if err != nil {
 				fmt.Println("Error retrying for second time: ", country, err)
 				taskProcess.Status = models.TaskProcessStatusFailed
@@ -379,7 +413,7 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 			Comment:   "Importing from " + data.Url,
 			Params:    chartParams,
 		}
-		filename, status, err := uploadMapFile(user, *token, replaceData, countryDownloadPath, data)
+		filename, status, err := uploadCountryChart(user, token, replaceData, countryDownloadPath, data)
 		if err != nil {
 			FailTaskProcess(taskProcess)
 			continue

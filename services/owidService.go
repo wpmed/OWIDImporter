@@ -4,6 +4,8 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,6 +42,12 @@ type RegionChartTemplateDataItem struct {
 	FileName string
 	Country  string
 	Region   string
+}
+
+type APIError struct {
+	Code   string `json:"code"`
+	Info   string `json:"info"`
+	DocRef string `json:"docref,omitempty"`
 }
 
 type TokenResponse struct {
@@ -87,6 +95,7 @@ type Page struct {
 	ImageRepository string `json:"imagerepository"`
 	ImageInfo       []struct {
 		SHA1 string `json:"sha1"`
+		URL  string `json:"url"`
 	} `json:"imageinfo"`
 }
 
@@ -139,6 +148,26 @@ type UploadResponse struct {
 	} `json:"upload"`
 }
 
+type movePageResponse struct {
+	Move *struct {
+		From   string `json:"from"`
+		To     string `json:"to"`
+		Reason string `json:"reason"`
+	} `json:"move,omitempty"`
+
+	Error *APIError
+}
+
+type SearchPagePrefixResponse struct {
+	Query struct {
+		Normalized []struct {
+			FromEncoded bool   `json:"fromencoded"`
+			From        string `json:"from"`
+			To          string `json:"to"`
+		} `json:"normalized"`
+		Pages []Page `json:"pages"`
+	} `json:"query"`
+}
 type FileRevisionsResponse struct {
 	BatchComplete bool `json:"batchcomplete"`
 	Query         struct {
@@ -213,6 +242,50 @@ func ValidateParameters(data StartData) error {
 	return nil
 }
 
+func MovePage(user *models.User, token string, fromTitle, toTitle string) error {
+	fmt.Println("===================================")
+	fmt.Println("MOVE ACTION: FROM - ", fromTitle, " - TO - ", toTitle)
+	res, err := utils.DoApiReq[movePageResponse](user, map[string]string{
+		"action": "move",
+		"from":   fromTitle,
+		"to":     toTitle,
+		"token":  token,
+		"reason": "New file naming convension",
+	}, nil)
+
+	if err != nil {
+		return err
+	}
+
+	if res.Error != nil {
+		return fmt.Errorf("%s: %s", res.Error.Code, res.Error.Info)
+	}
+
+	return nil
+}
+
+func SearchPageWithPrefix(user *models.User, title string) ([]string, error) {
+	titles := make([]string, 0)
+
+	res, err := utils.DoApiReq[SearchPagePrefixResponse](user, map[string]string{
+		"action":    "query",
+		"redirects": "1",
+		"generator": "search",
+		"gsrsearch": title,
+	}, nil)
+
+	if err != nil {
+		return titles, err
+	}
+
+	for _, v := range res.Query.Pages {
+		titles = append(titles, v.Title)
+	}
+
+	fmt.Println(res.Query)
+	return titles, nil
+}
+
 func getFileWikiText(user *models.User, filename string) (string, error) {
 	res, err := utils.DoApiReq[FileRevisionsResponse](user, map[string]string{
 		"action":  "query",
@@ -267,6 +340,26 @@ func createCommonsTemplatePage(user *models.User, token, title, wikiText string)
 	return title, nil
 }
 
+func getCommonsFilePageByName(filename string, user *models.User) (*Page, error) {
+	res, err := utils.DoApiReq[QueryResponse](user, map[string]string{
+		"action": "query",
+		"prop":   "imageinfo",
+		"titles": "File:" + filename,
+		"iiprop": "sha1|url",
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	pages := res.Query.Pages
+	var page Page
+	for _, p := range pages {
+		page = p
+		break
+	}
+
+	return &page, nil
+}
+
 func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData, downloadPath string, data StartData) (string, string, error) {
 	filedesc := replaceVars(data.Description, replaceData)
 	filename := replaceVars(data.FileName, replaceData)
@@ -283,20 +376,9 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		return filename, "", err
 	}
 
-	res, err := utils.DoApiReq[QueryResponse](user, map[string]string{
-		"action": "query",
-		"prop":   "imageinfo",
-		"titles": "File:" + filename,
-		"iiprop": "sha1",
-	}, nil)
+	page, err := getCommonsFilePageByName(filename, user)
 	if err != nil {
 		return filename, "", err
-	}
-	pages := res.Query.Pages
-	var page Page
-	for _, p := range pages {
-		page = p
-		break
 	}
 
 	// Doesn't exist, upload and update description directly
@@ -438,6 +520,43 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		fmt.Println("Error uploading file", res)
 		return filename, "", fmt.Errorf("%s", res.Upload.Result)
 	}
+}
+
+func downloadCommonsFile(filename, outputPath string, user *models.User) error {
+	fmt.Println("=========== DOWNLAODING OCMMONS FILE IN: ", outputPath, filename)
+	page, err := getCommonsFilePageByName(filename, user)
+	if err != nil {
+		return err
+	}
+	if page == nil {
+		return fmt.Errorf("Cannot find file page")
+	}
+
+	if len(page.ImageInfo) == 0 || page.ImageInfo[0].URL == "" {
+		return fmt.Errorf("no image URL returned for: %s", filename)
+	}
+
+	resp, err := http.Get(page.ImageInfo[0].URL)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed: %s", resp.Status)
+	}
+
+	out, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 type FileInfo struct {
@@ -809,4 +928,14 @@ func GetChartTemplate(taskId string) (string, error) {
 
 func GetFileNameFromChartName(chartName string) string {
 	return strings.ReplaceAll(chartName, "-", " ")
+}
+
+func SVGHasSwitchElement(filePath string) bool {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return false
+	}
+
+	re := regexp.MustCompile(`(?i)<(?:[a-zA-Z_][\w.-]*:)?switch(?:\s|/|>)`)
+	return re.Match(data)
 }

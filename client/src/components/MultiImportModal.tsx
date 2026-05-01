@@ -125,7 +125,7 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
                 })
 
                 newInitialFilenameMap += ", $REGION, $YEAR.svg";
-                newInitialFilenameChart += ", $START_YEAR to $END_YEAR, $REGION.svg";
+                newInitialFilenameChart += ", $REGION.svg";
 
                 imp.fileName = newInitialFilenameMap;
                 imp.countryFileName = newInitialFilenameChart;
