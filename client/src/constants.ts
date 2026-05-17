@@ -99,3 +99,44 @@ export function generateBlankImport(): MapImporterFormItem {
     id: Date.now().toString()
   }
 }
+
+export const DESCRIPTION_OVERWRITE_OPTIONS = [
+  {
+    value: DescriptionOverwriteBehaviour.ALL,
+    title: "Overwrite full description",
+    description: "Overwrite the full description of the file (if already exists) with the new description.",
+  },
+  {
+    value: DescriptionOverwriteBehaviour.ALL_EXCEPT_CATEGORIES,
+    title: "Overwrite description except the categories",
+    description: "Old categories are retained, any new categories in the new description are discarded/skipped. If the file doesn't already exist, categories in the new description are added.",
+  },
+  {
+    value: DescriptionOverwriteBehaviour.ONLY_FILE,
+    title: "Only upload file",
+    description: "Don't update the description, only upload the file.",
+  },
+  {
+    value: DescriptionOverwriteBehaviour.SKIP,
+    title: "Skip upload/edit",
+    description: "If a file already exists, no modifications will be made and all prior years will be skipped as well.",
+  }
+]
+
+export const COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS = [
+  {
+    value: DescriptionOverwriteBehaviour.ALL,
+    title: "Overwrite full description",
+    description: "Overwrite the full description of the file (if already exists) with the new description.",
+  },
+  {
+    value: DescriptionOverwriteBehaviour.ALL_EXCEPT_CATEGORIES,
+    title: "Overwrite description except the categories",
+    description: "Old categories are retained, any new categories in the new description are discarded/skipped. If the file doesn't already exist, categories in the new description are added.",
+  },
+  {
+    value: DescriptionOverwriteBehaviour.ONLY_FILE,
+    title: "Only upload file",
+    description: "Don't update the description, only upload the file.",
+  }
+]

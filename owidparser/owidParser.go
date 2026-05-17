@@ -615,23 +615,6 @@ func GenerateImages(config *OWIDGrapherConfig, title string, titleYear int, data
 	pathElements := query.Select("path")
 	fmt.Printf("Query found %d path elements\n", len(pathElements))
 
-	// TODO: Check if this is needed
-	// Remove any style elements
-	// defs := query.SelectAll("defs")
-	//
-	// fmt.Println("Got defentions", defs)
-	// for _, def := range defs {
-	// 	if len(def.Children) > 0 {
-	// 		for _, child := range def.Children {
-	// 			fmt.Println("Children: ", child.Element.XMLName.Local)
-	// 			if child.Element.XMLName.Local == "style" {
-	// 				def.Children = make([]Node, 0)
-	// 				break
-	// 			}
-	// 		}
-	// 	}
-	// }
-	//
 	lines2 := query.Select("#lines")
 	swatches := query.Select("#swatches")
 	labels := query.Select("#labels")

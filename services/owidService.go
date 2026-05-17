@@ -939,3 +939,158 @@ func SVGHasSwitchElement(filePath string) bool {
 	re := regexp.MustCompile(`(?i)<(?:[a-zA-Z_][\w.-]*:)?switch(?:\s|/|>)`)
 	return re.Match(data)
 }
+
+type WikiResponse struct {
+	Query struct {
+		Pages map[string]WikiPage `json:"pages"`
+	} `json:"query"`
+}
+
+type WikiPage struct {
+	PageID    int            `json:"pageid"`
+	NS        int            `json:"ns"`
+	Title     string         `json:"title"`
+	Revisions []WikiRevision `json:"revisions"`
+}
+
+type WikiRevision struct {
+	Slots WikiSlots `json:"slots"`
+}
+
+type WikiSlots struct {
+	Main WikiMainSlot `json:"main"`
+}
+
+type WikiMainSlot struct {
+	ContentModel  string `json:"contentmodel"`
+	ContentFormat string `json:"contentformat"`
+
+	// MediaWiki formatversion=1 returns page source in "*".
+	Content string `json:"*"`
+
+	// MediaWiki formatversion=2 may return page source in "content".
+	ContentV2 string `json:"content"`
+}
+
+type AvailableData struct {
+	CountryCodes []string                     `json:"country_codes"`
+	Regions      map[string]map[string]string `json:"regions"`
+}
+
+func GetTemplateExistingSources(user *models.User, pageTitle string) (*AvailableData, error) {
+	resp, err := utils.DoApiReq[WikiResponse](user, map[string]string{
+		"action":  "query",
+		"format":  "json",
+		"titles":  pageTitle,
+		"prop":    "revisions",
+		"rvprop":  "content",
+		"rvslots": "main",
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var source string
+
+	for _, page := range resp.Query.Pages {
+		if len(page.Revisions) == 0 {
+			continue
+		}
+
+		mainSlot := page.Revisions[0].Slots.Main
+
+		source = mainSlot.Content
+		if source == "" {
+			source = mainSlot.ContentV2
+		}
+
+		if source != "" {
+			break
+		}
+	}
+
+	if source == "" {
+		return &AvailableData{
+			CountryCodes: []string{},
+			Regions:      map[string]map[string]string{},
+		}, nil
+	}
+
+	return ParseOWIDTemplateSource(source), nil
+}
+
+func ParseOWIDTemplateSource(source string) *AvailableData {
+	countryCodesSet := map[string]bool{}
+
+	// region -> year/date value -> file name
+	regions := map[string]map[string]string{}
+
+	galleryHeaderRegex := regexp.MustCompile(`^\s*\|\s*gallery-([A-Za-z]+)\s*=\s*(.*)$`)
+
+	// Captures:
+	// File:X.svg!year=2023
+	// File:X.svg!year=Apr 25, 2024
+	//
+	// Group 1: File:X.svg
+	// Group 2: 2023 / Apr 25, 2024 / any string until another ! param or line end
+	fileYearRegex := regexp.MustCompile(`File:([^!\r\n]+?)\s*!\s*year\s*=\s*([^!\r\n]+)`)
+
+	countryRegex := regexp.MustCompile(`!country\s*=\s*([A-Z]{3})`)
+
+	lines := strings.Split(source, "\n")
+
+	var currentGallery string
+
+	processText := func(gallery string, text string) {
+		for _, match := range countryRegex.FindAllStringSubmatch(text, -1) {
+			countryCode := strings.TrimSpace(match[1])
+			if countryCode != "" {
+				countryCodesSet[countryCode] = true
+			}
+		}
+
+		if gallery == "" || gallery == "AllCountries" {
+			return
+		}
+
+		if _, exists := regions[gallery]; !exists {
+			regions[gallery] = map[string]string{}
+		}
+
+		for _, match := range fileYearRegex.FindAllStringSubmatch(text, -1) {
+			file := strings.TrimSpace(match[1])
+			value := strings.TrimSpace(match[2])
+
+			if file == "" || value == "" {
+				continue
+			}
+
+			regions[gallery][value] = file
+		}
+	}
+
+	for _, line := range lines {
+		if match := galleryHeaderRegex.FindStringSubmatch(line); match != nil {
+			currentGallery = strings.TrimSpace(match[1])
+
+			// Handles same-line values:
+			// |gallery-Africa = File:X.svg!year=2023
+			// |gallery-Oceania = File:X.svg!year=Apr 25, 2024
+			processText(currentGallery, match[2])
+			continue
+		}
+
+		processText(currentGallery, line)
+	}
+
+	countryCodes := make([]string, 0, len(countryCodesSet))
+	for code := range countryCodesSet {
+		countryCodes = append(countryCodes, code)
+	}
+	sort.Strings(countryCodes)
+
+	return &AvailableData{
+		CountryCodes: countryCodes,
+		Regions:      regions,
+	}
+}

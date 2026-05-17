@@ -3,10 +3,9 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"html"
-	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -21,7 +20,6 @@ import (
 	"github.com/wpmed-videowiki/OWIDImporter/constants"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
-	"github.com/wpmed-videowiki/OWIDImporter/owidparser"
 	svgprocessor "github.com/wpmed-videowiki/OWIDImporter/svg_processor"
 	"github.com/wpmed-videowiki/OWIDImporter/utils"
 	"golang.org/x/sync/errgroup"
@@ -621,7 +619,7 @@ func TestDownloadPage(page *rod.Page) (bool, error) {
 		return false, fmt.Errorf("Cannot find/click on download button")
 	}
 
-	fmt.Println("CLICKED ENTER")
+	// fmt.Println("CLICKED ENTER")
 	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
 		return false, err
 	}
@@ -764,22 +762,41 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 			if attr, err := startMarker.Attribute("aria-valuemin"); err == nil {
 				startYear = *attr
 			}
+			// TODO
 			if attr, err := startMarker.Attribute("aria-valuemax"); err == nil {
 				endYear = *attr
 			}
+			// if _, err := startMarker.Attribute("aria-valuemax"); err == nil {
+			// 	endYear = "2023"
+			// }
 		} else if endMarker != nil {
 			if attr, err := endMarker.Attribute("aria-valuemin"); err == nil {
 				startYear = *attr
 			}
+			// TODO
 			if attr, err := endMarker.Attribute("aria-valuemax"); err == nil {
 				endYear = *attr
 			}
+			// if _, err := endMarker.Attribute("aria-valuemax"); err == nil {
+			// 	endYear = "2023"
+			// }
 		}
 
 		fmt.Println("00000000000000000000000000 GOT START MARKER 00000000000000000000000000000", startYear, endYear)
 
 		counter := 0
 		owidEnv := env.GetEnv().OWID_ENV
+		sources, err := GetTemplateExistingSources(user, task.CommonsTemplateName)
+		regionExistingData := make(map[string]string, 0)
+		if err == nil && sources != nil {
+			data, exists := sources.Regions[region]
+			if exists {
+				regionExistingData = data
+			}
+		}
+
+		triedUsingCommonsTemplate := false
+
 		for task.Status == models.TaskStatusProcessing {
 			counter = counter + 1
 			if owidEnv == "development" && counter >= 5 {
@@ -839,6 +856,36 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 
 			year := currentYear
 
+			replaceData := ReplaceVarsData{
+				Url:      data.Url,
+				Title:    title,
+				Region:   regionStr,
+				Year:     currentYear,
+				FileName: GetFileNameFromChartName(chartName),
+				Comment:  "Importing from " + data.Url,
+				Params:   chartParams,
+			}
+
+			if task.DescriptionOverwriteBehaviour == models.DescriptionOverwriteBehaviourSkip && !triedUsingCommonsTemplate {
+				fmt.Println("=============== HAS SKIP BEHAVIOUR")
+				filename, exists := regionExistingData[currentYear]
+				fmt.Println("EXISTS: ", regionStr, currentYear)
+				if exists {
+					startYear, _, _ := getMapStartEndYearTitleFromPage(page)
+					fmt.Println("Start year: ", startYear, filename)
+					if startYear != "" {
+						// Update replacedata year to the startYear
+						err := handleExistingMetadataCommonsFile(replaceData, regionExistingData, startYear, data, downloadPath, user, task, region, token)
+						if err == nil {
+							break
+						} else {
+							fmt.Println("=============== Error reusing commons template: ", err)
+						}
+						triedUsingCommonsTemplate = true
+					}
+				}
+			}
+
 			var taskProcess *models.TaskProcess
 
 			existingTB, err := models.FindTaskProcessByTaskRegionDate(region, year, task.ID)
@@ -859,7 +906,6 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 			} else {
 				taskProcess, err = models.NewTaskProcess(region, year, "", models.TaskProcessStatusProcessing, models.TaskProcessTypeMap, task.ID)
 				if err != nil {
-					// TODO: Check this
 					break
 				}
 			}
@@ -880,7 +926,6 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 				fmt.Println(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
 				break
 			}
-			// TODO:  Check if need to remove
 			wait := page.Browser().WaitDownload(mapPath)
 
 			if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
@@ -911,7 +956,6 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 			wait()
 			time.Sleep(time.Millisecond * 100)
 			if _, err = os.Stat(mapPath); os.IsNotExist(err) {
-				// TODO: Check this
 				FailTaskProcess(taskProcess)
 				CloseDownloadPopup(page)
 				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
@@ -923,17 +967,6 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 
 			// Close download modal
 			CloseDownloadPopup(page)
-
-			// TODO: DOWNLOAD FILE AND UPLOAD
-			replaceData := ReplaceVarsData{
-				Url:      data.Url,
-				Title:    title,
-				Region:   regionStr,
-				Year:     currentYear,
-				FileName: GetFileNameFromChartName(chartName),
-				Comment:  "Importing from " + data.Url,
-				Params:   chartParams,
-			}
 
 			fileInfo, err := getFileInfo(mapPath)
 			if err != nil {
@@ -948,7 +981,7 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 			lowerCaseContent := strings.ToLower(string(fileInfo.File))
 			if strings.Contains(lowerCaseContent, "missing map column") {
 				os.Remove(fileInfo.FilePath)
-				fmt.Printf("Missing map column %s %s %s, retrying", replaceData.Region, replaceData.Year, replaceData.FileName)
+				fmt.Printf("Missing map column %s %s %s, retrying", regionStr, currentYear, GetFileNameFromChartName(chartName))
 				FailTaskProcess(taskProcess)
 				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
 					continue
@@ -1061,6 +1094,104 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 	l.Cleanup()
 }
 
+func handleExistingMetadataCommonsFile(replaceData ReplaceVarsData, regionExistingData map[string]string, startYear string, data StartData, downloadPath string, user *models.User, task *models.Task, region string, token *string) error {
+	replaceData.Year = startYear
+	filename := replaceVars(data.FileName, replaceData)
+	existingMapPath := filepath.Join(downloadPath, "_existing_final")
+	existingMapFilePath := path.Join(existingMapPath, "image.svg")
+	if err := os.Mkdir(existingMapPath, 0755); err != nil {
+		return err
+	}
+
+	err := downloadCommonsFile(filename, existingMapFilePath, user)
+	if err != nil {
+		return err
+	}
+
+	/**
+		Check if the old file has metadata. If so, we'll append the new files
+		metadata to it and reupload the file. If not, skip all of this and the flow will continue to
+		collect the metadata fields
+	**/
+
+	content, err := os.ReadFile(existingMapFilePath)
+	if err != nil {
+		return err
+	}
+	if len(content) == 0 {
+		return fmt.Errorf("Empty file content")
+	}
+
+	fmt.Println("Existing commons file: ", existingMapFilePath)
+	// By here, we have existing task processes and the fills from the old metadata file
+
+	metadataFills, err := parseSVGMetadata(string(content))
+	if err != nil {
+		return err
+	}
+	if len(metadataFills) == 0 {
+		return fmt.Errorf("Empty fills")
+	}
+
+	// Get the fills of the processed task processes, those are newly added years
+	newFills, err := getRegionFills(task, region)
+	if err != nil {
+		return err
+	}
+
+	backfills := utils.DiffSliceBy(metadataFills, *newFills, func(a CountryFillWithYear) string {
+		return fmt.Sprintf("%s%s", a.Year, a.Country)
+	})
+
+	// We need to combine both metadata
+	allFills := append(backfills, *newFills...)
+
+	// Convert fills to SVG metadata element
+	metadata := generateSVGMetadataFromFills(allFills)
+	if err := InjectMetadataIntoSVGSameFile(existingMapFilePath, metadata); err != nil {
+		return fmt.Errorf("Error injecting metadata into svg: ", err)
+	}
+
+	replaceData.Comment = "Importing from " + data.Url + " with metadata"
+	Filename, status, err := uploadMapFile(user, *token, replaceData, existingMapPath, data)
+	//  Retry twice
+	if err != nil {
+		time.Sleep(time.Second * 2)
+		Filename, status, err = uploadMapFile(user, *token, replaceData, existingMapPath, data)
+		if err != nil {
+			time.Sleep(time.Second * 4)
+			Filename, status, err = uploadMapFile(user, *token, replaceData, existingMapPath, data)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	fmt.Println("Filename: ", Filename, status)
+	/**
+		We need to backfill the database with the tasks we got from metadata that we didn't import
+	**/
+
+	taskProcesses, err := models.FindTaskProcessesByTaskIdAndRegion(task.ID, region)
+	if err == nil {
+		existingDates := make(map[string]bool)
+		for _, tp := range taskProcesses {
+			existingDates[tp.Date] = true
+		}
+
+		for date, filename := range regionExistingData {
+			_, exists := existingDates[date]
+			if !exists {
+				taskProcess, err := models.NewTaskProcess(region, date, filename, models.TaskProcessStatusSkipped, models.TaskProcessTypeMap, task.ID)
+				if err == nil {
+					utils.SendWSTaskProcess(task.ID, taskProcess)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 func didReachStartYear(startMarker, endMarker *rod.Element, startYear string) bool {
 	if (startMarker != nil && *startMarker.MustAttribute("aria-valuenow") == startYear) || (endMarker != nil && *endMarker.MustAttribute("aria-valuenow") == startYear) {
 		fmt.Println("REACHING START YEAR")
@@ -1093,147 +1224,6 @@ func moveToNextYear(page *rod.Page, startMarker, endMarker *rod.Element, current
 	}
 
 	return true
-}
-
-func downloadMapData(browser *rod.Browser, url, dataPath, metadataPath, mapPath string) (*owidparser.OWIDGrapherConfig, error) {
-	var config owidparser.OWIDGrapherConfig
-	var err error
-	configJSON := ""
-	dataUrl := ""
-	metadataUrl := ""
-	configUrl := ""
-	pageHtml := ""
-
-	for trials := 0; trials < 2; trials++ {
-		err = rod.Try(func() {
-			page := browser.MustPage("")
-			defer page.Close()
-			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
-
-			router := browser.HijackRequests()
-			defer router.MustStop()
-
-			router.MustAdd("*.json", func(ctx *rod.Hijack) {
-				fmt.Println("Got req: ", ctx.Request.URL().String())
-				if ctx.Request.Method() == "GET" {
-					url := ctx.Request.URL().String()
-					if strings.Contains(url, ".data.json") && dataUrl == "" {
-						dataUrl = url
-					}
-					if strings.Contains(url, ".metadata.json") && metadataUrl == "" {
-						metadataUrl = url
-					}
-					if strings.Contains(url, ".config.json") && configUrl == "" {
-						configUrl = url
-					}
-				}
-
-				ctx.MustLoadResponse()
-			})
-			go router.Run()
-
-			page.MustNavigate(url)
-			page.MustWaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-			configJSON = page.MustEval(`() => {
-				return JSON.stringify(window._OWID_GRAPHER_CONFIG);
-			}`).String()
-
-			page.WaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-			err := page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
-			if err != nil {
-				panic(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
-			}
-			// TODO:  Check if need to remove
-			time.Sleep(time.Second * 1)
-			wait := page.Browser().WaitDownload(mapPath)
-
-			downloadSelector := "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
-			page.MustWaitElementsMoreThan(downloadSelector, 0)
-			err = page.MustElements(downloadSelector)[0].Click(proto.InputMouseButtonLeft, 1)
-			if err != nil {
-				// utils.SendWSProgress(session, taskProcess)
-				panic(fmt.Sprintf("%s, %s, %v", url, "Error clicking download svg button", err))
-			}
-
-			wait()
-			time.Sleep(time.Millisecond * 500)
-			if _, err = os.Stat(mapPath); os.IsNotExist(err) {
-				panic(fmt.Sprintf("%s %s %v", url, "File not found", err))
-			}
-			pageHtml = page.MustHTML()
-		})
-
-		if err == nil {
-			break
-		}
-	}
-
-	if dataUrl == "" || metadataUrl == "" {
-		return nil, fmt.Errorf("Error getting data/metadata urls")
-	}
-
-	if err := utils.DownloadFile(dataUrl, dataPath); err != nil {
-		return nil, fmt.Errorf("ERROR DOWNLOADING DATA JSON %v", err)
-	}
-	if err := utils.DownloadFile(metadataUrl, metadataPath); err != nil {
-		return nil, fmt.Errorf("ERROR DOWNLOADING METADATA JSON %v", err)
-	}
-
-	// Extract the window._OWID_GRAPHER_CONFIG object
-	err = json.Unmarshal([]byte(configJSON), &config)
-	if err != nil {
-		fmt.Println("Failed to parse config, trying from config url: ", err)
-
-		if configUrl != "" {
-			client := &http.Client{
-				Timeout: 10 * time.Second,
-			}
-
-			resp, err := client.Get(configUrl)
-			if err != nil {
-				fmt.Printf("Error fetching URL: %v\n", err)
-				return nil, err
-			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				fmt.Printf("Error reading response: %v\n", err)
-				return nil, err
-			}
-
-			err = json.Unmarshal(body, &config)
-			if err != nil {
-				fmt.Printf("Error parsing JSON: %v\n", err)
-				return nil, err
-			}
-
-			return &config, nil
-		} else if pageHtml != "" {
-			// Try regex matching
-			re := regexp.MustCompile(`//EMBEDDED_JSON\s*([\s\S]*?)\s*//EMBEDDED_JSON`)
-
-			// Find the match
-			matches := re.FindStringSubmatch(pageHtml)
-			if len(matches) > 1 {
-				jsonString := matches[1] // The captured group
-				err = json.Unmarshal([]byte(jsonString), &config)
-				if err != nil {
-					fmt.Println("Failed to parse config from page HTML", err)
-					return nil, err
-				}
-				return &config, nil
-			} else {
-				return nil, err
-			}
-
-		} else {
-			return nil, err
-		}
-	}
-
-	return &config, nil
 }
 
 func getMapHasCountriesFromPage(page *rod.Page) (bool, []string) {
@@ -1341,7 +1331,9 @@ func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
 
 	marker := page.MustElement(START_MARKER_SELECTOR)
 	startYear = *marker.MustAttribute("aria-valuemin")
+	// TODO
 	endYear = *marker.MustAttribute("aria-valuemax")
+	// endYear = "2023"
 	title = page.MustElement(TITLE_SELECTOR).MustText()
 	title = strings.TrimSpace(title)
 	suffix := ", " + endYear
@@ -1386,7 +1378,7 @@ func processRegion(user *models.User, task *models.Task, chartName string, regio
 
 	for token == "" {
 		time.Sleep(time.Second)
-		fmt.Println("Waiting for token")
+		// fmt.Println("Waiting for token")
 	}
 
 	// Get start and end years
@@ -1401,110 +1393,17 @@ func processRegion(user *models.User, task *models.Task, chartName string, regio
 
 	url := data.Url
 	url = utils.AttachQueryParamToUrl(url, fmt.Sprintf("tab=map&region=%s", region))
-	// if region == "World" {
-	// 	// World chart has no region parameter
-	// url = utils.AttachQueryParamToUrl(url, "tab=map")
-	// } else {
-	// 	url = utils.AttachQueryParamToUrl(url, fmt.Sprintf("tab=map&region=%s", region))
-	// }
-	// TODO:
 
 	if task.ChartParameters != "" {
 		url = utils.AttachQueryParamToUrl(url, task.ChartParameters)
 	}
 
+	// TODO
 	url = utils.AttachQueryParamToUrl(url, "time=latest")
+	// url = utils.AttachQueryParamToUrl(url, "time=2023")
 
 	traverseDownloadRegion(task, data, user, chartParamsMap, &token, chartName, title, region, url, downloadPath)
 	task.Reload()
-	// Sleep for 10 seconds to avoid API complains of reuploading
-	// Attach country data to the first file metadata on commons
-	// time.Sleep(time.Second * 10)
-	// if task.Status == models.TaskStatusProcessing {
-	// 	metadata, err := getRegionFileMetadata(task, region)
-	// 	if err != nil {
-	// 		fmt.Println("Error generating metadata: ", err)
-	// 	} else if metadata != "" {
-	// 		// fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
-	// 		fmt.Println("GOT METADATA, YAAAAAAAAAAY")
-	// 		err := processRegionYear(browser, user, task, *token, chartName, title, region, chartParamsMap, filepath.Join(downloadPath, startYear, "_final"), startYear, data, metadata)
-	// 		if err != nil {
-	// 			fmt.Println("Error uploading with metadata: ", err)
-	// 		}
-	// 	}
-	// }
-
-	// START OLD FLOW
-
-	// // try to get JSON data
-	// dataPath := path.Join(downloadPath, "data.json")
-	// metadataPath := path.Join(downloadPath, "metadata.json")
-	// mapPath := path.Join(downloadPath, "map")
-	//
-	// var config *owidparser.OWIDGrapherConfig
-	// var err error
-	// for i := 0; i < constants.RETRY_COUNT; i++ {
-	// 	config, err = downloadMapData(browser, url, dataPath, metadataPath, mapPath)
-	// 	if err == nil && config != nil {
-	// 		break
-	// 	}
-	// }
-	//
-	// // fmt.Println("CONFIG IS: ==================", config)
-	// // Fallback to the old flow of getting each image individually
-	// if err != nil {
-	// 	fmt.Println("ERROR GETTING CHART JSON DATA", err)
-	//
-	// 	g, _ := errgroup.WithContext(context.Background())
-	// 	g.SetLimit(constants.CONCURRENT_REQUESTS)
-	//
-	// 	// var filename string
-	// 	for year := startYearInt; year <= endYearInt; year++ {
-	// 		year := year
-	// 		g.Go(func(region string, year int, downloadPath string) func() error {
-	// 			return func() error {
-	// 				if task.Status != models.TaskStatusFailed {
-	// 					err := processRegionYear(browser, user, task, *token, chartName, title, region, downloadPath, year, data, "")
-	// 					return err
-	// 				}
-	// 				return nil
-	// 			}
-	// 		}(region, int(year), filepath.Join(downloadPath, strconv.FormatInt(year, 10))))
-	// 	}
-	//
-	// 	if err := g.Wait(); err != nil {
-	// 		return err
-	// 	}
-	//
-	// 	task.Reload()
-	// 	if task.Status != models.TaskStatusFailed {
-	// 		// Attach country data to the first file metadata on commons
-	// 		metadata, err := getRegionFileMetadata(task, region)
-	// 		if err != nil {
-	// 			fmt.Println("Error generating metadata: ", err)
-	// 		} else if metadata != "" {
-	// 			// fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
-	// 			fmt.Println("GOT METADATA, YAAAAAAAAAAY")
-	// 			err := processRegionYear(browser, user, task, *token, chartName, title, region, filepath.Join(downloadPath, strconv.FormatInt(startYearInt, 10)+"_final"), int(startYearInt), data, metadata)
-	// 			if err != nil {
-	// 				fmt.Println("Error uploading with metadata: ", err)
-	// 			}
-	// 		}
-	// 	}
-	// } else {
-	// 	fmt.Println("DOWNLOADED CHART DATA", dataPath, downloadPath)
-	// 	mapInfo, err := getFileInfo(mapPath)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	fmt.Println("Map info: ", mapInfo.FilePath)
-	// 	err = generateAndprocessRegionYearsNewFlow(user, task, config, *token, chartName, title, region, int(startYearInt), int(endYearInt), data, dataPath, metadataPath, mapPath, chartParamsMap)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
-
-	// END OLD FLOW
 
 	return nil
 }
@@ -1515,10 +1414,26 @@ type CountryFillWithYear struct {
 	Year    string
 }
 
-func getRegionFileMetadata(task *models.Task, region string) (string, error) {
+type svgCountryDataMetadata struct {
+	XMLName xml.Name             `xml:"metadata"`
+	ID      string               `xml:"id,attr"`
+	Years   []svgCountryDataYear `xml:"years>year"`
+}
+
+type svgCountryDataYear struct {
+	Value     string                  `xml:"value,attr"`
+	Countries []svgCountryDataCountry `xml:"country"`
+}
+
+type svgCountryDataCountry struct {
+	Name string `xml:"name,attr"`
+	Fill string `xml:"fill,attr"`
+}
+
+func getRegionFills(task *models.Task, region string) (*[]CountryFillWithYear, error) {
 	taskProcesses, err := models.FindTaskProcessesByTaskIdAndRegion(task.ID, region)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	metadata := make([]CountryFillWithYear, 0)
@@ -1539,13 +1454,40 @@ func getRegionFileMetadata(task *models.Task, region string) (string, error) {
 		}
 	}
 
+	return &metadata, nil
+}
+
+func getRegionFileMetadata(task *models.Task, region string) (string, error) {
+	taskProcesses, err := models.FindTaskProcessesByTaskIdAndRegion(task.ID, region)
+	if err != nil {
+		return "", err
+	}
+
+	fills := make([]CountryFillWithYear, 0)
+	for _, tp := range taskProcesses {
+		if tp.FillData != "" {
+			countriesData, err := svgprocessor.ParseJSONString(tp.FillData)
+			if err != nil {
+				fmt.Println("Error parsing countries fillData", tp, err)
+				continue
+			}
+			for _, countryData := range countriesData {
+				fills = append(fills, CountryFillWithYear{
+					Country: countryData.Country,
+					Fill:    countryData.Fill,
+					Year:    tp.Date,
+				})
+			}
+		}
+	}
+
 	// Convert metadata to SVG metadata element
-	svgContent := generateSVGMetadata(metadata)
+	svgContent := generateSVGMetadataFromFills(fills)
 	return svgContent, nil
 }
 
 // Generate SVG metadata with data grouped by years
-func generateSVGMetadata(metadata []CountryFillWithYear) string {
+func generateSVGMetadataFromFills(metadata []CountryFillWithYear) string {
 	var svgBuilder strings.Builder
 
 	// Group data by year
@@ -1609,357 +1551,102 @@ func generateSVGMetadata(metadata []CountryFillWithYear) string {
 	return svgBuilder.String()
 }
 
-func downloadChartFile(browser *rod.Browser, url, downloadPath string) error {
-	timeoutDuration := time.Duration(constants.CHART_WAIT_TIME_SECONDS) * time.Second
+func parseSVGMetadata(content string) ([]CountryFillWithYear, error) {
+	reMetadata := regexp.MustCompile(`(?s)<metadata\b[^>]*>.*?</metadata>`)
+	metadataBlocks := reMetadata.FindAllString(content, -1)
 
-	err := rod.Try(func() {
-		page := browser.MustPage("")
-		defer page.Close()
-		page = page.Timeout(timeoutDuration)
-		page.MustNavigate(url)
-		page.MustWaitIdle()
+	if len(metadataBlocks) == 0 {
+		return nil, fmt.Errorf("metadata tag not found")
+	}
 
-		page.WaitElementsMoreThan(DOWNLOAD_BUTTON_SELECTOR, 0)
-		err := page.MustElement(DOWNLOAD_BUTTON_SELECTOR).Click(proto.InputMouseButtonLeft, 1)
+	var parseErrors []error
+
+	for _, metadataBlock := range metadataBlocks {
+		metadata, err := parseSVGMetadataBlock(metadataBlock)
 		if err != nil {
-			panic(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
-		}
-		// TODO:  Check if need to remove
-		time.Sleep(time.Second * 1)
-		wait := page.Browser().WaitDownload(downloadPath)
-
-		downloadSelector := "div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
-		page.MustWaitElementsMoreThan(downloadSelector, 0)
-		err = page.MustElements(downloadSelector)[0].Click(proto.InputMouseButtonLeft, 1)
-		if err != nil {
-			// utils.SendWSProgress(session, taskProcess)
-			panic(fmt.Sprintf("%s, %s, %v", url, "Error clicking download svg button", err))
+			parseErrors = append(parseErrors, err)
+			continue
 		}
 
-		wait()
-		time.Sleep(time.Millisecond * 500)
-		if _, err = os.Stat(downloadPath); os.IsNotExist(err) {
-			panic(fmt.Sprintf("%s %s %v", url, "File not found", err))
+		if metadata.ID != "country-data" {
+			continue
 		}
-	})
-	return err
+
+		parsedData := flattenSVGMetadata(metadata)
+		if len(parsedData) == 0 {
+			return nil, fmt.Errorf("country-data metadata is empty")
+		}
+
+		return parsedData, nil
+	}
+
+	if len(parseErrors) > 0 {
+		return nil, fmt.Errorf("metadata found, but country-data could not be parsed: %w", parseErrors[len(parseErrors)-1])
+	}
+
+	return nil, fmt.Errorf("metadata tag does not contain country-data")
 }
 
-func processRegionYearNewFlow(user *models.User, task *models.Task, data StartData, token, region, title, chartName, mapDir, fileMetadata string, year string, chartParams map[string]string) error {
-	var err error
-	var taskProcess *models.TaskProcess
-	mapPath := path.Join(mapDir, year)
-	if err := models.UpdateTaskLastOperationAt(task.ID); err != nil {
-		fmt.Println("Error updating task last operation at ", task.ID, err)
-	}
-
-	// Try to find existing process, otherwise create one
-	existingTB, err := models.FindTaskProcessByTaskRegionDate(region, year, task.ID)
-	if existingTB != nil {
-		if existingTB.Status != models.TaskProcessStatusFailed && fileMetadata == "" {
-			// Not in a retry, skip
-			// existingTB.Status = models.TaskProcessStatusSkipped
-			// existingTB.Update()
-			// utils.SendWSTaskProcess(task.ID, existingTB)
-			return nil
-		}
-		existingTB.Status = models.TaskProcessStatusProcessing
-		if err := existingTB.Update(); err != nil {
-			fmt.Println("Error updating task process to processing")
-		}
-		taskProcess = existingTB
-	} else {
-		taskProcess, err = models.NewTaskProcess(region, year, "", models.TaskProcessStatusProcessing, models.TaskProcessTypeMap, task.ID)
-		if err != nil {
-			fmt.Println("Error creating new task process: ", region, year, err)
-			return err
-		}
-	}
-
-	utils.SendWSTaskProcess(task.ID, taskProcess)
-
-	// control := l.Set("--no-sandbox").Headless(false).MustLaunch()
-	regionStr := region
-	if regionStr == "NorthAmerica" {
-		regionStr = "North America"
-	}
-	if regionStr == "SouthAmerica" {
-		regionStr = "South America"
-	}
-
-	replaceData := ReplaceVarsData{
-		Url:      data.Url,
-		Title:    title,
-		Region:   regionStr,
-		Year:     year,
-		FileName: GetFileNameFromChartName(chartName),
-		Comment:  "Importing from " + data.Url,
-		Params:   chartParams,
-	}
-
-	fileInfo, err := getFileInfo(mapPath)
-	if err != nil {
-		fmt.Println("Error getting file info: ", err)
-		return err
-	}
-
-	if fileMetadata != "" {
-		if err := InjectMetadataIntoSVGSameFile(fileInfo.FilePath, fileMetadata); err != nil {
-			fmt.Println("Error injecting metadata into svg: ", err)
-		} else {
-			replaceData.Comment = "Importing from " + data.Url + " with metadata"
-		}
-	}
-
-	Filename, status, err := uploadMapFile(user, token, replaceData, mapPath, data)
-	if err != nil {
-		taskProcess.Status = models.TaskProcessStatusFailed
-		taskProcess.Update()
-		utils.SendWSTaskProcess(task.ID, taskProcess)
-		fmt.Println("Error processing", region, year)
-		return err
-	}
-	taskProcess.FileName = Filename
-
-	// Save the countries fill data
-	countryFlls, err := svgprocessor.ExtractCountryFills(fileInfo.FilePath)
-	if err != nil {
-		fmt.Println("Error extracting country fills ", err)
-	} else {
-		jsonStr, err := svgprocessor.ConvertToJSON(countryFlls)
-		if jsonStr != "" && err == nil {
-			taskProcess.FillData = jsonStr
-		}
-	}
-	taskProcess.Update()
-
-	switch status {
-	case "skipped":
-		taskProcess.Status = models.TaskProcessStatusSkipped
-		taskProcess.Update()
-		utils.SendWSTaskProcess(task.ID, taskProcess)
-	case "description_updated":
-		taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
-		taskProcess.Update()
-		utils.SendWSTaskProcess(task.ID, taskProcess)
-	case "overwritten":
-		taskProcess.Status = models.TaskProcessStatusOverwritten
-		taskProcess.Update()
-		utils.SendWSTaskProcess(task.ID, taskProcess)
-	case "uploaded":
-		taskProcess.Status = models.TaskProcessStatusUploaded
-		taskProcess.Update()
-		utils.SendWSTaskProcess(task.ID, taskProcess)
-	}
-
-	time.Sleep(time.Millisecond * 2000)
-	return nil
-}
-
-// func generateAndprocessRegionYearsNewFlow(user *models.User, task *models.Task, config *owidparser.OWIDGrapherConfig, token, chartName, title, region string, startYear, endYear string, data StartData, dataPath, metadataPath, mapDir string, chartParams map[string]string) error {
-// 	fileinfo, err := getFileInfo(mapDir)
-// 	if err != nil {
-// 		return err
+// func parseSVGMetadata(content string) ([]CountryFillWithYear, error) {
+// 	reMetadata := regexp.MustCompile(`(?is)<metadata\b[^>]*>.*?</metadata>`)
+// 	metadataBlocks := reMetadata.FindAllString(content, -1)
+// 	if len(metadataBlocks) == 0 {
+// 		return nil, fmt.Errorf("metadata tag not found")
 // 	}
-//
-// 	results, err := owidparser.GenerateImages(config, title, endYear, dataPath, metadataPath, fileinfo.FilePath, mapDir)
-// 	if err != nil {
-// 		return err
-// 	}
-//
-// 	for i := range *results {
-// 		if task.Status != models.TaskStatusProcessing {
-// 			break
-// 		}
-// 		processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, "", (*results)[i].Year, chartParams)
-// 	}
-// 	// for year := startYear; year <= endYear; year++ {
-// 	// 	if task.Status == models.TaskStatusFailed {
-// 	// 		break
-// 	// 	}
-// 	// 	processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, "", year)
-// 	// }
-//
-// 	task.Reload()
-// 	if task.Status == models.TaskStatusProcessing {
-// 		// Attach country data to the first file metadata on commons
-// 		metadata, err := getRegionFileMetadata(task, region)
+
+// 	var fallback []CountryFillWithYear
+// 	var lastParseErr error
+
+// 	for _, metadataBlock := range metadataBlocks {
+// 		metadata, err := parseSVGMetadataBlock(metadataBlock)
 // 		if err != nil {
-// 			fmt.Println("Error generating metadata: ", err)
-// 		} else if metadata != "" {
-// 			// fmt.Println("GOT METADATA, YAAAAAAAAAAY: ", metadata)
-// 			fmt.Println("GOT METADATA, YAAAAAAAAAAY")
-// 			err := processRegionYearNewFlow(user, task, data, token, region, title, chartName, mapDir, metadata, startYear, chartParams)
-// 			if err != nil {
-// 				fmt.Println("Error uploading with metadata: ", err)
-// 			}
+// 			lastParseErr = err
+// 			continue
+// 		}
+
+// 		parsedData := flattenSVGMetadata(metadata)
+// 		if metadata.ID == "country-data" {
+// 			return parsedData, nil
+// 		}
+
+// 		if len(parsedData) > 0 && fallback == nil {
+// 			fallback = parsedData
 // 		}
 // 	}
-//
-// 	return nil
+
+// 	if fallback != nil {
+// 		return fallback, nil
+// 	}
+
+// 	if lastParseErr != nil {
+// 		return nil, fmt.Errorf("error parsing metadata: %w", lastParseErr)
+// 	}
+
+// 	return nil, fmt.Errorf("metadata tag does not contain country data")
 // }
 
-func processRegionYear(browser *rod.Browser, user *models.User, task *models.Task, token, chartName, title, region string, chartParams map[string]string, downloadPath string, year string, data StartData, fileMetadata string) error {
-	var err error
-	var taskProcess *models.TaskProcess
-	// Try to find existing process, otherwise create one
-	existingTB, err := models.FindTaskProcessByTaskRegionDate(region, year, task.ID)
-	if existingTB != nil {
-		if existingTB.Status != models.TaskProcessStatusFailed && fileMetadata == "" {
-			// Not in a retry, skip
-			// existingTB.Status = models.TaskProcessStatusSkipped
-			// existingTB.Update()
-			// utils.SendWSTaskProcess(task.ID, existingTB)
-			return nil
-		}
-		existingTB.Status = models.TaskProcessStatusProcessing
-		if err := existingTB.Update(); err != nil {
-			fmt.Println("Error updating task process to processing")
-		}
-		taskProcess = existingTB
-	} else {
-		taskProcess, err = models.NewTaskProcess(region, year, "", models.TaskProcessStatusProcessing, models.TaskProcessTypeMap, task.ID)
-		if err != nil {
-			return err
+func parseSVGMetadataBlock(metadataBlock string) (svgCountryDataMetadata, error) {
+	var metadata svgCountryDataMetadata
+	if err := xml.Unmarshal([]byte(metadataBlock), &metadata); err != nil {
+		return metadata, err
+	}
+
+	return metadata, nil
+}
+
+func flattenSVGMetadata(metadata svgCountryDataMetadata) []CountryFillWithYear {
+	result := make([]CountryFillWithYear, 0)
+	for _, year := range metadata.Years {
+		for _, country := range year.Countries {
+			result = append(result, CountryFillWithYear{
+				Country: country.Name,
+				Fill:    country.Fill,
+				Year:    year.Value,
+			})
 		}
 	}
 
-	utils.SendWSTaskProcess(task.ID, taskProcess)
-	// utils.SendWSProgress(session, taskProcess)
-
-	// control := l.Set("--no-sandbox").Headless(false).MustLaunch()
-	url := ""
-	if region == "World" {
-		// World chart has no region parameter
-		url = fmt.Sprintf("%s%s?time=%s&tab=map", constants.OWID_BASE_URL, chartName, year)
-	} else {
-		url = fmt.Sprintf("%s%s?region=%s&time=%s&tab=map", constants.OWID_BASE_URL, chartName, region, year)
-	}
-	if task.ChartParameters != "" {
-		url = fmt.Sprintf("%s&%s", url, task.ChartParameters)
-	}
-
-	regionStr := region
-	if regionStr == "NorthAmerica" {
-		regionStr = "North America"
-	}
-	if regionStr == "SouthAmerica" {
-		regionStr = "South America"
-	}
-
-	var filename string
-	for i := 0; i <= constants.RETRY_COUNT; i++ {
-		err = rod.Try(func() {
-			if err = downloadChartFile(browser, url, downloadPath); err != nil {
-				panic(err)
-			}
-
-			replaceData := ReplaceVarsData{
-				Url:      data.Url,
-				Title:    title,
-				Region:   regionStr,
-				Year:     year,
-				FileName: GetFileNameFromChartName(chartName),
-				Comment:  "Importing from " + data.Url,
-				Params:   chartParams,
-			}
-
-			fileInfo, err := getFileInfo(downloadPath)
-			if err != nil {
-				panic(err)
-			}
-			lowerCaseContent := strings.ToLower(string(fileInfo.File))
-			if strings.Contains(lowerCaseContent, "missing map column") {
-				os.Remove(fileInfo.FilePath)
-				panic(fmt.Sprintf("Missing map column %s %s %s, retrying", replaceData.Region, replaceData.Year, replaceData.FileName))
-			}
-
-			if fileMetadata != "" {
-				if err := InjectMetadataIntoSVGSameFile(fileInfo.FilePath, fileMetadata); err != nil {
-					fmt.Println("Error injecting metadata into svg: ", err)
-				} else {
-					replaceData.Comment = "Importing from " + data.Url + " with metadata"
-				}
-			}
-
-			Filename, status, err := uploadMapFile(user, token, replaceData, downloadPath, data)
-			if err != nil {
-				fmt.Println("Error processing", region, year)
-				panic(err)
-			}
-			filename = Filename
-
-			// Save the countries fill data
-			countryFlls, err := svgprocessor.ExtractCountryFills(fileInfo.FilePath)
-			if err != nil {
-				fmt.Println("Error extracting country fills ", err)
-			} else {
-				jsonStr, err := svgprocessor.ConvertToJSON(countryFlls)
-				if jsonStr != "" && err == nil {
-					taskProcess.FillData = jsonStr
-					taskProcess.Update()
-				}
-			}
-
-			switch status {
-			case "skipped":
-				taskProcess.Status = models.TaskProcessStatusSkipped
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
-			case "description_updated":
-				taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
-			case "overwritten":
-				taskProcess.Status = models.TaskProcessStatusOverwritten
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
-			case "uploaded":
-				taskProcess.Status = models.TaskProcessStatusUploaded
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
-			}
-		})
-
-		if err != nil {
-			fmt.Println(year, "timeout waiting for start marker", err)
-			if i == constants.RETRY_COUNT {
-				taskProcess.Status = models.TaskProcessStatusFailed
-			} else {
-				taskProcess.Status = models.TaskProcessStatusRetrying
-			}
-			taskProcess.Update()
-			utils.SendWSTaskProcess(task.ID, taskProcess)
-		} else {
-			err = nil
-			break
-		}
-	}
-
-	if err := models.UpdateTaskLastOperationAt(task.ID); err != nil {
-		fmt.Println("Error updating task last operation at ", task.ID, err)
-	}
-
-	if err != nil {
-		taskProcess.Status = models.TaskProcessStatusFailed
-		err2 := taskProcess.Update()
-		utils.SendWSTaskProcess(task.ID, taskProcess)
-		if err2 != nil {
-			fmt.Println("Error saving task process update: ", err)
-		}
-
-		return err
-	}
-
-	// taskProcess.Status = models.TaskProcessStatusDone
-	taskProcess.FileName = filename
-	err2 := taskProcess.Update()
-	if err2 != nil {
-		fmt.Println("Error saving task process update: ", err)
-	}
-
-	utils.SendWSTaskProcess(task.ID, taskProcess)
-	return nil
+	return result
 }
 
 // InjectMetadataIntoSVGSameFile injects metadata into an SVG file by modifying and overwriting it

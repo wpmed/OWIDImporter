@@ -1,33 +1,13 @@
 import { Box, Button, Checkbox, InputAdornment, Radio, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
-import { DescriptionOverwriteBehaviour, MapImporterFormItem, SelectedParameter } from "../types"
+import { MapImporterFormItem, SelectedParameter } from "../types"
 import { CategoriesSearchInput } from "./CategoriesSearchInput";
 import { useDebounce } from "use-debounce";
 import { useCallback, useEffect, useState } from "react";
 import { ChartInfo, getChartParameters } from "../request/request";
 import { Delete } from "@mui/icons-material";
-import { CHART_INFO_CHART, CHART_INFO_MAP, COMMONS_TEMPLATE_PREFIX, INITIAL_CATEGORIES_CHART, INITIAL_CATEGORIES_MAP, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX, URL_PLACEHOLDER } from "../constants";
+import { CHART_INFO_CHART, CHART_INFO_MAP, COMMONS_TEMPLATE_PREFIX, COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS, DESCRIPTION_OVERWRITE_OPTIONS, INITIAL_CATEGORIES_CHART, INITIAL_CATEGORIES_MAP, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX, URL_PLACEHOLDER } from "../constants";
 import { searchPageExists } from "../request/commons";
 import { FieldLoading } from "./FieldLoader";
-
-export const DESCRIPTION_OVERWRITE_OPTIONS = [
-  {
-    value: DescriptionOverwriteBehaviour.ALL,
-    title: "Overwrite full description",
-    description: "Overwrite the full description of the file (if already exists) with the new description.",
-  },
-  {
-    value: DescriptionOverwriteBehaviour.ALL_EXCEPT_CATEGORIES,
-    title: "Overwrite description except the categories",
-    description: "Old categories are retained, any new categories in the new description are discarded/skipped. If the file doesn't already exist, categories in the new description are added.",
-  },
-  {
-    value: DescriptionOverwriteBehaviour.ONLY_FILE,
-    title: "Only upload file",
-    description: "Don't update the description, only upload the file.",
-  }
-]
-
-
 
 export interface MapImporterFormProps {
   disabled: boolean
@@ -378,7 +358,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
                       <Typography>
                         If a file with the same name exists:
                       </Typography>
-                      {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
+                      {COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
                         <Stack spacing={1} key={`country-${option.value}`}>
                           <Stack direction={"row"} alignItems={"flex-start"}>
                             <Radio disabled={disabled} checked={value.countryDescriptionOverwriteBehaviour == option.value} onClick={() => handleChange("countryDescriptionOverwriteBehaviour", option.value)} />

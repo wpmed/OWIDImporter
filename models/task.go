@@ -37,6 +37,7 @@ const (
 	DescriptionOverwriteBehaviourAll              = "all"
 	DescriptionOverwriteBehaviourExceptCategories = "all_except_categories"
 	DescriptionOverwriteBehaviourOnlyFile         = "only_file"
+	DescriptionOverwriteBehaviourSkip             = "skip"
 )
 
 type Task struct {

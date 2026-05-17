@@ -453,3 +453,23 @@ func SplitSlice[T any](slice []T, numChunks int) [][]T {
 
 	return result
 }
+
+func DiffSliceBy[A any, K comparable](a []A, b []A, keyFn func(A) K) []A {
+	bKeys := make(map[K]struct{}, len(b))
+
+	for _, item := range b {
+		bKeys[keyFn(item)] = struct{}{}
+	}
+
+	result := make([]A, 0)
+
+	for _, item := range a {
+		key := keyFn(item)
+
+		if _, exists := bKeys[key]; !exists {
+			result = append(result, item)
+		}
+	}
+
+	return result
+}

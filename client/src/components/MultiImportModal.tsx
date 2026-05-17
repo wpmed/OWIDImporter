@@ -1,6 +1,6 @@
-import { Box, Button, CircularProgress, Modal, Stack, Typography } from "@mui/material"
+import { Box, Button, CircularProgress, Modal, Radio, Stack, Typography } from "@mui/material"
 import { useCallback, useMemo, useState } from "react";
-import { COMMONS_TEMPLATE_PREFIX, generateBlankImport, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX } from "../constants";
+import { COMMONS_TEMPLATE_PREFIX, DESCRIPTION_OVERWRITE_OPTIONS, generateBlankImport, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX } from "../constants";
 import { getChartParameters } from "../request/request";
 import pLimit from 'p-limit';
 import { CheckCircle, Close as CloseIcon } from "@mui/icons-material";
@@ -35,6 +35,7 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
   const [links, setLinks] = useState("");
   const [processedLinks, setProcessedLinks] = useState<ProcessingLink[]>([]);
   const [loading, setLoading] = useState(false);
+  const [descriptionOverwriteBehaviour, setDescriptionOverwriteBehaviour] = useState(DESCRIPTION_OVERWRITE_OPTIONS[0].value);
   const handleOpen = useCallback(() => setOpen(true), [setOpen]);
   const handleClose = useCallback(() => {
     setOpen(false);
@@ -92,6 +93,7 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
 
           imp.linkVerified = true;
           imp.url = url;
+          imp.descriptionOverwriteBehaviour = descriptionOverwriteBehaviour;
 
           if (result) {
             if (result.info.singleImage) {
@@ -202,7 +204,7 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
       .finally(() => {
         setLoading(false);
       })
-  }, [linksArray, setLoading, setProcessedLinks, onAdd, handleClose])
+  }, [descriptionOverwriteBehaviour, linksArray, setLoading, setProcessedLinks, onAdd, handleClose])
 
   return (
     <>
@@ -244,6 +246,34 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
                     )}
                   </Stack>
                 ))}
+              </Stack>
+            </Stack>
+            <Stack spacing={4}>
+              <Stack spacing={1}>
+                <Typography>
+                  If a file with the same name exists:
+                </Typography>
+                {loading ? (
+                  <Typography>
+                    {DESCRIPTION_OVERWRITE_OPTIONS.filter(o => o.value === descriptionOverwriteBehaviour)[0]?.title}
+                  </Typography>
+                ) : (
+                  <>
+                    {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
+                      <Stack spacing={1} key={option.value}>
+                        <Stack direction={"row"} alignItems={"flex-start"}>
+                          <Radio disabled={disabled} checked={descriptionOverwriteBehaviour == option.value} onClick={() => setDescriptionOverwriteBehaviour(option.value)} />
+                          <Box>
+                            <Typography>
+                              {option.title}
+                            </Typography>
+                            <Typography variant="subtitle2">{option.description}</Typography>
+                          </Box>
+                        </Stack>
+                      </Stack>
+                    ))}
+                  </>
+                )}
               </Stack>
             </Stack>
             <Stack justifyContent="flex-end" flexDirection="row">

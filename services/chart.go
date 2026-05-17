@@ -28,20 +28,24 @@ func uploadCountryChart(user *models.User, token *string, replaceData ReplaceVar
 	newFileName := strings.TrimSpace("File:" + replaceVars(data.FileName, replaceData))
 	titles, err := SearchPageWithPrefix(user, searchFileName)
 	if err == nil && len(titles) > 0 {
-		fmt.Println("============ FOUND FILE WITH OLD PREFIX: ", titles)
-		existingTitle := titles[0]
-		if !strings.EqualFold(strings.TrimSpace(newFileName), strings.TrimSpace(existingTitle)) {
-			//  strings.ToLower(strings.TrimSpace(newFileName)) != strings.ToLower(strings.TrimSpace(existingTitle))
-			// Move the page to the newFileName
-			fmt.Println("============== MOVING TO THE NEW NAME", newFileName)
-			if err := MovePage(user, *token, existingTitle, newFileName); err != nil {
-				fmt.Println("Error moving country page from old title to new title", existingTitle, newFileName, err)
-			} else {
-				fmt.Println("============ Moved From: ", existingTitle, " to: ", newFileName)
-			}
-			time.Sleep(time.Second * 2)
-		}
+		fmt.Println("============ MATCHED FILES WITH OLD PREFIX: ", titles)
+		for _, title := range titles {
+			existingTitle := title
+			newFileNameTrimmed := strings.ToLower(strings.TrimSpace(newFileName))
+			existingTitleTrimmed := strings.ToLower(strings.TrimSpace(existingTitle))
 
+			if !strings.EqualFold(newFileNameTrimmed, existingTitleTrimmed) && strings.HasSuffix(existingTitleTrimmed, fmt.Sprintf("%s.svg", strings.ToLower(replaceData.Region))) {
+				// Move the page to the newFileName
+				fmt.Println("============== MOVING TO THE NEW NAME", newFileName)
+				if err := MovePage(user, *token, existingTitle, newFileName); err != nil {
+					fmt.Println("Error moving country page from old title to new title", existingTitle, newFileName, err)
+				} else {
+					fmt.Println("============ Moved From: ", existingTitle, " to: ", newFileName)
+				}
+				time.Sleep(time.Second * 2)
+				break
+			}
+		}
 	}
 
 	filename, status, err := uploadMapFile(user, *token, replaceData, countryDownloadPath, data)
@@ -75,7 +79,7 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 
 	for token == "" {
 		time.Sleep(time.Second)
-		fmt.Println("Waiting for token")
+		// fmt.Println("Waiting for token")
 	}
 
 	url := utils.AttachQueryParamToUrl(task.URL, fmt.Sprintf("tab=map"))
@@ -197,8 +201,6 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 
 	fmt.Println("================== Processing country: ", url)
 
-	// TODO: Handle charts where sidebar is closed by default
-
 	// Go to url
 	// Click on line/chart tab
 	//
@@ -299,7 +301,7 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 
 			fmt.Println("Items length", len(selectedItems), selectedItems[0])
 			selectedItems[0].MustClick()
-			fmt.Println("Clicked on item to deselect", selectedItems[0].MustText())
+			// fmt.Println("Clicked on item to deselect", selectedItems[0].MustText())
 			time.Sleep(time.Millisecond * 200)
 			selectedItemCounter = selectedItemCounter + 1
 		}
