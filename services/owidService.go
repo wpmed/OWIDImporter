@@ -848,7 +848,7 @@ func GetMapTemplate(taskId string) (string, error) {
 
 	sliderTemplateText := strings.Builder{}
 	sliderTemplateText.WriteString("{{owidslider\n")
-	sliderTemplateText.WriteString(fmt.Sprintf("|start        = %s\n", endYearStr))
+	sliderTemplateText.WriteString(fmt.Sprintf("|start        = %s\n", "<!-- defaults to most recent -->"))
 	sliderTemplateText.WriteString(fmt.Sprintf("|list         = %s#gallery\n", task.CommonsTemplateName))
 	sliderTemplateText.WriteString("|location      = commons\n")
 	sliderTemplateText.WriteString("|caption      =\n")
