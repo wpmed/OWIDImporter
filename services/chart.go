@@ -17,11 +17,11 @@ import (
 )
 
 func uploadCountryChart(user *models.User, token *string, replaceData ReplaceVarsData, countryDownloadPath string, data StartData) (string, string, error) {
-	oldFileNameFormatMatcher := "$NAME, $START_YEAR to $REGION.svg"
+	oldFileNameFormatMatcher := "$NAME, $START_YEAR $REGION.svg"
 	/**
 		Check if the country graph was uploaded before with a past year (year != endYear)
 		Old files had the format "$NAME, $START_YEAR to $END_YEAR, $REGION.svg"
-		We will search by "$NAME, $START_YEAR to $REGION.svg"
+		We will search by "$NAME, $START_YEAR $REGION.svg"
 		$END_YEAR is excluded as it might have changed
 	**/
 	searchFileName := strings.TrimSpace("File:" + replaceVars(oldFileNameFormatMatcher, replaceData))
@@ -33,8 +33,44 @@ func uploadCountryChart(user *models.User, token *string, replaceData ReplaceVar
 			existingTitle := title
 			newFileNameTrimmed := strings.ToLower(strings.TrimSpace(newFileName))
 			existingTitleTrimmed := strings.ToLower(strings.TrimSpace(existingTitle))
+			/**
+				Check if not the same file
+			**/
+			sameFileName := strings.EqualFold(newFileNameTrimmed, existingTitleTrimmed)
+			hasRegionSuffix := strings.HasSuffix(existingTitleTrimmed, fmt.Sprintf("%s.svg", strings.ToLower(replaceData.Region)))
+			hasSameChartTitle := strings.Contains(existingTitleTrimmed, strings.ToLower(replaceData.FileName))
+			hasStartingYear := strings.Contains(existingTitleTrimmed, strings.ToLower(replaceData.StartYear))
+			if !sameFileName && hasRegionSuffix && hasSameChartTitle && hasStartingYear {
+				fmt.Println("Move: Not same file name, has region suffix, has same chart title, has starting year")
+				// Check if it's an OWID file by checking for "Uploaded by OWID Importer tool" category
+				pageText, err := getPageWikiText(user, title)
+				if err != nil {
+					fmt.Println("Move: Error getting move title wikitext", title, err)
+					continue
+				}
 
-			if !strings.EqualFold(newFileNameTrimmed, existingTitleTrimmed) && strings.HasSuffix(existingTitleTrimmed, fmt.Sprintf("%s.svg", strings.ToLower(replaceData.Region))) {
+				lowercasePageText := strings.ToLower(pageText)
+				hasOwidCategory := strings.Contains(lowercasePageText, "category:uploaded by owid importer tool")
+				if !hasOwidCategory {
+					fmt.Println("Move: doesn't have owid category, skipping")
+					continue
+				}
+				fmt.Println("Move: have owid category Category:uploaded by owid importer")
+
+				// Check if it has the chart url in the wikitext
+				chartUrlParts := strings.Split(replaceData.Url, "?")
+				if len(chartUrlParts) == 0 {
+					fmt.Println("Move: can't get chart url, skipping for safety")
+					continue
+				}
+
+				hasChartUrl := strings.Contains(lowercasePageText, strings.ToLower(chartUrlParts[0]))
+				if !hasChartUrl {
+					fmt.Println("Move: doesn't have owid chart url, skipping")
+					continue
+				}
+				fmt.Println("Move: have chart url", chartUrlParts[0])
+
 				// Move the page to the newFileName
 				fmt.Println("============== MOVING TO THE NEW NAME", newFileName)
 				if err := MovePage(user, *token, existingTitle, newFileName); err != nil {

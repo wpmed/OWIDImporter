@@ -286,10 +286,10 @@ func SearchPageWithPrefix(user *models.User, title string) ([]string, error) {
 	return titles, nil
 }
 
-func getFileWikiText(user *models.User, filename string) (string, error) {
+func getPageWikiText(user *models.User, title string) (string, error) {
 	res, err := utils.DoApiReq[FileRevisionsResponse](user, map[string]string{
 		"action":  "query",
-		"titles":  "File:" + filename,
+		"titles":  title,
 		"prop":    "revisions",
 		"rvprop":  "content",
 		"rvlimit": "1",
@@ -310,6 +310,10 @@ func getFileWikiText(user *models.User, filename string) (string, error) {
 	}
 
 	return "", nil
+}
+
+func getFileWikiText(user *models.User, filename string) (string, error) {
+	return getPageWikiText(user, "File:"+filename)
 }
 
 func extractCategories(wikitext string) []string {

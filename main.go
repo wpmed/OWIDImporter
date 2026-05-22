@@ -104,7 +104,7 @@ func monitorQueuedTasks() {
 			go func() {
 				switch task.Type {
 				case models.TaskTypeMap:
-					fmt.Println("Action message map", task)
+					fmt.Println("Action message map", task.URL)
 					err := services.StartMap(task.ID, user, services.StartData{
 						Url:                                  task.URL,
 						FileName:                             task.FileName,
