@@ -7,17 +7,19 @@ import (
 )
 
 type EnvVariables struct {
-	OWID_UA              string
-	OWID_OAUTH_TOKEN     string
-	OWID_OAUTH_SECRET    string
-	OWID_OAUTH_INITIATE  string
-	OWID_OAUTH_AUTH      string
-	OWID_OAUTH_TOKEN_URL string
-	OWID_MW_API          string
-	OWID_DEBUG           bool
-	OWID_ENV             string
-	OWID_ENCRYPTION_KEY  string
-	OWID_ROD_BROWSER_DIR string
+	OWID_UA                string
+	OWID_OAUTH_TOKEN       string
+	OWID_OAUTH_SECRET      string
+	OWID_OAUTH_INITIATE    string
+	OWID_OAUTH_AUTH        string
+	OWID_OAUTH_TOKEN_URL   string
+	OWID_MW_API            string
+	OWID_DEBUG             bool
+	OWID_ENV               string
+	OWID_ENCRYPTION_KEY    string
+	OWID_ROD_BROWSER_DIR   string
+	OWID_CLIENT_BUILD_PATH string
+	OWID_DB_DIR            string
 }
 
 func GetEnv() EnvVariables {
@@ -72,20 +74,33 @@ func GetEnv() EnvVariables {
 
 	rodBrowserDir := os.Getenv("OWID_ROD_BROWSER_DIR")
 	if rodBrowserDir == "" {
-		fmt.Println("Warning: OWID_ROD_BROWSER_DIR environment variable is not set. Using environment default")
+		// fmt.Println("Warning: OWID_ROD_BROWSER_DIR environment variable is not set. Using environment default")
+	}
+
+	owidClientBuildPath := os.Getenv("OWID_CLIENT_BUILD_PATH")
+	if owidClientBuildPath == "" {
+		panic("OWID_CLIENT_BUILD_PATH environment variable is required")
+	}
+
+	owidDBDir := os.Getenv("OWID_DB_DIR")
+	if owidClientBuildPath == "" {
+		fmt.Println("OWID_DB_DIR environment variable is not available, defaulting to .")
+		owidDBDir = "."
 	}
 
 	return EnvVariables{
-		OWID_UA:              userAgent,
-		OWID_OAUTH_TOKEN:     oauthToken,
-		OWID_OAUTH_SECRET:    oauthSecret,
-		OWID_OAUTH_INITIATE:  oauthInitiate,
-		OWID_OAUTH_AUTH:      oauthAuth,
-		OWID_OAUTH_TOKEN_URL: oauthTokenUrl,
-		OWID_MW_API:          mwApi,
-		OWID_DEBUG:           OWID_DEBUG,
-		OWID_ENV:             owidEnv,
-		OWID_ENCRYPTION_KEY:  owidEncKey,
-		OWID_ROD_BROWSER_DIR: rodBrowserDir,
+		OWID_UA:                userAgent,
+		OWID_OAUTH_TOKEN:       oauthToken,
+		OWID_OAUTH_SECRET:      oauthSecret,
+		OWID_OAUTH_INITIATE:    oauthInitiate,
+		OWID_OAUTH_AUTH:        oauthAuth,
+		OWID_OAUTH_TOKEN_URL:   oauthTokenUrl,
+		OWID_MW_API:            mwApi,
+		OWID_DEBUG:             OWID_DEBUG,
+		OWID_ENV:               owidEnv,
+		OWID_ENCRYPTION_KEY:    owidEncKey,
+		OWID_ROD_BROWSER_DIR:   rodBrowserDir,
+		OWID_CLIENT_BUILD_PATH: owidClientBuildPath,
+		OWID_DB_DIR:            owidDBDir,
 	}
 }

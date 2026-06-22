@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/wpmed-videowiki/OWIDImporter/env"
 )
 
 type WebsocketActionMessage struct {
@@ -12,11 +13,10 @@ type WebsocketActionMessage struct {
 	Content string `json:"content"`
 }
 
-const CLIENT_BUILD_PATH = "/workspace/client/dist"
-
 var upgrader = websocket.Upgrader{} // use default options
 
 func BuildRoutes() *gin.Engine {
+	clientBuildPath := env.GetEnv().OWID_CLIENT_BUILD_PATH
 	router := gin.Default()
 	// router.LoadHTMLGlob("routes/templates/*")
 
@@ -45,7 +45,7 @@ func BuildRoutes() *gin.Engine {
 	router.POST("/chart/parameters", GetChartParameters)
 	router.POST("/chart/parameters/multi", GetMultiChartParameters)
 
-	router.Static("/assets", filepath.Join(CLIENT_BUILD_PATH, "assets"))
+	router.Static("/assets", filepath.Join(clientBuildPath, "assets"))
 	// Handle SPA routing
 	router.NoRoute(func(c *gin.Context) {
 		// Don't handle API routes with this middleware
@@ -55,7 +55,7 @@ func BuildRoutes() *gin.Engine {
 		// }
 
 		// Serve the index.html for any other route to handle SPA routing
-		c.File(filepath.Join(CLIENT_BUILD_PATH, "index.html"))
+		c.File(filepath.Join(clientBuildPath, "index.html"))
 	})
 
 	return router
