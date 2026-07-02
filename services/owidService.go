@@ -850,12 +850,12 @@ func GetMapTemplate(taskId string) (string, error) {
 	sliderTemplateText.WriteString("{{owidslider\n")
 	sliderTemplateText.WriteString(fmt.Sprintf("|start        = %s\n", "<!-- defaults to most recent -->"))
 	sliderTemplateText.WriteString(fmt.Sprintf("|list         = %s#gallery\n", task.CommonsTemplateName))
-	sliderTemplateText.WriteString("|location      = commons\n")
+	sliderTemplateText.WriteString("|location      = <!-- defaults to commons -->\n")
 	sliderTemplateText.WriteString("|caption      =\n")
 	sliderTemplateText.WriteString("|title        =\n")
-	sliderTemplateText.WriteString("|language     =\n")
+	sliderTemplateText.WriteString("|language     = <!-- defaults to local language -->\n")
 	sliderTemplateText.WriteString(fmt.Sprintf("|file         = [[File:%s|link=|thumb|upright=1.6|%s]]\n", endFileName, strings.ReplaceAll(task.CommonsTemplateName, "Template:OWID/", "")))
-	sliderTemplateText.WriteString("|startingView = World\n")
+	sliderTemplateText.WriteString("|startingView = <!-- defaults to World -->\n")
 	sliderTemplateText.WriteString("}}\n")
 
 	wikiText := strings.Builder{}
