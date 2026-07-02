@@ -83,7 +83,7 @@ func GetEnv() EnvVariables {
 	}
 
 	owidDBDir := os.Getenv("OWID_DB_DIR")
-	if owidClientBuildPath == "" {
+	if owidDBDir == "" {
 		fmt.Println("OWID_DB_DIR environment variable is not available, defaulting to .")
 		owidDBDir = "."
 	}
