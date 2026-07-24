@@ -2,14 +2,17 @@ package services
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"html"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -598,6 +601,77 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 	}
 
 	return &chartInfo, err
+}
+
+func GetChartCountryYearsDataList(url string) (map[string][]time.Time, error) {
+	newUrl := url
+	urlParts := strings.Split(url, "?")
+
+	newUrl = fmt.Sprintf("%s%s", urlParts[0], ".csv")
+	if len(urlParts) > 1 {
+		for i, part := range urlParts {
+			if i == 0 {
+				continue
+			}
+			newUrl = fmt.Sprintf("%s?%s", newUrl, part)
+		}
+	}
+
+	resp, err := http.Get(newUrl)
+	if err != nil {
+		return nil, fmt.Errorf("fetching csv: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %s", resp.Status)
+	}
+
+	r := csv.NewReader(resp.Body)
+	r.ReuseRecord = true
+
+	// Read header and locate the columns we need.
+	header, err := r.Read()
+	if err != nil {
+		return nil, fmt.Errorf("reading header: %w", err)
+	}
+
+	codeIdx, yearIdx := -1, -1
+	for i, name := range header {
+		switch name {
+		case "Code":
+			codeIdx = i
+		case "Year":
+			yearIdx = i
+		}
+	}
+	if codeIdx == -1 || yearIdx == -1 {
+		return nil, fmt.Errorf("missing Code or Year column in header: %v", header)
+	}
+
+	result := make(map[string][]time.Time)
+	for {
+		record, err := r.Read()
+		if err != nil {
+			break // io.EOF or a parse error ends the loop
+		}
+		code := record[codeIdx]
+		if code == "" {
+			continue // some rows (e.g. regions) have no code
+		}
+		date, err := utils.ParseDate(record[yearIdx])
+		if err != nil {
+			fmt.Println("Error parsing date: ", record[yearIdx], err)
+		} else {
+			result[code] = append(result[code], date)
+		}
+	}
+
+	for code := range result {
+		slices.SortFunc(result[code], func(a, b time.Time) int { return a.Compare(b) })
+	}
+
+	return result, nil
 }
 
 func TestDownloadPage(page *rod.Page) (bool, error) {
@@ -1409,9 +1483,10 @@ func processRegion(user *models.User, task *models.Task, chartName string, regio
 }
 
 type CountryFillWithYear struct {
-	Country string
-	Fill    string
-	Year    string
+	Country    string
+	Fill       string
+	Year       string
+	ActualYear string
 }
 
 type svgCountryDataMetadata struct {
@@ -1431,36 +1506,20 @@ type svgCountryDataCountry struct {
 }
 
 func getRegionFills(task *models.Task, region string) (*[]CountryFillWithYear, error) {
+	url := utils.AttachQueryParamToUrl(task.URL, "tab=map")
+
+	if task.ChartParameters != "" {
+		url = utils.AttachQueryParamToUrl(url, task.ChartParameters)
+	}
+
+	data, err := GetChartCountryYearsDataList(url)
+	if err != nil {
+		fmt.Println("Error getting chart country year data list: ", err)
+	}
+
 	taskProcesses, err := models.FindTaskProcessesByTaskIdAndRegion(task.ID, region)
 	if err != nil {
 		return nil, err
-	}
-
-	metadata := make([]CountryFillWithYear, 0)
-	for _, tp := range taskProcesses {
-		if tp.FillData != "" {
-			countriesData, err := svgprocessor.ParseJSONString(tp.FillData)
-			if err != nil {
-				fmt.Println("Error parsing countries fillData", tp, err)
-				continue
-			}
-			for _, countryData := range countriesData {
-				metadata = append(metadata, CountryFillWithYear{
-					Country: countryData.Country,
-					Fill:    countryData.Fill,
-					Year:    tp.Date,
-				})
-			}
-		}
-	}
-
-	return &metadata, nil
-}
-
-func getRegionFileMetadata(task *models.Task, region string) (string, error) {
-	taskProcesses, err := models.FindTaskProcessesByTaskIdAndRegion(task.ID, region)
-	if err != nil {
-		return "", err
 	}
 
 	fills := make([]CountryFillWithYear, 0)
@@ -1472,17 +1531,40 @@ func getRegionFileMetadata(task *models.Task, region string) (string, error) {
 				continue
 			}
 			for _, countryData := range countriesData {
-				fills = append(fills, CountryFillWithYear{
+				fill := CountryFillWithYear{
 					Country: countryData.Country,
 					Fill:    countryData.Fill,
 					Year:    tp.Date,
-				})
+				}
+				if !strings.Contains(strings.ToLower(countryData.Fill), "nodata") {
+					if countryCode, hasCode := constants.COUNTRY_CODES[countryData.Country]; hasCode {
+						if dates, ok := data[countryCode]; ok {
+							countryDate, err := utils.ParseDate(tp.Date)
+							if err != nil {
+								fmt.Println("Error parsing countryDate: ", err, tp.Date)
+							} else if idx := utils.NearestIndex(dates, countryDate, 10); idx >= 0 && !dates[idx].Equal(countryDate) {
+								// Substituted: the displayer showed a neighboring date's value.
+								fill.ActualYear = utils.FormatDateLike(dates[idx], tp.Date)
+							}
+						}
+					}
+				}
+				fills = append(fills, fill)
 			}
 		}
 	}
 
+	return &fills, nil
+}
+
+func getRegionFileMetadata(task *models.Task, region string) (string, error) {
+	fills, err := getRegionFills(task, region)
+	if err != nil {
+		return "", err
+	}
+
 	// Convert metadata to SVG metadata element
-	svgContent := generateSVGMetadataFromFills(fills)
+	svgContent := generateSVGMetadataFromFills(*fills)
 	return svgContent, nil
 }
 
@@ -1532,9 +1614,19 @@ func generateSVGMetadataFromFills(metadata []CountryFillWithYear) string {
 
 		// Add countries for this year
 		for _, data := range countriesForYear {
-			svgBuilder.WriteString(fmt.Sprintf(`      <country name="%s" fill="%s" />`,
-				html.EscapeString(data.Country),
-				html.EscapeString(data.Fill)))
+			if data.ActualYear == "" {
+				svgBuilder.WriteString(fmt.Sprintf(`      <country name="%s" fill="%s" />`,
+					html.EscapeString(data.Country),
+					html.EscapeString(data.Fill)))
+			} else {
+				svgBuilder.WriteString(fmt.Sprintf(`      <country name="%s" fill="%s" actual="%s" />`,
+					html.EscapeString(data.Country),
+					html.EscapeString(data.Fill),
+					html.EscapeString(data.ActualYear),
+				),
+				)
+
+			}
 			svgBuilder.WriteString("\n")
 		}
 
