@@ -41,6 +41,14 @@ func BuildRoutes() *gin.Engine {
 	router.GET("/task/:id", GetTask)
 	router.PUT("/task/:id/archived", ArchiveTask)
 
+	// Operations
+	router.GET("/operation", GetOperations)
+	router.POST("/operation", CreateOperation)
+	router.GET("/operation/:id", GetOperation)
+	router.POST("/operation/:id/retry", RetryOperation)
+	router.POST("/operation/:id/cancel", CancelOperation)
+	router.PUT("/operation/:id/archived", ArchiveOperation)
+
 	// Chart related info
 	router.POST("/chart/parameters", GetChartParameters)
 	router.POST("/chart/parameters/multi", GetMultiChartParameters)

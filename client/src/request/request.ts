@@ -1,5 +1,5 @@
 import { SESSION_ID_KEY } from "../constants";
-import { DescriptionOverwriteBehaviour, Task, TaskProcess, TaskTypeEnum } from "../types";
+import { DescriptionOverwriteBehaviour, Operation, OperationItem, Task, TaskProcess, TaskTypeEnum } from "../types";
 
 export interface ReplaceSessionResponse {
   sessionId: string,
@@ -239,6 +239,137 @@ export async function deleteTask(id: string) {
   });
 
   const responseData = await response.json() as { task: Task };
+
+  return responseData;
+}
+
+export interface CreateOperationResponse {
+  error?: string,
+  invalid?: string[],
+  operationId?: string
+}
+
+export async function createOperation({ type, pages }: { type: string, pages: string[] }) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+  const response = await fetch(API_BASE + "/operation", {
+    method: "POST",
+    body: JSON.stringify({ type, pages }),
+    headers: {
+      "Content-Type": "application/json",
+      [SESSION_ID_KEY]: sessionId
+    }
+  });
+
+  const responseData = await response.json() as CreateOperationResponse;
+
+  return responseData;
+}
+
+interface FetchOperationsResponse {
+  operations?: Operation[]
+  page: number
+  perPage: number
+  totalPages: number
+  error?: string
+}
+
+interface FetchOperationsRequest {
+  page: number
+  perPage: number
+  archived: number // 0 or 1
+}
+
+export async function fetchOperations({ archived, page, perPage }: FetchOperationsRequest) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+  const params = new URLSearchParams({
+    archived: String(archived),
+    page: String(page),
+    perPage: String(perPage),
+  });
+  const response = await fetch(`${API_BASE}/operation?${params.toString()}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionId ? {
+        [SESSION_ID_KEY]: sessionId
+      } : {})
+    }
+  });
+
+  const responseData = await response.json() as FetchOperationsResponse;
+
+  return responseData;
+}
+
+export interface FetchOperationByIdResponse {
+  operation: Operation,
+  items: OperationItem[],
+  error?: string
+}
+
+export async function fetchOperationById(id: string) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+
+  const response = await fetch(`${API_BASE}/operation/${id}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionId ? {
+        [SESSION_ID_KEY]: sessionId
+      } : {})
+    }
+  });
+
+  const responseData = await response.json() as FetchOperationByIdResponse;
+
+  return responseData;
+}
+
+export async function retryOperation(id: string) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+  const response = await fetch(`${API_BASE}/operation/${id}/retry`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [SESSION_ID_KEY]: sessionId
+    }
+  });
+
+  const responseData = await response.json() as CreateOperationResponse;
+
+  return responseData;
+}
+
+export async function cancelOperation(id: string) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+  const response = await fetch(`${API_BASE}/operation/${id}/cancel`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [SESSION_ID_KEY]: sessionId
+    }
+  });
+
+  const responseData = await response.json() as CreateOperationResponse;
+
+  return responseData;
+}
+
+export async function archiveOperation(id: string, archived: number) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+
+  const response = await fetch(`${API_BASE}/operation/${id}/archived`, {
+    method: "PUT",
+    body: JSON.stringify({ archived }),
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionId ? {
+        [SESSION_ID_KEY]: sessionId
+      } : {})
+    }
+  });
+
+  const responseData = await response.json() as { operation: Operation };
 
   return responseData;
 }

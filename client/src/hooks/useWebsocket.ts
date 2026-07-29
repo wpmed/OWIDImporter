@@ -7,7 +7,9 @@ export enum SocketMessageTypeEnum {
   MSG = "msg",
   ERROR = "error",
   TASK_PROCESS = "task_process",
-  TASK = "task"
+  TASK = "task",
+  OPERATION = "operation",
+  OPERATION_ITEM = "operation_item"
 }
 
 export enum SocketMessageActionEnum {
@@ -16,6 +18,12 @@ export enum SocketMessageActionEnum {
 
   SUBSCRIBE_TASK_LIST = "subscribe_task_list",
   UNSUBSCRIBE_TASK_LIST = "unsubscribe_task_list",
+
+  SUBSCRIBE_OPERATION = "subscribe_operation",
+  UNSUBSCRIBE_OPERATION = "unsubscribe_operation",
+
+  SUBSCRIBE_OPERATION_LIST = "subscribe_operation_list",
+  UNSUBSCRIBE_OPERATION_LIST = "unsubscribe_operation_list",
 }
 
 export interface SocketMessage {
