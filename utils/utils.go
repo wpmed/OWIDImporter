@@ -53,10 +53,10 @@ type UploadedFile struct {
 	Mime     string
 }
 
-func DoApiReq[T any](user *models.User, params map[string]string, file *UploadedFile) (*T, error) {
+func DoApiReqToWiki[T any](user *models.User, params map[string]string, file *UploadedFile, wikiUrl string) (*T, error) {
 	client := GetOAuthClient(user)
 	values := make(url.Values)
-	url := env.GetEnv().OWID_MW_API + "?"
+	url := wikiUrl + "?"
 	for k, v := range params {
 		if k != "token" && k != "text" {
 			values.Set(k, v)
@@ -148,6 +148,10 @@ func DoApiReq[T any](user *models.User, params map[string]string, file *Uploaded
 	return &result, nil
 }
 
+func DoApiReq[T any](user *models.User, params map[string]string, file *UploadedFile) (*T, error) {
+	return DoApiReqToWiki[T](user, params, file, env.GetEnv().OWID_MW_API)
+}
+
 type UserInfo struct {
 	BatchComplete string `json:"batchcomplete"`
 	Query         struct {
@@ -191,6 +195,28 @@ func SendWSTask(task *models.Task) error {
 	}
 	sendWSTaskMessage(task.ID, "task", string(msgJson))
 	sendWSTaskMessage(fmt.Sprintf("%s_task_list", task.UserId), "task", string(msgJson))
+	return nil
+}
+
+func SendWSOperationItem(operationId string, item *models.OperationItem) error {
+	msgJson, err := json.Marshal(item)
+	if err != nil {
+		fmt.Println("Error marshling json", err, item)
+		return err
+	}
+	sendWSTaskMessage(operationId, "operation_item", string(msgJson))
+
+	return nil
+}
+
+func SendWSOperation(operation *models.Operation) error {
+	msgJson, err := json.Marshal(operation)
+	if err != nil {
+		fmt.Println("Error marshling json", err, operation)
+		return err
+	}
+	sendWSTaskMessage(operation.ID, "operation", string(msgJson))
+	sendWSTaskMessage(fmt.Sprintf("%s_operation_list", operation.UserId), "operation", string(msgJson))
 	return nil
 }
 

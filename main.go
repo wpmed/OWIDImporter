@@ -35,6 +35,14 @@ func main() {
 		monitorQueuedTasks()
 	}()
 
+	go func() {
+		monitorStalledOperations()
+	}()
+
+	go func() {
+		monitorQueuedOperations()
+	}()
+
 	// Download browser if not available
 	b := launcher.NewBrowser()
 	fmt.Println("Dir is", b.Dir(), b.RootDir)
@@ -61,6 +69,61 @@ func monitorStalledTasks() {
 			}
 		}
 		time.Sleep(time.Second * 60)
+	}
+}
+
+func monitorStalledOperations() {
+	for {
+		operations, err := models.FindStalledOperations()
+		if operations != nil && len(*operations) > 0 {
+			fmt.Println("Found stalled operations", len(*operations), err)
+			for _, operation := range *operations {
+				operation.Status = models.OperationStatusFailed
+				operation.Update()
+				utils.SendWSOperation(&operation)
+			}
+		}
+		time.Sleep(time.Second * 60)
+	}
+}
+
+func monitorQueuedOperations() {
+	for {
+		time.Sleep(time.Second * 10)
+		count, err := models.FindProcessingOperationsCount()
+		if err != nil {
+			fmt.Println("Error finding processing operations count", err)
+			continue
+		}
+
+		if count < 1 {
+			operation, err := models.FindNextOperationToProcess()
+			if err != nil {
+				fmt.Println("Error finding next operation to process", err)
+				continue
+			}
+			if operation == nil {
+				continue
+			}
+			fmt.Println("Next operation: ", operation.Type, operation.ID)
+
+			user, err := models.FindUserByID(operation.UserId)
+			if err != nil || user == nil {
+				fmt.Println("Can't find user for the operation", operation.ID, err)
+				// Fail the operation to get the next
+				operation.Status = models.OperationStatusFailed
+				operation.Update()
+				utils.SendWSOperation(operation)
+				continue
+			}
+
+			go func() {
+				if err := services.StartOperation(operation.ID, user); err != nil {
+					log.Println("Error starting operation", err)
+				}
+			}()
+		}
+
 	}
 }
 

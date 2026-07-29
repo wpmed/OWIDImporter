@@ -24,4 +24,6 @@ func Init() {
 	initUserTable()
 	initTaskTable()
 	initTaskProcessTable()
+	initOperationTable()
+	initOperationItemTable()
 }

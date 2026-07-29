@@ -62,6 +62,47 @@ export interface Task {
 
 
 
+export enum OperationTypeEnum {
+  UPDATE_DEFAULTS = "update_defaults",
+}
+
+export enum OperationStatusEnum {
+  Queued = "queued",
+  Processing = "processing",
+  Done = "done",
+  Failed = "failed",
+  Cancelled = "cancelled",
+}
+
+export enum OperationItemStatusEnum {
+  Queued = "queued",
+  Processing = "processing",
+  Updated = "updated",
+  Skipped = "skipped",
+  Failed = "failed",
+}
+
+export interface Operation {
+  id: string,
+  userId: string,
+  type: OperationTypeEnum,
+  status: OperationStatusEnum,
+  payload: string,
+  archived: number,
+  lastOperationAt: number,
+  createdAt: number,
+}
+
+export interface OperationItem {
+  id: string,
+  operationId: string,
+  title: string,
+  status: OperationItemStatusEnum,
+  error: string,
+  position: number,
+  createdAt: number,
+}
+
 // Others
 export interface SelectedParameter {
   key: string

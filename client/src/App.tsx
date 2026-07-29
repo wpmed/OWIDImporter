@@ -9,6 +9,7 @@ import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
 import MapIcon from '@mui/icons-material/Map';
+import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 // import ChartIcon from '@mui/icons-material/PieChart';
 
 import { ListItemIcon } from '@mui/material';
@@ -18,9 +19,11 @@ import { useReplaceSession } from './hooks/useReplaceSession';
 import { SESSION_ID_KEY, USERNAME_KEY } from './constants';
 import { Logout } from '@mui/icons-material';
 import { useCallback, useMemo, useState } from 'react';
-import { Task, TaskTypeEnum } from './types';
+import { Operation, Task, TaskTypeEnum } from './types';
 import { logout } from './request/request';
 import { TaskList } from './components/TaskList';
+import { OperationList } from './components/OperationList';
+import { OperationRunner } from './components/OperationRunner';
 
 const drawerWidth = 240;
 
@@ -31,6 +34,9 @@ enum TABS {
   CHART_DETAILS = 3,
   IMPORT_MAP = 4,
   BLANK = 5,
+  OPERATION_LIST = 6,
+  OPERATION_DETAILS = 7,
+  NEW_OPERATION = 8,
 }
 
 const LIST_ITEMS = [
@@ -46,6 +52,11 @@ const LIST_ITEMS = [
     icon: <MapIcon />,
     taskType: TaskTypeEnum.MAP,
   },
+  {
+    id: TABS.OPERATION_LIST,
+    title: "Defaults Cleanup",
+    icon: <CleaningServicesIcon />,
+  },
   // {
   //   id: TABS.CHART_LIST,
   //   title: "Country Chart",
@@ -58,6 +69,7 @@ const LIST_ITEMS = [
 export default function App() {
   const [tab, setTab] = useState(TABS.MAP_LIST);
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [selectedOperationId, setSelectedOperationId] = useState("");
 
   useReplaceSession();
 
@@ -86,6 +98,25 @@ export default function App() {
       setTab(TABS.IMPORT_MAP);
     }, 50)
   }
+
+  const onNewOperationClick = () => {
+    setSelectedOperationId("");
+    setTab(TABS.BLANK);
+    setTimeout(() => {
+      setTab(TABS.NEW_OPERATION);
+    }, 50)
+  }
+
+  const onOperationClick = (operation: Operation) => {
+    setSelectedOperationId(operation.id);
+    setTab(TABS.OPERATION_DETAILS);
+  }
+
+  const onNavigateToOperationList = useCallback(() => {
+    setSelectedOperationId("");
+    setTab(TABS.OPERATION_LIST);
+    window.scrollTo({ left: 0, top: 0 })
+  }, [setTab])
 
   const onTaskClick = (task: Task) => {
     setSelectedTaskId(task.id);
@@ -130,6 +161,7 @@ export default function App() {
                         onNewClick()
                       } else {
                         setSelectedTaskId("");
+                        setSelectedOperationId("");
                         setTab(item.id);
                       }
                     }}
@@ -158,6 +190,10 @@ export default function App() {
               <TaskList taskType={selectedTaskType} onNew={onNewClick} onTaskClick={onTaskClick} />
             ) : [TABS.IMPORT_MAP, TABS.MAP_DETAILS].includes(tab) ? (
               <MapImporter taskId={selectedTaskId} onNavigateToList={onNavigateToList} />
+            ) : tab === TABS.OPERATION_LIST ? (
+              <OperationList onNew={onNewOperationClick} onOperationClick={onOperationClick} />
+            ) : [TABS.NEW_OPERATION, TABS.OPERATION_DETAILS].includes(tab) ? (
+              <OperationRunner operationId={selectedOperationId} onNavigateToList={onNavigateToOperationList} />
             ) : null}
           </Box>
         </>

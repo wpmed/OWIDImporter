@@ -1,4 +1,4 @@
-import { TaskProcessStatusEnum, TaskStatusEnum } from "./types";
+import { OperationItemStatusEnum, OperationStatusEnum, TaskProcessStatusEnum, TaskStatusEnum } from "./types";
 
 export function getStatusColor(status: TaskStatusEnum) {
   switch (status) {
@@ -31,6 +31,37 @@ export function getTaskProcessStatusColor(status: TaskProcessStatusEnum) {
     case TaskProcessStatusEnum.Uploaded:
     case TaskProcessStatusEnum.Skipped:
     case TaskProcessStatusEnum.DescriptionUpdated:
+      return "green"
+    default:
+      return "black"
+  }
+}
+
+export function getOperationStatusColor(status: OperationStatusEnum) {
+  switch (status) {
+    case OperationStatusEnum.Processing:
+      return "blue"
+    case OperationStatusEnum.Failed:
+      return "red"
+    case OperationStatusEnum.Cancelled:
+      return "red"
+    case OperationStatusEnum.Queued:
+      return "black"
+    case OperationStatusEnum.Done:
+      return "green"
+    default:
+      return "black"
+  }
+}
+
+export function getOperationItemStatusColor(status: OperationItemStatusEnum) {
+  switch (status) {
+    case OperationItemStatusEnum.Processing:
+      return "blue"
+    case OperationItemStatusEnum.Failed:
+      return "red"
+    case OperationItemStatusEnum.Updated:
+    case OperationItemStatusEnum.Skipped:
       return "green"
     default:
       return "black"
