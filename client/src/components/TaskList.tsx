@@ -1,5 +1,15 @@
-import { Box, Button, ButtonGroup, FormControl, Grid, InputLabel, MenuItem, Pagination, Select, Stack, TextField } from "@mui/material"
+import { Box, Button, FormControl, Grid, InputAdornment, InputLabel, MenuItem, Pagination, Select, Stack, TextField, ToggleButton, ToggleButtonGroup } from "@mui/material"
 import { Task, TaskStatusEnum, TaskTypeEnum } from "../types"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { archiveTask, fetchTasks, retryFailedTasks } from "../request/request"
+import { TaskListItem } from "./TaskListItem"
+import { Add, Map as MapIcon, Refresh, Search, SearchOff } from "@mui/icons-material"
+import { SocketMessage, SocketMessageActionEnum, useWebsocket } from "../hooks/useWebsocket"
+import { useToast } from "../hooks/useToast"
+import { PageHeader } from "./ui/PageHeader"
+import { EmptyState } from "./ui/EmptyState"
+import { TaskCardSkeleton } from "./ui/TaskCardSkeleton"
+
 const STATUS_OPTIONS: { label: string; value: string }[] = [
   { label: "All", value: "" },
   { label: "Queued", value: TaskStatusEnum.Queued },
@@ -9,11 +19,6 @@ const STATUS_OPTIONS: { label: string; value: string }[] = [
   { label: "Failed", value: TaskStatusEnum.Failed },
   { label: "Cancelled", value: TaskStatusEnum.Cancelled },
 ]
-import { useEffect, useMemo, useRef, useState } from "react"
-import { archiveTask, deleteTask, fetchTasks, retryFailedTasks } from "../request/request"
-import { TaskListItem } from "./TaskListItem"
-import { Refresh } from "@mui/icons-material"
-import { SocketMessage, SocketMessageActionEnum, useWebsocket } from "../hooks/useWebsocket"
 
 interface TaskListProps {
   taskType: TaskTypeEnum
@@ -23,6 +28,7 @@ interface TaskListProps {
 
 export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
   const [archived, setArchived] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -32,6 +38,9 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
   const [status, setStatus] = useState("");
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { ws, connect, disconnect } = useWebsocket();
+  const { showToast } = useToast();
+
+  const filtersActive = search.trim() !== "" || status !== "";
 
   const onToggleTaskArchived = (task: Task) => {
     const newArchived = task.archived === 0 ? 1 : 0;
@@ -47,21 +56,7 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
       })
       .catch(err => {
         console.log("Error updating archive: ", newArchived, err)
-      })
-  }
-
-  const onDeleteTask = (task: Task) => {
-    deleteTask(task.id)
-      .then((res) => {
-        if (res.task) {
-          setTasks((tasks) => {
-            const newTasks = tasks.slice().filter(t => t.id != task.id);
-            return newTasks;
-          });
-        }
-      })
-      .catch(err => {
-        console.log("Error deleting task: ", err)
+        showToast("Failed to update the task", "error")
       })
   }
 
@@ -85,6 +80,7 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
       })
       .catch(err => {
         console.log(err);
+        showToast("Failed to retry tasks", "error")
       })
   }
 
@@ -100,6 +96,7 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
   }, [searchInput]);
 
   useEffect(() => {
+    setLoading(true);
     fetchTasks({ taskType, archived, page, perPage, search, status })
       .then(res => {
         if (res.tasks) {
@@ -109,19 +106,22 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
       })
       .catch(err => {
         console.log({ err });
+        showToast("Failed to load tasks", "error")
+      })
+      .finally(() => {
+        setLoading(false);
       })
 
-  }, [taskType, archived, page, perPage, search, status])
+  }, [taskType, archived, page, perPage, search, status, showToast])
 
   useEffect(() => {
     if (ws) {
-      function listener(event: MessageEvent<any>) {
+      function listener(event: MessageEvent<string>) {
         const info = JSON.parse(event.data) as SocketMessage;
         const task = JSON.parse(info.msg) as Task;
         setTasks((tasks) => {
           const newTasks = tasks.slice();
           const taskIndex = newTasks.findIndex(t => t.id === task.id)
-          console.log({taskIndex})
           if (taskIndex !== -1) {
             newTasks[taskIndex] = task;
           }
@@ -131,14 +131,12 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
       }
 
       ws.addEventListener("message", listener);
-      console.log("Added listener")
       return () => {
         ws.removeEventListener("message", listener)
-        console.log("Removed listener")
       }
     }
 
-    return () => {}
+    return () => { }
   }, [ws, setTasks])
 
   useEffect(() => {
@@ -164,45 +162,54 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
   }, [connect, disconnect])
 
   return (
-    <Stack spacing={2} textAlign={"left"}>
-      <Box>
-        <Button sx={{ textTransform: "capitalize" }} variant="contained" onClick={onNew}>
-          Import New {taskType}
-        </Button>
-      </Box>
-      <hr />
-      <Box>
-        <ButtonGroup>
-          <Button onClick={() => { setArchived(0); setPage(1); }} variant={archived == 0 ? "contained" : undefined}>Recent</Button>
-          <Button onClick={() => { setArchived(1); setPage(1); }} variant={archived == 1 ? "contained" : undefined}>Archived</Button>
-        </ButtonGroup>
-        {hasFailedTasks ? (
-          <Button sx={{ marginLeft: 2 }} endIcon={<Refresh />} onClick={onRetryFailedTasks} >Retry Failed Tasks</Button>
-        ) : null}
-      </Box>
+    <Stack spacing={3}>
+      <PageHeader
+        title="Map imports"
+        subtitle="Imports of Our World in Data maps into Wikimedia Commons"
+        action={(
+          <Button variant="contained" startIcon={<Add />} onClick={onNew}>
+            New import
+          </Button>
+        )}
+      />
 
-      <Box display="flex" alignItems="center" gap={2}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        spacing={2}
+        useFlexGap
+        sx={{ flexWrap: 'wrap' }}
+      >
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={archived}
+          onChange={(_, value) => {
+            if (value !== null) {
+              setArchived(value);
+              setPage(1);
+            }
+          }}
+        >
+          <ToggleButton value={0}>Recent</ToggleButton>
+          <ToggleButton value={1}>Archived</ToggleButton>
+        </ToggleButtonGroup>
         <TextField
           size="small"
-          label="Search"
           placeholder="Chart name, URL, or file name"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          sx={{ width: 320 }}
+          sx={{ width: { xs: '100%', sm: 320 } }}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search fontSize="small" />
+                </InputAdornment>
+              ),
+            },
+          }}
         />
-        <FormControl size="small">
-          <InputLabel>Per page</InputLabel>
-          <Select
-            label="Per page"
-            value={perPage}
-            onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
-            sx={{ width: 100 }}
-          >
-            {[2, 10, 20, 50, 100].map(n => (
-              <MenuItem key={n} value={n}>{n}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
         <FormControl size="small">
           <InputLabel>Status</InputLabel>
           <Select
@@ -216,20 +223,68 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
             ))}
           </Select>
         </FormControl>
-      </Box>
+        <FormControl size="small">
+          <InputLabel>Per page</InputLabel>
+          <Select
+            label="Per page"
+            value={perPage}
+            onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
+            sx={{ width: 100 }}
+          >
+            {[2, 10, 20, 50, 100].map(n => (
+              <MenuItem key={n} value={n}>{n}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        {hasFailedTasks && (
+          <Button variant="outlined" color="warning" endIcon={<Refresh />} onClick={onRetryFailedTasks}>
+            Retry failed tasks
+          </Button>
+        )}
+      </Stack>
 
-      <Grid container spacing={4}>
-        {tasks.map(task => (
-          <Grid size={4} key={task.id}>
-            <TaskListItem
-              task={task}
-              onClick={() => onTaskClick(task)}
-              onToggleArchive={() => onToggleTaskArchived(task)}
-              onDelete={() => onDeleteTask(task)}
-            />
-          </Grid>
-        ))}
-      </Grid>
+      {loading && tasks.length === 0 ? (
+        <Grid container spacing={3}>
+          {Array.from({ length: 6 }, (_, i) => (
+            <Grid size={{ xs: 12, sm: 6, lg: 4 }} key={i}>
+              <TaskCardSkeleton />
+            </Grid>
+          ))}
+        </Grid>
+      ) : tasks.length === 0 ? (
+        filtersActive ? (
+          <EmptyState
+            icon={<SearchOff />}
+            title="No matching imports"
+            description="No imports match the current search or status filter. Try clearing the filters."
+          />
+        ) : (
+          <EmptyState
+            icon={<MapIcon />}
+            title={archived ? "No archived imports" : "No imports yet"}
+            description={archived
+              ? "Imports you archive will show up here."
+              : "Import your first Our World in Data map to see it here."}
+            action={!archived && (
+              <Button variant="contained" startIcon={<Add />} onClick={onNew}>
+                New import
+              </Button>
+            )}
+          />
+        )
+      ) : (
+        <Grid container spacing={3}>
+          {tasks.map(task => (
+            <Grid size={{ xs: 12, sm: 6, lg: 4 }} key={task.id}>
+              <TaskListItem
+                task={task}
+                onClick={() => onTaskClick(task)}
+                onToggleArchive={() => onToggleTaskArchived(task)}
+              />
+            </Grid>
+          ))}
+        </Grid>
+      )}
 
       {totalPages > 1 && (
         <Box display="flex" justifyContent="center" mt={2}>

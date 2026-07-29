@@ -1,4 +1,4 @@
-import { Box, Button, CircularProgress, Modal, Radio, Stack, Typography } from "@mui/material"
+import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Link, Stack, TextField, Typography } from "@mui/material"
 import { useCallback, useMemo, useState } from "react";
 import { COMMONS_TEMPLATE_PREFIX, DESCRIPTION_OVERWRITE_OPTIONS, generateBlankImport, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX } from "../constants";
 import { getChartParameters } from "../request/request";
@@ -6,20 +6,9 @@ import pLimit from 'p-limit';
 import { CheckCircle, Close as CloseIcon } from "@mui/icons-material";
 import { MapImporterFormItem, SelectedParameter } from "../types";
 import { searchPageExists } from "../request/commons";
-
-const style = {
-  position: 'absolute',
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  width: 500,
-  bgcolor: 'background.paper',
-  border: '1px solid #000',
-  borderRadius: 2,
-  boxShadow: 24,
-  p: 4,
-  pt: 2,
-};
+import { useToast } from "../hooks/useToast";
+import { OverwriteBehaviourField } from "./OverwriteBehaviourField";
+import { monoStack } from "../theme";
 
 interface ProcessingLink {
   url: string
@@ -36,6 +25,7 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
   const [processedLinks, setProcessedLinks] = useState<ProcessingLink[]>([]);
   const [loading, setLoading] = useState(false);
   const [descriptionOverwriteBehaviour, setDescriptionOverwriteBehaviour] = useState(DESCRIPTION_OVERWRITE_OPTIONS[0].value);
+  const { showToast } = useToast();
   const handleOpen = useCallback(() => setOpen(true), [setOpen]);
   const handleClose = useCallback(() => {
     setOpen(false);
@@ -68,7 +58,7 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
 
   const onSubmit = useCallback(() => {
     if (linksArray.length == 0) {
-      return alert("No links are submitted");
+      return showToast("No links are submitted", "error");
     }
 
     setLoading(true);
@@ -192,97 +182,98 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
       }))
     Promise.all(input)
       .then(res => {
-        console.log("Got multi res: ", res)
         const imports: MapImporterFormItem[] = res.filter(item => item).map(item => item!.imp).filter(item => item);
-        console.log({ res, imports });
         onAdd(imports);
         handleClose()
       })
       .catch(err => {
         console.log("Error getting multi chart params: ", err);
+        showToast("Failed to load chart parameters", "error");
       })
       .finally(() => {
         setLoading(false);
       })
-  }, [descriptionOverwriteBehaviour, linksArray, setLoading, setProcessedLinks, onAdd, handleClose])
+  }, [descriptionOverwriteBehaviour, linksArray, setLoading, setProcessedLinks, onAdd, handleClose, showToast])
 
   return (
     <>
-      <Button onClick={handleOpen} variant="contained" >Multi Import</Button>
-      <Modal
+      <Button onClick={handleOpen} variant="outlined">Multi import</Button>
+      <Dialog
         open={open}
         onClose={handleClose}
-        aria-labelledby="modal-modal-title"
-        aria-describedby="modal-modal-description"
+        fullWidth
+        maxWidth="sm"
+        aria-labelledby="multi-import-title"
       >
-        <Box sx={style}>
-          <Stack spacing={4}>
-            <Stack spacing={2}>
-              <Typography variant="h5" component="h2">
-                Add multiple links, one link per line
-              </Typography>
-              <textarea disabled={disabled} style={{ width: "100%", height: "200px", backgroundColor: "white", color: "black" }} value={links} onChange={(e) => setLinks(e.target.value)} />
-              {!linksAreValid && (
-                <Typography color="error">
-                  Some links are invalid.
-                </Typography>
-              )}
-              <Stack spacing={1} sx={{ maxHeight: "500px", overflowY: "auto", overflowX: "clip" }}>
-                {processedLinks.map(url => (
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                    <Typography color={url.status == "done" ? "success" : "primary"} noWrap>
-                      <a href={url.url} target="_blank">
-                        {url.url}
-                      </a>
-                    </Typography>
+        <DialogTitle id="multi-import-title">Import multiple charts</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={3}>
+            <TextField
+              multiline
+              minRows={6}
+              maxRows={12}
+              fullWidth
+              disabled={disabled}
+              label="Chart URLs"
+              placeholder={`${OWID_CHART_URL_PREFIX}/grapher/life-expectancy\n${OWID_CHART_URL_PREFIX}/grapher/child-mortality`}
+              helperText="One Our World in Data chart URL per line"
+              value={links}
+              onChange={(e) => setLinks(e.target.value)}
+              sx={{
+                mt: 1,
+                '& .MuiInputBase-input': { fontFamily: monoStack, fontSize: 13 },
+              }}
+            />
+            {!linksAreValid && (
+              <Alert severity="error" variant="outlined">
+                Some links are invalid — every line must start with {OWID_CHART_URL_PREFIX}
+              </Alert>
+            )}
+            {processedLinks.length > 0 && (
+              <Stack spacing={1} sx={{ maxHeight: 300, overflowY: "auto", overflowX: "clip" }}>
+                {processedLinks.map((url, index) => (
+                  <Stack key={`${url.url}-${index}`} direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                    <Link
+                      href={url.url}
+                      target="_blank"
+                      noWrap
+                      underline="hover"
+                      sx={{ fontFamily: monoStack, fontSize: 13 }}
+                    >
+                      {url.url}
+                    </Link>
                     {url.status == "done" && (
-                      <CheckCircle color="success" />
+                      <CheckCircle color="success" fontSize="small" />
                     )}
                     {url.status == "loading" && (
-                      <CircularProgress size={20} />
+                      <CircularProgress size={16} />
                     )}
                     {url.status == "failed" && (
-                      <CloseIcon color="error" />
+                      <CloseIcon color="error" fontSize="small" />
                     )}
                   </Stack>
                 ))}
               </Stack>
-            </Stack>
-            <Stack spacing={4}>
-              <Stack spacing={1}>
-                <Typography>
-                  If a file with the same name exists:
-                </Typography>
-                {loading ? (
-                  <Typography>
-                    {DESCRIPTION_OVERWRITE_OPTIONS.filter(o => o.value === descriptionOverwriteBehaviour)[0]?.title}
-                  </Typography>
-                ) : (
-                  <>
-                    {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
-                      <Stack spacing={1} key={option.value}>
-                        <Stack direction={"row"} alignItems={"flex-start"}>
-                          <Radio disabled={disabled} checked={descriptionOverwriteBehaviour == option.value} onClick={() => setDescriptionOverwriteBehaviour(option.value)} />
-                          <Box>
-                            <Typography>
-                              {option.title}
-                            </Typography>
-                            <Typography variant="subtitle2">{option.description}</Typography>
-                          </Box>
-                        </Stack>
-                      </Stack>
-                    ))}
-                  </>
-                )}
-              </Stack>
-            </Stack>
-            <Stack justifyContent="flex-end" flexDirection="row">
-              <Button onClick={handleClose} disabled={disabled}>Cancel</Button>
-              <Button disabled={disabled} loading={loading} variant="contained" onClick={onSubmit}>Submit</Button>
-            </Stack>
+            )}
+            {loading ? (
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                If a file with the same name exists: {DESCRIPTION_OVERWRITE_OPTIONS.filter(o => o.value === descriptionOverwriteBehaviour)[0]?.title}
+              </Typography>
+            ) : (
+              <OverwriteBehaviourField
+                options={DESCRIPTION_OVERWRITE_OPTIONS}
+                value={descriptionOverwriteBehaviour}
+                onChange={(val) => setDescriptionOverwriteBehaviour(val as typeof descriptionOverwriteBehaviour)}
+                disabled={disabled}
+              />
+            )}
           </Stack>
-        </Box>
-      </Modal>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClose} disabled={disabled}>Cancel</Button>
+          <Button disabled={disabled} loading={loading} variant="contained" onClick={onSubmit}>Submit</Button>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }

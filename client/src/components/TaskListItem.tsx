@@ -1,166 +1,119 @@
-import { Button, Card, CardContent, CircularProgress, Grid, Stack, Typography } from "@mui/material"
+import { Box, Button, Card, CardContent, Divider, Link, Stack, Typography } from "@mui/material"
+import { ReactNode } from "react"
 import { Task, TaskStatusEnum } from "../types"
-import { formatDate, getStatusColor } from "../utils"
+import { formatDate, getStatusKind } from "../utils"
 import { CopyButton } from "./CopyButton"
+import { StatusChip } from "./ui/StatusChip"
 import { COMMONS_TEMPLATE_PREFIX } from "../constants"
-import { Archive } from "@mui/icons-material"
+import { Archive, Unarchive } from "@mui/icons-material"
+import { monoStack } from "../theme"
 
 interface TaskListItemProps {
   task: Task
   onClick: () => void
-  onDelete?: () => void
   onToggleArchive: () => void
 }
 
+function CardRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+      <Typography
+        variant="caption"
+        sx={{ color: 'text.secondary', width: 64, flexShrink: 0 }}
+      >
+        {label}
+      </Typography>
+      {children}
+    </Stack>
+  )
+}
+
+const monoValueSx = {
+  fontFamily: monoStack,
+  fontSize: 13,
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+} as const;
+
 export function TaskListItem({ task, onClick, onToggleArchive }: TaskListItemProps) {
-
-
-  const toggleArchive = () => {
-    onToggleArchive()
-  }
-
-
+  const archived = task.archived !== 0;
 
   return (
-
-    <Card sx={{ cursor: "pointer" }} onClick={() => onClick()}>
-      <CardContent >
-        <Stack spacing={1}>
-          {task.chartName && (
-            <Grid container spacing={1}>
-              <Grid size={3}>
-                <Typography variant="body2">
-                  Chart Name:
-                </Typography>
-              </Grid>
-              <Grid>
-                <Typography variant="body2">
-                  {task.chartName}
-                </Typography>
-              </Grid>
-            </Grid>
-          )}
-          <Grid container spacing={1}>
-            <Grid size={3}>
-              <Typography variant="body2">
-                URL:
-              </Typography>
-            </Grid>
-            <Grid onClick={(e) => e.stopPropagation()}>
-              <Stack justifyContent={"space-between"} alignItems={"center"} flexDirection={"row"}>
-                <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 14 }}>
-                  <a href={task.url} target="_blank">
-                    {task.url.split("/").pop()}
-                  </a>
-                </Typography>
-                <CopyButton text={task.url} />
-              </Stack>
-            </Grid>
-          </Grid>
-          {task.generateTemplateCommons == 1 && task.commonsTemplateName && task.status == TaskStatusEnum.Done ? (
-            <Grid container spacing={1}>
-              <Grid size={3}>
-                <Typography variant="body2">
-                  Commons Template:
-                </Typography>
-              </Grid>
-              <Grid onClick={(e) => e.stopPropagation()}>
-                <Stack justifyContent={"space-between"} alignItems={"center"} flexDirection={"row"}>
-                  <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 14 }}>
-                    <a href={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`} target="_blank">
-                      {task.commonsTemplateName}
-                    </a>
-                  </Typography>
-                  <CopyButton text={`*[[${task.commonsTemplateName}|${task.commonsTemplateName.replace(COMMONS_TEMPLATE_PREFIX + "/", "")}]]`} />
-                </Stack>
-              </Grid>
-            </Grid>
-          ) : null}
-          <Grid container spacing={1}>
-            <Grid size={3}>
-              <Typography variant="body2">
-                File Name:
-              </Typography>
-            </Grid>
-            <Grid>
-              <Typography variant="body2">
-                {task.filename}
-              </Typography>
-            </Grid>
-          </Grid>
-          <Grid container spacing={1}>
-            <Grid size={3}>
-              <Typography variant="body2">
-                Status:
-              </Typography>
-            </Grid>
-            <Grid>
-              <Stack spacing={1} direction={"row"} alignItems={"center"} textTransform={"capitalize"}>
-                <span style={{ color: getStatusColor(task.status), }}  >{task.status}</span>
-                {task.status === TaskStatusEnum.Processing && (
-                  <CircularProgress size={12} color="primary" />
-                )}
-              </Stack>
-            </Grid>
-          </Grid>
-          <Grid container spacing={1}>
-            <Grid size={3}>
-              <Typography variant="body2">
-                Created At:
-              </Typography>
-            </Grid>
-            <Grid>
-              <Typography variant="body2">
-                {formatDate(new Date(task.createdAt * 1000))}
-              </Typography>
-
-            </Grid>
-          </Grid>
+    <Card sx={{ cursor: "pointer", height: '100%', display: 'flex' }} onClick={() => onClick()}>
+      <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ mb: 1.5 }}>
+          <Typography
+            sx={{
+              fontWeight: 600,
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {task.chartName || task.url.split("/").pop()?.split("?")[0]}
+          </Typography>
+          <StatusChip
+            kind={getStatusKind(task.status)}
+            label={task.status}
+            size="small"
+            showSpinner={task.status === TaskStatusEnum.Processing}
+          />
         </Stack>
 
+        <Stack spacing={0.75} sx={{ minWidth: 0 }}>
+          <CardRow label="URL">
+            <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+              <Link href={task.url} target="_blank" underline="hover" sx={monoValueSx}>
+                {task.url.split("/").pop()}
+              </Link>
+              <CopyButton text={task.url} />
+            </Box>
+          </CardRow>
+          <CardRow label="File">
+            <Typography component="span" sx={monoValueSx}>
+              {task.filename}
+            </Typography>
+          </CardRow>
+          {task.generateTemplateCommons == 1 && task.commonsTemplateName && task.status == TaskStatusEnum.Done && (
+            <CardRow label="Template">
+              <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                <Link
+                  href={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`}
+                  target="_blank"
+                  underline="hover"
+                  sx={monoValueSx}
+                >
+                  {task.commonsTemplateName}
+                </Link>
+                <CopyButton text={`*[[${task.commonsTemplateName}|${task.commonsTemplateName.replace(COMMONS_TEMPLATE_PREFIX + "/", "")}]]`} />
+              </Box>
+            </CardRow>
+          )}
+        </Stack>
+
+        <Divider sx={{ mt: 'auto', pt: 1.5 }} />
         <Stack
-          sx={{ mt: 1 }}
-          flexDirection={"row"}
-          justifyContent={"flex-end"}
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          sx={{ pt: 1 }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* {task.status !== TaskStatusEnum.Processing && ( */}
-          {/*   <PopoverConfirmationButton */}
-          {/*     id={`delete-${task.id}`} */}
-          {/*     trigger={( */}
-          {/*       <Button color="error" startIcon={<Delete />} aria-describedby={`delete-${task.id}`} size="small"> */}
-          {/*         Delete */}
-          {/*       </Button> */}
-          {/*     )} */}
-          {/*     onOk={toggleArchive} */}
-          {/*     okText="Yes" */}
-          {/*     message={ */}
-          {/*       <> */}
-          {/*         Are you sure you want to delete this task? */}
-          {/*       </> */}
-          {/*     } */}
-          {/*   /> */}
-          {/* )} */}
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            {formatDate(new Date(task.createdAt * 1000))}
+          </Typography>
           {![TaskStatusEnum.Processing, TaskStatusEnum.Queued].includes(task.status) && (
-            <Button startIcon={<Archive />} aria-describedby={`archive-${task.id}`} size="medium" onClick={toggleArchive}>
-              {task.archived == 0 ? <span>Archive</span> : <span>UnArchive</span>}
+            <Button
+              startIcon={archived ? <Unarchive /> : <Archive />}
+              size="small"
+              onClick={onToggleArchive}
+            >
+              {archived ? "Unarchive" : "Archive"}
             </Button>
           )}
-          {/* <PopoverConfirmationButton */}
-          {/*   id={`archive-${task.id}`} */}
-          {/*   trigger={( */}
-          {/*     <Button startIcon={<Archive />} aria-describedby={`archive-${task.id}`} size="small"> */}
-          {/*       {task.archived == 0 ? <span>Archive</span> : <span>UnArchive</span>} */}
-          {/*     </Button> */}
-          {/*   )} */}
-          {/*   onOk={toggleArchive} */}
-          {/*   okText="Yes" */}
-          {/*   message={ */}
-          {/*     <> */}
-          {/*       Are you sure you want to {task.archived == 0 ? <span>Archive</span> : <span>UnArchive</span>} this task? */}
-          {/*     </> */}
-          {/*   } */}
-          {/* /> */}
         </Stack>
       </CardContent>
     </Card>

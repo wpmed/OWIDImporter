@@ -1,5 +1,5 @@
-import { Box, Button, Checkbox, InputAdornment, Radio, Stack, TextareaAutosize, TextField, Typography } from "@mui/material";
-import { MapImporterFormItem, SelectedParameter } from "../types"
+import { Alert, Box, Button, Checkbox, FormControlLabel, InputAdornment, Link, Paper, Stack, TextField, Typography } from "@mui/material";
+import { DescriptionOverwriteBehaviour, MapImporterFormItem, SelectedParameter } from "../types"
 import { CategoriesSearchInput } from "./CategoriesSearchInput";
 import { useDebounce } from "use-debounce";
 import { useCallback, useEffect, useState } from "react";
@@ -8,6 +8,9 @@ import { Delete } from "@mui/icons-material";
 import { CHART_INFO_CHART, CHART_INFO_MAP, COMMONS_TEMPLATE_PREFIX, COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS, DESCRIPTION_OVERWRITE_OPTIONS, INITIAL_CATEGORIES_CHART, INITIAL_CATEGORIES_MAP, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX, URL_PLACEHOLDER } from "../constants";
 import { searchPageExists } from "../request/commons";
 import { FieldLoading } from "./FieldLoader";
+import { PlaceholderText } from "./ui/PlaceholderText";
+import { OverwriteBehaviourField } from "./OverwriteBehaviourField";
+import { monoStack, serifStack } from "../theme";
 
 export interface MapImporterFormProps {
   disabled: boolean
@@ -18,9 +21,26 @@ export interface MapImporterFormProps {
   canRemove: boolean
 }
 
+const monoInputSx = {
+  '& .MuiInputBase-input, & .MuiInputBase-inputMultiline': {
+    fontFamily: monoStack,
+    fontSize: 14,
+  },
+} as const;
 
+function ChartDetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <Stack direction="row" spacing={1}>
+      <Typography variant="body2" sx={{ color: 'text.secondary', width: 88, flexShrink: 0 }}>
+        {label}
+      </Typography>
+      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+        {value}
+      </Typography>
+    </Stack>
+  )
+}
 
-// { url, fileName, description, categories, descriptionOverwriteBehaviour, countryFileName, countryDescription, countryCategories, countryDescriptionOverwriteBehaviour, importCountries, generateTemplateCommons, selectedChartParameters, templateName }
 export function MapImporterForm({ value, onChange, onDelete, disabled, onParamtersLoadingChange, canRemove }: MapImporterFormProps) {
   const [debouncedUrl] = useDebounce(value.url, 1000);
   const [debouncedTemplateName] = useDebounce(value.templateNameFormat, 1000);
@@ -51,7 +71,6 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
             console.log("Chart info error: ", res);
             onChange({ ...value, canImport: false, linkVerified: true });
           } else if (res.params && res.params.length > 0) {
-            // setChartParameters(res.params);
             const paramsKeys = res.params.map(param => param.slug);
             const parts = debouncedUrl.split("?").pop()?.split("&")
             const selectedParams: SelectedParameter[] = []
@@ -151,234 +170,229 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
   }, [chartInfo, debouncedTemplateName, value.selectedChartParameters, lastCheckedTemplateName, setLastCheckedTemplateName, setTemplateExistsLoading, setTemplateExists]);
 
   return (
-    <Stack>
-      <Stack spacing={2}>
-        <Stack flexDirection={"row"}>
-          <Stack>
-            <Typography variant="h4">
-              <span>Map</span>
-            </Typography>
-            <Typography>
-              <span dangerouslySetInnerHTML={{ __html: CHART_INFO_MAP }} />
-            </Typography>
-          </Stack>
-          {canRemove ? (
-            <Stack>
-              <Button onClick={onDelete} startIcon={<Delete />} color="error" >Remove</Button>
-            </Stack>
-          ) : null}
-        </Stack>
-
-        <Stack spacing={1}>
-          <Typography>File URL</Typography>
-          <Box sx={{ position: "relative" }}>
-            <TextField
-              fullWidth
-              size="small"
-              value={value.url}
-              onChange={e => handleChange("url", e.target.value)}
-              placeholder={URL_PLACEHOLDER}
-              disabled={disabled}
-            />
-            {parametersLoading && (
-              <FieldLoading />
-            )}
-          </Box>
-        </Stack>
-        {chartInfo?.singleImage ? (
-          <Stack spacing={1}>
-            <Typography color="warning" variant="subtitle2">This chart is composed of a single image and will be uploaded as such</Typography>
-          </Stack>
-        ) : null}
-        {chartInfo?.chartName ? (
-          <Stack spacing={1}>
-            <Typography sx={{ textTransform: "capitalize" }} variant="subtitle2">Chart Name: <strong>{chartInfo.chartName}</strong></Typography>
-          </Stack>
-        ) : null}
-        {chartInfo?.title ? (
-          <Stack spacing={1}>
-            <Typography variant="subtitle2">Chart Title: <strong>{chartInfo.title}</strong></Typography>
-          </Stack>
-        ) : null}
-        {chartInfo?.startYear && chartInfo?.endYear ? (
-          <Stack flexDirection={"row"} alignItems={"center"}>
-            <Typography variant="subtitle2">Start Year: <strong>{chartInfo.startYear}</strong></Typography>
-            <Typography variant="subtitle2" sx={{ marginLeft: "5px" }}>End Year: <strong>{chartInfo.endYear}</strong></Typography>
-          </Stack>
-        ) : null}
-        {!parametersLoading && value.linkVerified && !value.canImport && (
-          <Typography color="error">This chart cannot be imported </Typography>
-        )}
-
-        {value.selectedChartParameters.length > 0 && (
-          <Stack spacing={1}>
-            <Typography variant="h6" >Selected parameters</Typography>
-            {value.selectedChartParameters.map(param => (
-              <Typography>{param.keyName}: {param.valueName} - You can use <strong>${param.key.toUpperCase()}</strong> in the file name as a placeholder</Typography>
-            ))}
-          </Stack>
-        )}
-
-        <Stack spacing={3}>
-          <Stack spacing={1}>
-            <Typography>File name</Typography>
-            <TextField
-              size="small"
-              value={value.fileName}
-              onChange={e => handleChange("fileName", e.target.value)}
-              fullWidth
-              disabled={disabled}
-            />
-          </Stack>
-          <Stack spacing={1}>
-            <Typography>Description</Typography>
-            <TextareaAutosize
-              value={value.description}
-              onChange={e => handleChange('description', e.target.value)}
-              style={{ width: "100%", backgroundColor: "white", color: "black" }}
-              minRows={5}
-              disabled={disabled}
-            />
-          </Stack>
-          <Stack spacing={1}>
-            <Stack direction="row" justifyContent="space-between">
-              <Typography>Categories</Typography>
-              <Button onClick={() => handleChange("categories", INITIAL_CATEGORIES_MAP)} size="small">Reset</Button>
-            </Stack>
-            <CategoriesSearchInput value={value.categories} onChange={(newCategories) => handleChange("categories", newCategories)} disabled={disabled} />
-          </Stack>
-        </Stack>
-
-        <Stack spacing={1}>
-          <Typography>
-            If a file with the same name exists:
+    <Stack spacing={3}>
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+        <Stack spacing={0.5}>
+          <Typography variant="h5" sx={{ fontFamily: serifStack }}>Map</Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            <PlaceholderText text={CHART_INFO_MAP} />
           </Typography>
-          {DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
-            <Stack spacing={1} key={option.value}>
-              <Stack direction={"row"} alignItems={"flex-start"}>
-                <Radio disabled={disabled} checked={value.descriptionOverwriteBehaviour == option.value} onClick={() => handleChange("descriptionOverwriteBehaviour", option.value)} />
-                <Box>
-                  <Typography>
-                    {option.title}
-                  </Typography>
-                  <Typography variant="subtitle2">{option.description}</Typography>
-                </Box>
-              </Stack>
-            </Stack>
-          ))}
         </Stack>
-
-        {!value.singleImage && (
-          <Stack spacing={1}>
-            <Stack direction="row" alignItems={"center"} >
-              <Checkbox checked={value.generateTemplateCommons} onClick={() => handleChange("generateTemplateCommons", !value.generateTemplateCommons)} disabled={disabled} />
-              <Typography>Automatically Create Template Page On Commons</Typography>
-            </Stack>
-            {value.generateTemplateCommons && (
-              <>
-                <Stack spacing={1}>
-                  <Typography>Template name</Typography>
-                  <Box sx={{ position: "relative" }}>
-                    <TextField
-                      size="small"
-                      value={value.templateNameFormat}
-                      onChange={e => handleChange("templateNameFormat", e.target.value)}
-                      fullWidth
-                      disabled={disabled}
-                      slotProps={{
-                        input: {
-                          startAdornment: <InputAdornment position="start">Template:OWID/</InputAdornment>,
-                        },
-                      }}
-                    />
-                    {templateExistsLoading && (
-                      <FieldLoading />
-                    )}
-                  </Box>
-                </Stack>
-                {templateExists && lastCheckedTemplateName ? (
-                  <Typography color="warning">A template with this name <a style={{ textDecoration: "underline" }} href={`${import.meta.env.VITE_MW_BASE_URL}/${lastCheckedTemplateName}`} target="_blank" >already exists</a></Typography>
-                ) : null}
-              </>
-            )}
-          </Stack>
-        )}
-
-        {!value.singleImage && (
-          <>
-            <Stack>
-              <Stack direction="row" alignItems={"center"} >
-                <Checkbox checked={value.importCountries} disabled={disabled} onClick={() => handleChange("importCountries", !value.importCountries)} />
-                <Typography>Import Countries</Typography>
-              </Stack>
-            </Stack>
-            <>
-              {
-                value.importCountries && (
-                  <>
-                    <Stack spacing={2}>
-                      <Typography variant="h4">
-                        <span>Country Chart</span>
-                      </Typography>
-                      {chartInfo && !chartInfo.hasCountries ? (
-                        <Typography color="warning">This chart doesn't support Countries line charts. We'll try with popover charts.</Typography>
-                      ) : null}
-                      <Typography>
-                        <span dangerouslySetInnerHTML={{ __html: CHART_INFO_CHART }} />
-                      </Typography>
-                    </Stack>
-                    <Stack spacing={1}>
-                      <Typography>File name</Typography>
-                      <TextField
-                        size="small"
-                        value={value.countryFileName}
-                        onChange={e => handleChange("countryFileName", e.target.value)}
-                        fullWidth
-                        disabled={disabled}
-                      />
-                    </Stack>
-                    <Stack spacing={1}>
-                      <Typography>Description</Typography>
-                      <TextareaAutosize
-                        value={value.countryDescription}
-                        onChange={e => handleChange("countryDescription", e.target.value)}
-                        style={{ width: "100%", backgroundColor: "white", color: "black" }}
-                        minRows={5}
-                        disabled={disabled}
-                      />
-                    </Stack>
-                    <Stack spacing={1}>
-                      <Stack direction="row" justifyContent="space-between">
-                        <Typography>Categories</Typography>
-                        <Button onClick={() => handleChange("countryCategories", INITIAL_CATEGORIES_CHART)} disabled={disabled} size="small" >Reset</Button>
-                      </Stack>
-                      <CategoriesSearchInput value={value.countryCategories} onChange={(newCategories) => handleChange("countryCategories", newCategories)} disabled={disabled} />
-                    </Stack>
-                    <Stack spacing={1}>
-                      <Typography>
-                        If a file with the same name exists:
-                      </Typography>
-                      {COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS.map(option => (
-                        <Stack spacing={1} key={`country-${option.value}`}>
-                          <Stack direction={"row"} alignItems={"flex-start"}>
-                            <Radio disabled={disabled} checked={value.countryDescriptionOverwriteBehaviour == option.value} onClick={() => handleChange("countryDescriptionOverwriteBehaviour", option.value)} />
-                            < Box >
-                              <Typography>
-                                {option.title}
-                              </Typography>
-                              <Typography variant="subtitle2">{option.description}</Typography>
-                            </Box>
-                          </Stack>
-                        </Stack>
-                      ))}
-                    </Stack>
-                  </>
-                )
-              }
-            </>
-          </>
+        {canRemove && (
+          <Button onClick={onDelete} startIcon={<Delete />} color="error" size="small">
+            Remove
+          </Button>
         )}
       </Stack>
-    </Stack >
+
+      <Box sx={{ position: "relative" }}>
+        <TextField
+          fullWidth
+          size="small"
+          label="Chart URL"
+          value={value.url}
+          onChange={e => handleChange("url", e.target.value)}
+          placeholder={URL_PLACEHOLDER}
+          disabled={disabled}
+          sx={monoInputSx}
+        />
+        {parametersLoading && (
+          <FieldLoading />
+        )}
+      </Box>
+
+      {chartInfo?.singleImage && (
+        <Alert severity="warning" variant="outlined">
+          This chart is composed of a single image and will be uploaded as such.
+        </Alert>
+      )}
+
+      {chartInfo && (chartInfo.chartName || chartInfo.title || (chartInfo.startYear && chartInfo.endYear)) && (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack spacing={1}>
+            <Typography variant="overline" sx={{ color: 'text.secondary', lineHeight: 1.5 }}>
+              Chart details
+            </Typography>
+            {chartInfo.chartName && (
+              <ChartDetailRow label="Name" value={chartInfo.chartName} />
+            )}
+            {chartInfo.title && (
+              <ChartDetailRow label="Title" value={chartInfo.title} />
+            )}
+            {chartInfo.startYear && chartInfo.endYear && (
+              <ChartDetailRow label="Years" value={`${chartInfo.startYear} – ${chartInfo.endYear}`} />
+            )}
+          </Stack>
+        </Paper>
+      )}
+
+      {!parametersLoading && value.linkVerified && !value.canImport && (
+        <Alert severity="error" variant="outlined">
+          This chart cannot be imported.
+        </Alert>
+      )}
+
+      {value.selectedChartParameters.length > 0 && (
+        <Stack spacing={1}>
+          <Typography sx={{ fontWeight: 600 }}>Selected parameters</Typography>
+          {value.selectedChartParameters.map(param => (
+            <Typography key={param.key} variant="body2" sx={{ color: 'text.secondary' }}>
+              {param.keyName}: {param.valueName} — <PlaceholderText text={`you can use $${param.key.toUpperCase()} in the file name as a placeholder`} />
+            </Typography>
+          ))}
+        </Stack>
+      )}
+
+      <TextField
+        size="small"
+        label="File name"
+        value={value.fileName}
+        onChange={e => handleChange("fileName", e.target.value)}
+        fullWidth
+        disabled={disabled}
+        sx={monoInputSx}
+      />
+
+      <TextField
+        label="Description"
+        value={value.description}
+        onChange={e => handleChange('description', e.target.value)}
+        multiline
+        minRows={5}
+        fullWidth
+        disabled={disabled}
+        sx={monoInputSx}
+      />
+
+      <Stack spacing={1}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>Categories</Typography>
+          <Button onClick={() => handleChange("categories", INITIAL_CATEGORIES_MAP)} size="small">Reset</Button>
+        </Stack>
+        <CategoriesSearchInput value={value.categories} onChange={(newCategories) => handleChange("categories", newCategories)} disabled={disabled} />
+      </Stack>
+
+      <OverwriteBehaviourField
+        options={DESCRIPTION_OVERWRITE_OPTIONS}
+        value={value.descriptionOverwriteBehaviour}
+        onChange={(val) => handleChange("descriptionOverwriteBehaviour", val as DescriptionOverwriteBehaviour)}
+        disabled={disabled}
+      />
+
+      {!value.singleImage && (
+        <Stack spacing={1}>
+          <FormControlLabel
+            control={(
+              <Checkbox
+                checked={value.generateTemplateCommons}
+                onClick={() => handleChange("generateTemplateCommons", !value.generateTemplateCommons)}
+                disabled={disabled}
+              />
+            )}
+            label="Automatically create template page on Commons"
+          />
+          {value.generateTemplateCommons && (
+            <Stack spacing={1.5}>
+              <Box sx={{ position: "relative" }}>
+                <TextField
+                  size="small"
+                  label="Template name"
+                  value={value.templateNameFormat}
+                  onChange={e => handleChange("templateNameFormat", e.target.value)}
+                  fullWidth
+                  disabled={disabled}
+                  sx={monoInputSx}
+                  slotProps={{
+                    input: {
+                      startAdornment: <InputAdornment position="start">Template:OWID/</InputAdornment>,
+                    },
+                  }}
+                />
+                {templateExistsLoading && (
+                  <FieldLoading />
+                )}
+              </Box>
+              {templateExists && lastCheckedTemplateName && (
+                <Alert severity="warning" variant="outlined">
+                  A template with this name{' '}
+                  <Link
+                    href={`${import.meta.env.VITE_MW_BASE_URL}/${lastCheckedTemplateName}`}
+                    target="_blank"
+                    color="inherit"
+                  >
+                    already exists
+                  </Link>.
+                </Alert>
+              )}
+            </Stack>
+          )}
+        </Stack>
+      )}
+
+      {!value.singleImage && (
+        <>
+          <FormControlLabel
+            control={(
+              <Checkbox
+                checked={value.importCountries}
+                disabled={disabled}
+                onClick={() => handleChange("importCountries", !value.importCountries)}
+              />
+            )}
+            label="Import countries"
+          />
+          {value.importCountries && (
+            <Stack
+              spacing={3}
+              sx={{ borderLeft: '2px solid', borderColor: 'secondary.main', pl: { xs: 2, md: 3 } }}
+            >
+              <Stack spacing={0.5}>
+                <Typography variant="h5" sx={{ fontFamily: serifStack }}>Country chart</Typography>
+                {chartInfo && !chartInfo.hasCountries && (
+                  <Alert severity="warning" variant="outlined" sx={{ my: 1 }}>
+                    This chart doesn't support countries line charts. We'll try with popover charts.
+                  </Alert>
+                )}
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  <PlaceholderText text={CHART_INFO_CHART} />
+                </Typography>
+              </Stack>
+              <TextField
+                size="small"
+                label="File name"
+                value={value.countryFileName}
+                onChange={e => handleChange("countryFileName", e.target.value)}
+                fullWidth
+                disabled={disabled}
+                sx={monoInputSx}
+              />
+              <TextField
+                label="Description"
+                value={value.countryDescription}
+                onChange={e => handleChange("countryDescription", e.target.value)}
+                multiline
+                minRows={5}
+                fullWidth
+                disabled={disabled}
+                sx={monoInputSx}
+              />
+              <Stack spacing={1}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>Categories</Typography>
+                  <Button onClick={() => handleChange("countryCategories", INITIAL_CATEGORIES_CHART)} disabled={disabled} size="small">Reset</Button>
+                </Stack>
+                <CategoriesSearchInput value={value.countryCategories} onChange={(newCategories) => handleChange("countryCategories", newCategories)} disabled={disabled} />
+              </Stack>
+              <OverwriteBehaviourField
+                options={COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS}
+                value={value.countryDescriptionOverwriteBehaviour}
+                onChange={(val) => handleChange("countryDescriptionOverwriteBehaviour", val as DescriptionOverwriteBehaviour)}
+                disabled={disabled}
+              />
+            </Stack>
+          )}
+        </>
+      )}
+    </Stack>
   )
 }
