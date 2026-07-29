@@ -87,6 +87,36 @@ func Websocket(c *gin.Context) {
 						continue
 					}
 					sessions.RemoveSubscriptionSession(fmt.Sprintf("%s_task_list", user.ID), sessionId)
+				case "subscribe_operation":
+					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
+					operationSession := sessions.SubscriptionSession{
+						Id:      sessionId,
+						Ws:      ws,
+						WsMutex: &sync.Mutex{},
+					}
+					sessions.AddSubscriptionSession(actionMessage.Content, &operationSession)
+				case "unsubscribe_operation":
+					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
+					sessions.RemoveSubscriptionSession(actionMessage.Content, sessionId)
+				case "subscribe_operation_list":
+					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
+					user, err := models.FindUserByUsername(session.Username)
+					if err != nil || user == nil {
+						continue
+					}
+					operationSession := sessions.SubscriptionSession{
+						Id:      sessionId,
+						Ws:      ws,
+						WsMutex: &sync.Mutex{},
+					}
+					sessions.AddSubscriptionSession(fmt.Sprintf("%s_operation_list", user.ID), &operationSession)
+				case "unsubscribe_operation_list":
+					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
+					user, err := models.FindUserByUsername(session.Username)
+					if err != nil || user == nil {
+						continue
+					}
+					sessions.RemoveSubscriptionSession(fmt.Sprintf("%s_operation_list", user.ID), sessionId)
 				}
 				break
 			}

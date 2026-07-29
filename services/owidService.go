@@ -242,6 +242,110 @@ func ValidateParameters(data StartData) error {
 	return nil
 }
 
+// UpdateTemplateWithDefaults resets the start, location, startingView and
+// language parameters of a template page to their commented-out defaults.
+// Returns "updated" when an edit was saved and "nochange" when the page
+// already had the defaults (no edit is made).
+func UpdateTemplateWithDefaults(user *models.User, wikiUrl string, title string) (string, error) {
+	res, err := utils.DoApiReqToWiki[FileRevisionsResponse](user, map[string]string{
+		"action":  "query",
+		"titles":  title,
+		"prop":    "revisions",
+		"rvprop":  "content",
+		"rvlimit": "1",
+		"rvslots": "main",
+	}, nil, wikiUrl)
+	if err != nil {
+		return "", err
+	}
+
+	text := ""
+	// fmt.Println("Response: ", res)
+	for _, page := range res.Query.Pages {
+		if len(page.Revisions) > 0 {
+			// Assuming the main slot contains the wikitext
+			if mainSlot, ok := page.Revisions[0].Slots["main"]; ok {
+				text = mainSlot.Content
+				break
+			}
+		}
+	}
+	if text == "" {
+		return "", fmt.Errorf("cannot find page %s in wiki %s", title, wikiUrl)
+	}
+
+	newText := text
+
+	// start
+	startYearRegex := regexp.MustCompile(`(\|start\s+=.*\n)`)
+	matches := startYearRegex.FindAllString(newText, -1)
+	for _, s := range matches {
+		newText = strings.ReplaceAll(newText, s, "|start        = <!-- defaults to most recent -->\n")
+	}
+
+	// location
+	locationRegex := regexp.MustCompile(`(\|location\s+=.*\n)`)
+	matches = locationRegex.FindAllString(newText, -1)
+	for _, l := range matches {
+		newText = strings.ReplaceAll(newText, l, "|location      = <!-- defaults to commons -->\n")
+	}
+
+	// startingView
+	startingViewRegex := regexp.MustCompile(`(\|startingView\s+=.*\n)`)
+	matches = startingViewRegex.FindAllString(newText, -1)
+	for _, sv := range matches {
+		newText = strings.ReplaceAll(newText, sv, "|startingView = <!-- defaults to World -->\n")
+	}
+
+	// language
+	languageRegex := regexp.MustCompile(`(\|language\s+=.*\n)`)
+	matches = languageRegex.FindAllString(newText, -1)
+	for _, l := range matches {
+		newText = strings.ReplaceAll(newText, l, "|language     = <!-- defaults to local language -->\n")
+	}
+
+	if newText == text {
+		return "nochange", nil
+	}
+
+	tokenResponse, err := utils.DoApiReqToWiki[TokenResponse](user, map[string]string{
+		"action": "query",
+		"meta":   "tokens",
+		"format": "json",
+	}, nil, wikiUrl)
+	if err != nil {
+		fmt.Println("Error fetching edit token", err)
+		return "", err
+	}
+	token := tokenResponse.Query.Tokens.CsrfToken
+	params := map[string]string{
+		"action":         "edit",
+		"summary":        "Updating template defaults",
+		"text":           newText,
+		"title":          title,
+		"ignorewarnings": "1",
+		"maxlag":         "5",
+		"token":          token,
+	}
+
+	updateRes, err := utils.DoApiReqToWiki[interface{}](user, params, nil, wikiUrl)
+	if err != nil {
+		fmt.Println("Error updating template defaults: ", title, err, res)
+		return "", err
+	}
+	res2 := *updateRes
+	res3, ok1 := res2.(map[string]interface{})
+	if ok1 {
+		cntnt, ok2 := res3["error"]
+		if ok2 {
+			fmt.Println("Error updating template defaults", res3, cntnt)
+			return "", fmt.Errorf("error updating template defaults of %s", title)
+		}
+	}
+
+	return "updated", nil
+}
+
 func MovePage(user *models.User, token string, fromTitle, toTitle string) error {
 	fmt.Println("===================================")
 	fmt.Println("MOVE ACTION: FROM - ", fromTitle, " - TO - ", toTitle)
