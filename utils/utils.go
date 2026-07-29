@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -365,6 +366,106 @@ func ParseDate(dateStr string) (time.Time, error) {
 
 	// If all formats fail, return error
 	return time.Time{}, fmt.Errorf("unable to parse date string: %s", dateStr)
+}
+
+// FormatDateLike formats t using the same format that dateStr was written in.
+// dateStr should be a string that was successfully parsed by ParseDate.
+// If the format can't be detected, it falls back to ISO 8601 (2006-01-02).
+func FormatDateLike(t time.Time, dateStr string) string {
+	trimmed := strings.TrimSpace(dateStr)
+
+	// Special handling for BCE/BC/AD/CE year notations.
+	// Preserve the era token and spacing exactly as the user wrote it.
+	eraPattern := regexp.MustCompile(`^(\d{1,4})(\s*)(BCE?|AD|CE)$`)
+	if matches := eraPattern.FindStringSubmatch(strings.ToUpper(trimmed)); matches != nil {
+		year := t.Year()
+		if era := matches[3]; era == "BCE" || era == "BC" {
+			// Reverse of: year = -year + 1
+			year = 1 - year
+		}
+		// Recover the era text with its original casing/spacing from the input
+		origEra := trimmed[len(matches[1]):]
+		// Preserve zero-padding width of the original year, if any
+		return fmt.Sprintf("%0*d%s", len(matches[1]), year, origEra)
+	}
+
+	// Special handling for year-only strings (including years < 1000)
+	if matched, _ := regexp.MatchString(`^\d{1,4}$`, trimmed); matched {
+		return fmt.Sprintf("%0*d", len(trimmed), t.Year())
+	}
+
+	// Same layout list as ParseDate, plus the comma variants so that
+	// inputs like "January 2, 2006" keep their comma in the output.
+	formats := []string{
+		"2006",
+		"2006-01", "2006/01", "January 2006", "Jan 2006", "01/2006", "01-2006",
+		time.RFC3339, time.RFC3339Nano, time.RFC1123, time.RFC1123Z,
+		time.RFC822, time.RFC822Z, time.RFC850,
+		"2006-01-02", "2006-01-02 15:04:05", "2006-01-02T15:04:05",
+		"01/02/2006", "02/01/2006", "01-02-2006", "02-01-2006", "2006/01/02",
+		"January 2, 2006", "Jan 2, 2006",
+		"January 2 2006", "Jan 2 2006",
+		"2 January 2006", "2 Jan 2006",
+		"2006-01-02 15:04:05 MST", "2006-01-02 15:04:05 -0700",
+	}
+
+	// First try the string as-is (so comma formats match directly),
+	// then the comma-stripped version, mirroring ParseDate's normalization.
+	candidates := []string{trimmed, strings.ReplaceAll(trimmed, ",", "")}
+	for _, candidate := range candidates {
+		for _, format := range formats {
+			if _, err := time.Parse(format, candidate); err == nil {
+				return t.Format(format)
+			}
+		}
+	}
+
+	// Couldn't detect the format; fall back to ISO 8601
+	return t.Format("2006-01-02")
+}
+
+// NearestIndex returns the index into dates of the record a displayer
+// would show for query, or -1 if none lies within ±toleranceYears
+// (calendar years, inclusive). dates must be sorted ascending.
+// Ties prefer the later date.
+func NearestIndex(dates []time.Time, query time.Time, toleranceYears int) int {
+	i := sort.Search(len(dates), func(j int) bool {
+		return !dates[j].Before(query)
+	})
+
+	best := -1
+	var bestY int
+	var bestRem time.Duration
+
+	// Right neighbor first; left must be *strictly* closer to win,
+	// so equal calendar distance keeps the later date.
+	if i < len(dates) {
+		if y, rem, ok := calendarDist(query, dates[i], toleranceYears); ok {
+			best, bestY, bestRem = i, y, rem
+		}
+	}
+	if i > 0 {
+		if y, rem, ok := calendarDist(dates[i-1], query, toleranceYears); ok {
+			if best < 0 || y < bestY || (y == bestY && rem < bestRem) {
+				best = i - 1
+			}
+		}
+	}
+	return best
+}
+
+// calendarDist measures the distance from a to b (a <= b) as whole
+// calendar years plus a sub-year remainder, and reports whether it is
+// within toleranceYears (inclusive). (6, 0) means exactly 6 years,
+// regardless of how many leap days the span contains.
+func calendarDist(a, b time.Time, toleranceYears int) (years int, rem time.Duration, ok bool) {
+	years = b.Year() - a.Year()
+	if a.AddDate(years, 0, 0).After(b) {
+		years--
+	}
+	rem = b.Sub(a.AddDate(years, 0, 0))
+	ok = years < toleranceYears || (years == toleranceYears && rem == 0)
+	return years, rem, ok
 }
 
 func AttachQueryParamToUrl(url, queryStr string) string {
