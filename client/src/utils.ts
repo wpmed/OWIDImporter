@@ -1,70 +1,69 @@
 import { OperationItemStatusEnum, OperationStatusEnum, TaskProcessStatusEnum, TaskStatusEnum } from "./types";
+import { StatusKind } from "./theme";
 
-export function getStatusColor(status: TaskStatusEnum) {
+export function getStatusKind(status: TaskStatusEnum): StatusKind {
   switch (status) {
     case TaskStatusEnum.Processing:
-      return "blue"
+      return "processing"
     case TaskStatusEnum.Failed:
-      return "red"
+      return "failed"
     case TaskStatusEnum.Cancelled:
-      return "red"
+      return "cancelled"
     case TaskStatusEnum.Retrying:
-      return "orange"
-    case TaskStatusEnum.Queued:
-      return "black"
+      return "retrying"
     case TaskStatusEnum.Done:
-      return "green"
+      return "done"
+    case TaskStatusEnum.Queued:
     default:
-      return "black"
+      return "queued"
   }
 }
 
-export function getTaskProcessStatusColor(status: TaskProcessStatusEnum) {
+export function getTaskProcessStatusKind(status: TaskProcessStatusEnum): StatusKind {
   switch (status) {
     case TaskProcessStatusEnum.Processing:
-      return "blue"
+      return "processing"
     case TaskProcessStatusEnum.Failed:
-      return "red"
+      return "failed"
     case TaskProcessStatusEnum.Retrying:
-      return "orange"
+      return "retrying"
     case TaskProcessStatusEnum.Overwritten:
     case TaskProcessStatusEnum.Uploaded:
     case TaskProcessStatusEnum.Skipped:
     case TaskProcessStatusEnum.DescriptionUpdated:
-      return "green"
+      return "done"
     default:
-      return "black"
+      return "queued"
   }
 }
 
-export function getOperationStatusColor(status: OperationStatusEnum) {
+export function getOperationStatusKind(status: OperationStatusEnum): StatusKind {
   switch (status) {
     case OperationStatusEnum.Processing:
-      return "blue"
+      return "processing"
     case OperationStatusEnum.Failed:
-      return "red"
+      return "failed"
     case OperationStatusEnum.Cancelled:
-      return "red"
-    case OperationStatusEnum.Queued:
-      return "black"
+      return "cancelled"
     case OperationStatusEnum.Done:
-      return "green"
+      return "done"
+    case OperationStatusEnum.Queued:
     default:
-      return "black"
+      return "queued"
   }
 }
 
-export function getOperationItemStatusColor(status: OperationItemStatusEnum) {
+export function getOperationItemStatusKind(status: OperationItemStatusEnum): StatusKind {
   switch (status) {
     case OperationItemStatusEnum.Processing:
-      return "blue"
+      return "processing"
     case OperationItemStatusEnum.Failed:
-      return "red"
+      return "failed"
     case OperationItemStatusEnum.Updated:
     case OperationItemStatusEnum.Skipped:
-      return "green"
+      return "done"
     default:
-      return "black"
+      return "queued"
   }
 }
 

@@ -1,4 +1,3 @@
-import './App.css'
 import Box from '@mui/material/Box';
 import Drawer from '@mui/material/Drawer';
 import AppBar from '@mui/material/AppBar';
@@ -8,9 +7,14 @@ import Typography from '@mui/material/Typography';
 import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
+import IconButton from '@mui/material/IconButton';
+import Chip from '@mui/material/Chip';
+import Stack from '@mui/material/Stack';
 import MapIcon from '@mui/icons-material/Map';
+import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
-// import ChartIcon from '@mui/icons-material/PieChart';
+import MenuIcon from '@mui/icons-material/Menu';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 
 import { ListItemIcon } from '@mui/material';
 import { MapImporter } from './components/MapImporter';
@@ -18,12 +22,13 @@ import { Login } from './components/Login';
 import { useReplaceSession } from './hooks/useReplaceSession';
 import { SESSION_ID_KEY, USERNAME_KEY } from './constants';
 import { Logout } from '@mui/icons-material';
-import { useCallback, useMemo, useState } from 'react';
+import { ReactNode, useCallback, useMemo, useState } from 'react';
 import { Operation, Task, TaskTypeEnum } from './types';
 import { logout } from './request/request';
 import { TaskList } from './components/TaskList';
 import { OperationList } from './components/OperationList';
 import { OperationRunner } from './components/OperationRunner';
+import { serifStack } from './theme';
 
 const drawerWidth = 240;
 
@@ -33,43 +38,86 @@ enum TABS {
   CHART_LIST = 2,
   CHART_DETAILS = 3,
   IMPORT_MAP = 4,
-  BLANK = 5,
   OPERATION_LIST = 6,
   OPERATION_DETAILS = 7,
   NEW_OPERATION = 8,
 }
 
-const LIST_ITEMS = [
+interface NavItem {
+  id: TABS
+  title: string
+  icon: ReactNode
+  match: TABS[]
+}
+
+interface NavSection {
+  label: string
+  items: NavItem[]
+}
+
+const NAV_SECTIONS: NavSection[] = [
   {
-    id: TABS.MAP_LIST,
-    title: "Map",
-    icon: <MapIcon />,
-    taskType: TaskTypeEnum.MAP,
+    label: "Import",
+    items: [
+      {
+        id: TABS.MAP_LIST,
+        title: "Map imports",
+        icon: <MapIcon />,
+        match: [TABS.MAP_LIST, TABS.MAP_DETAILS],
+      },
+      {
+        id: TABS.IMPORT_MAP,
+        title: "Import map",
+        icon: <AddPhotoAlternateIcon />,
+        match: [TABS.IMPORT_MAP],
+      },
+    ],
   },
   {
-    id: TABS.IMPORT_MAP,
-    title: "Import Map",
-    icon: <MapIcon />,
-    taskType: TaskTypeEnum.MAP,
+    label: "Maintenance",
+    items: [
+      {
+        id: TABS.OPERATION_LIST,
+        title: "Defaults cleanup",
+        icon: <CleaningServicesIcon />,
+        match: [TABS.OPERATION_LIST, TABS.OPERATION_DETAILS, TABS.NEW_OPERATION],
+      },
+    ],
   },
-  {
-    id: TABS.OPERATION_LIST,
-    title: "Defaults Cleanup",
-    icon: <CleaningServicesIcon />,
-  },
-  // {
-  //   id: TABS.CHART_LIST,
-  //   title: "Country Chart",
-  //   icon: <ChartIcon />,
-  //   taskType: TaskTypeEnum.CHART,
-  // }
 ];
 
+function Brand() {
+  return (
+    <Stack direction="row" alignItems="baseline" spacing={1.5}>
+      <Stack direction="row" spacing={0.5} sx={{ alignSelf: 'center' }}>
+        <Box sx={{ width: 10, height: 10, borderRadius: 0.5, bgcolor: 'primary.main' }} />
+        <Box sx={{ width: 10, height: 10, borderRadius: 0.5, bgcolor: 'secondary.main' }} />
+      </Stack>
+      <Typography
+        noWrap
+        component="div"
+        sx={{ fontFamily: serifStack, fontWeight: 600, fontSize: 22, lineHeight: 1 }}
+      >
+        OWID Importer
+      </Typography>
+      <Typography
+        variant="overline"
+        noWrap
+        sx={{ color: 'text.secondary', display: { xs: 'none', sm: 'block' }, lineHeight: 1 }}
+      >
+        for Wikimedia Commons
+      </Typography>
+    </Stack>
+  )
+}
 
 export default function App() {
   const [tab, setTab] = useState(TABS.MAP_LIST);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedOperationId, setSelectedOperationId] = useState("");
+  const [importerKey, setImporterKey] = useState(0);
+  const [operationKey, setOperationKey] = useState(0);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useReplaceSession();
 
@@ -93,18 +141,14 @@ export default function App() {
 
   const onNewClick = () => {
     setSelectedTaskId("");
-    setTab(TABS.BLANK);
-    setTimeout(() => {
-      setTab(TABS.IMPORT_MAP);
-    }, 50)
+    setImporterKey((key) => key + 1);
+    setTab(TABS.IMPORT_MAP);
   }
 
   const onNewOperationClick = () => {
     setSelectedOperationId("");
-    setTab(TABS.BLANK);
-    setTimeout(() => {
-      setTab(TABS.NEW_OPERATION);
-    }, 50)
+    setOperationKey((key) => key + 1);
+    setTab(TABS.NEW_OPERATION);
   }
 
   const onOperationClick = (operation: Operation) => {
@@ -132,13 +176,81 @@ export default function App() {
     window.scrollTo({ left: 0, top: 0 })
   }, [setTab])
 
+  const onNavItemClick = (item: NavItem) => {
+    setMobileOpen(false);
+    if (item.id === TABS.IMPORT_MAP) {
+      onNewClick()
+    } else {
+      setSelectedTaskId("");
+      setSelectedOperationId("");
+      setTab(item.id);
+    }
+  }
+
+  const drawerContent = (
+    <Box sx={{ overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {NAV_SECTIONS.map(section => (
+        <Box key={section.label}>
+          <Typography
+            variant="overline"
+            sx={{ px: 3, pt: 2, pb: 0.5, display: 'block', color: 'text.secondary', fontSize: 11 }}
+          >
+            {section.label}
+          </Typography>
+          <List disablePadding>
+            {section.items.map(item => (
+              <ListItem key={item.id} disablePadding>
+                <ListItemButton
+                  onClick={() => onNavItemClick(item)}
+                  selected={item.match.includes(tab)}
+                >
+                  <ListItemIcon>
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText primary={item.title} />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+        </Box>
+      ))}
+      <List sx={{ mt: 'auto', borderTop: 1, borderColor: 'divider' }}>
+        <ListItem disablePadding>
+          <ListItemButton onClick={onLogout}>
+            <ListItemIcon>
+              <Logout sx={{ transform: "rotate(180deg)" }} />
+            </ListItemIcon>
+            <ListItemText primary={"Logout"} secondary={username} />
+          </ListItemButton>
+        </ListItem>
+      </List>
+    </Box>
+  )
+
   return (
     <Box sx={{ display: 'flex' }}>
       <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
-        <Toolbar>
-          <Typography variant="h6" noWrap component="div">
-            OWID Importer Tool
-          </Typography>
+        <Toolbar sx={{ gap: 1 }}>
+          {sessionId && (
+            <IconButton
+              edge="start"
+              aria-label="Open navigation"
+              onClick={() => setMobileOpen(true)}
+              sx={{ display: { md: 'none' } }}
+            >
+              <MenuIcon />
+            </IconButton>
+          )}
+          <Brand />
+          <Box sx={{ flexGrow: 1 }} />
+          {username && (
+            <Chip
+              icon={<AccountCircleIcon />}
+              label={username}
+              variant="outlined"
+              sx={{ display: { xs: 'none', sm: 'flex' } }}
+            />
+          )}
         </Toolbar>
       </AppBar>
       {sessionId ? (
@@ -148,57 +260,51 @@ export default function App() {
             sx={{
               width: drawerWidth,
               flexShrink: 0,
+              display: { xs: 'none', md: 'block' },
               [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box' },
             }}
           >
             <Toolbar />
-            <Box sx={{ overflow: 'auto' }}>
-              <List>
-                {LIST_ITEMS.map(item => (
-                  <ListItem key={item.id} disablePadding>
-                    <ListItemButton onClick={() => {
-                      if (item.id === TABS.IMPORT_MAP) {
-                        onNewClick()
-                      } else {
-                        setSelectedTaskId("");
-                        setSelectedOperationId("");
-                        setTab(item.id);
-                      }
-                    }}
-                      selected={item.id === tab}>
-                      <ListItemIcon>
-                        {item.icon}
-                      </ListItemIcon>
-                      <ListItemText primary={item.title} />
-                    </ListItemButton>
-                  </ListItem>
-                ))}
-                <ListItem disablePadding>
-                  <ListItemButton onClick={onLogout}>
-                    <ListItemIcon>
-                      <Logout sx={{ transform: "rotate(180deg)" }} />
-                    </ListItemIcon>
-                    <ListItemText primary={"Logout"} secondary={username} />
-                  </ListItemButton>
-                </ListItem>
-              </List>
-            </Box>
+            {drawerContent}
           </Drawer>
-          <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+          <Drawer
+            variant="temporary"
+            open={mobileOpen}
+            onClose={() => setMobileOpen(false)}
+            ModalProps={{ keepMounted: true }}
+            sx={{
+              display: { xs: 'block', md: 'none' },
+              [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box', bgcolor: 'background.default' },
+            }}
+          >
             <Toolbar />
-            {[TABS.MAP_LIST, TABS.CHART_LIST].includes(tab) ? (
-              <TaskList taskType={selectedTaskType} onNew={onNewClick} onTaskClick={onTaskClick} />
-            ) : [TABS.IMPORT_MAP, TABS.MAP_DETAILS].includes(tab) ? (
-              <MapImporter taskId={selectedTaskId} onNavigateToList={onNavigateToList} />
-            ) : tab === TABS.OPERATION_LIST ? (
-              <OperationList onNew={onNewOperationClick} onOperationClick={onOperationClick} />
-            ) : [TABS.NEW_OPERATION, TABS.OPERATION_DETAILS].includes(tab) ? (
-              <OperationRunner operationId={selectedOperationId} onNavigateToList={onNavigateToOperationList} />
-            ) : null}
+            {drawerContent}
+          </Drawer>
+          <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 4 }, minWidth: 0 }}>
+            <Toolbar />
+            <Box sx={{ maxWidth: 1400, mx: 'auto' }}>
+              {[TABS.MAP_LIST, TABS.CHART_LIST].includes(tab) ? (
+                <TaskList taskType={selectedTaskType} onNew={onNewClick} onTaskClick={onTaskClick} />
+              ) : [TABS.IMPORT_MAP, TABS.MAP_DETAILS].includes(tab) ? (
+                <MapImporter
+                  key={`${importerKey}-${selectedTaskId}`}
+                  taskId={selectedTaskId}
+                  onNavigateToList={onNavigateToList}
+                />
+              ) : tab === TABS.OPERATION_LIST ? (
+                <OperationList onNew={onNewOperationClick} onOperationClick={onOperationClick} />
+              ) : [TABS.NEW_OPERATION, TABS.OPERATION_DETAILS].includes(tab) ? (
+                <OperationRunner
+                  key={`${operationKey}-${selectedOperationId}`}
+                  operationId={selectedOperationId}
+                  onNavigateToList={onNavigateToOperationList}
+                />
+              ) : null}
+            </Box>
           </Box>
         </>
       ) : (
-        <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+        <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 4 } }}>
           <Toolbar />
           <Login />
         </Box>
@@ -206,4 +312,3 @@ export default function App() {
     </Box>
   );
 }
-

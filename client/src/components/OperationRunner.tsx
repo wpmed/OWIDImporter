@@ -1,9 +1,13 @@
-import { Alert, Box, Button, Chip, Stack, TextField, Typography } from "@mui/material"
+import { Alert, Button, LinearProgress, Link, Stack, TextField, Typography } from "@mui/material"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { cancelOperation, createOperation, fetchOperationById, retryOperation } from "../request/request"
 import { Operation, OperationItem, OperationItemStatusEnum, OperationStatusEnum, OperationTypeEnum } from "../types"
 import { SocketMessage, SocketMessageActionEnum, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket"
-import { getOperationItemStatusColor, getOperationStatusColor } from "../utils"
+import { getOperationItemStatusKind, getOperationStatusKind } from "../utils"
+import { StatusChip } from "./ui/StatusChip"
+import { useToast } from "../hooks/useToast"
+import { PageHeader } from "./ui/PageHeader"
+import { monoStack } from "../theme"
 
 interface OperationRunnerProps {
   operationId: string
@@ -19,6 +23,7 @@ export function OperationRunner({ operationId: initialOperationId, onNavigateToL
   const [invalidPages, setInvalidPages] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const { ws, connect, disconnect } = useWebsocket();
+  const { showToast } = useToast();
 
   const getOperation = useCallback((id: string) => {
     fetchOperationById(id)
@@ -64,14 +69,20 @@ export function OperationRunner({ operationId: initialOperationId, onNavigateToL
     if (!operationId) return;
     cancelOperation(operationId)
       .then(() => getOperation(operationId))
-      .catch(err => console.log({ err }))
+      .catch(err => {
+        console.log({ err })
+        showToast("Failed to cancel the operation", "error")
+      })
   }
 
   const onRetry = () => {
     if (!operationId) return;
     retryOperation(operationId)
       .then(() => getOperation(operationId))
-      .catch(err => console.log({ err }))
+      .catch(err => {
+        console.log({ err })
+        showToast("Failed to retry the operation", "error")
+      })
   }
 
   const doneItemsCount = useMemo(() => {
@@ -157,13 +168,13 @@ export function OperationRunner({ operationId: initialOperationId, onNavigateToL
 
   if (!operationId) {
     return (
-      <Stack spacing={2} textAlign={"left"}>
-        <Typography variant="h5">Update Template Defaults</Typography>
-        <Typography variant="body2">
-          Resets the start, location, startingView and language parameters of each template page to their defaults.
-        </Typography>
+      <Stack spacing={3}>
+        <PageHeader
+          title="New defaults cleanup"
+          subtitle="Resets the start, location, startingView and language parameters of each template page to their defaults"
+        />
         {error ? (
-          <Alert severity="error">
+          <Alert severity="error" variant="outlined">
             {error}
             {invalidPages.length > 0 ? (
               <ul style={{ margin: 0 }}>
@@ -182,64 +193,92 @@ export function OperationRunner({ operationId: initialOperationId, onNavigateToL
           helperText="One Commons page per line — full URL or page title"
           value={pagesInput}
           onChange={(e) => setPagesInput(e.target.value)}
+          sx={{ '& .MuiInputBase-input': { fontFamily: monoStack, fontSize: 13 } }}
         />
-        <Box>
+        <Stack direction="row" spacing={2}>
           <Button variant="contained" onClick={onSubmit} disabled={loading}>
             Start
           </Button>
-          <Button sx={{ marginLeft: 2 }} onClick={onNavigateToList}>
+          <Button onClick={onNavigateToList}>
             Back to list
           </Button>
-        </Box>
+        </Stack>
       </Stack>
     )
   }
 
   return (
-    <Stack spacing={2} textAlign={"left"}>
-      <Typography variant="h5">Update Template Defaults</Typography>
+    <Stack spacing={3}>
+      <PageHeader
+        title="Defaults cleanup"
+        subtitle="Live progress for this cleanup run"
+        action={(
+          <Stack direction="row" spacing={2}>
+            {canCancel ? (
+              <Button variant="outlined" color="error" onClick={onCancel}>
+                Cancel
+              </Button>
+            ) : null}
+            {canRetry ? (
+              <Button variant="outlined" color="warning" onClick={onRetry}>
+                Retry failed
+              </Button>
+            ) : null}
+            <Button onClick={onNavigateToList}>
+              Back to list
+            </Button>
+          </Stack>
+        )}
+      />
       {operation ? (
-        <Box display="flex" alignItems="center" gap={2}>
-          <Chip
-            label={operation.status}
-            sx={{ backgroundColor: getOperationStatusColor(operation.status), color: "white", textTransform: "capitalize" }}
-          />
-          <Typography variant="body2">
-            {doneItemsCount} of {items.length} pages processed
-            {failedItemsCount > 0 ? ` — ${failedItemsCount} failed` : ""}
-          </Typography>
-        </Box>
+        <Stack spacing={1.5}>
+          <Stack direction="row" alignItems="center" spacing={2}>
+            <StatusChip
+              label={operation.status}
+              kind={getOperationStatusKind(operation.status)}
+              showSpinner={operation.status === OperationStatusEnum.Processing}
+            />
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: monoStack }}>
+              {doneItemsCount}/{items.length} pages
+              {failedItemsCount > 0 ? ` · ${failedItemsCount} failed` : ""}
+            </Typography>
+          </Stack>
+          {items.length > 0 && (
+            <LinearProgress
+              variant="determinate"
+              value={(doneItemsCount / items.length) * 100}
+              sx={{ borderRadius: 99, height: 6 }}
+            />
+          )}
+        </Stack>
       ) : null}
-      <Box>
-        {canCancel ? (
-          <Button variant="outlined" color="error" onClick={onCancel} sx={{ marginRight: 2 }}>
-            Cancel
-          </Button>
-        ) : null}
-        {canRetry ? (
-          <Button variant="outlined" onClick={onRetry} sx={{ marginRight: 2 }}>
-            Retry Failed
-          </Button>
-        ) : null}
-        <Button onClick={onNavigateToList}>
-          Back to list
-        </Button>
-      </Box>
-      <Stack spacing={1}>
+      <Stack>
         {items.map(item => (
-          <Box key={item.id} display="flex" alignItems="center" gap={2} sx={{ borderBottom: "1px solid #eee", paddingBottom: 1 }}>
-            <Chip
+          <Stack
+            key={item.id}
+            direction="row"
+            alignItems="center"
+            spacing={1.5}
+            sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1 }}
+          >
+            <StatusChip
               size="small"
               label={item.status}
-              sx={{ backgroundColor: getOperationItemStatusColor(item.status), color: "white", textTransform: "capitalize", minWidth: 90 }}
+              kind={getOperationItemStatusKind(item.status)}
             />
-            <a href={`${import.meta.env.VITE_MW_BASE_URL}/${item.title}`} target="_blank">
-              <Typography variant="body2">{item.title}</Typography>
-            </a>
+            <Link
+              href={`${import.meta.env.VITE_MW_BASE_URL}/${item.title}`}
+              target="_blank"
+              underline="hover"
+              noWrap
+              sx={{ fontFamily: monoStack, fontSize: 13 }}
+            >
+              {item.title}
+            </Link>
             {item.error ? (
-              <Typography variant="body2" color="error">{item.error}</Typography>
+              <Typography variant="caption" color="error" sx={{ minWidth: 0 }}>{item.error}</Typography>
             ) : null}
-          </Box>
+          </Stack>
         ))}
       </Stack>
     </Stack>
