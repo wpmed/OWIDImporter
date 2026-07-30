@@ -1,25 +1,18 @@
-import { Button, Snackbar } from "@mui/material";
-import { useCallback, useState } from "react";
+import { Button } from "@mui/material";
+import { useCallback } from "react";
 import { copyText } from "../utils";
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { useToast } from "../hooks/useToast";
 
 export function CopyButton({ text }: { text: string }) {
-  const [isCopied, setIsCopied] = useState(false);
+  const { showToast } = useToast();
 
   const onCopy = useCallback(() => {
     copyText(text);
-    setIsCopied(true);
-  }, [text, setIsCopied]);
+    showToast("Copied successfully");
+  }, [text, showToast]);
 
   return (
-    <>
-      <Snackbar
-        open={isCopied}
-        autoHideDuration={2000}
-        onClose={() => setIsCopied(false)}
-        message="Copied succesfully"
-      />
-      <Button size="small" onClick={onCopy} ><ContentCopyIcon fontSize="small" /></Button>
-    </>
+    <Button size="small" onClick={onCopy}><ContentCopyIcon fontSize="small" /></Button>
   )
 }

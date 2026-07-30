@@ -1,9 +1,15 @@
-import { Box, Button, ButtonGroup, Card, CardActionArea, CardActions, CardContent, Chip, Grid, Pagination, Stack, Typography } from "@mui/material"
+import { Box, Button, Card, CardContent, Divider, Grid, Pagination, Stack, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material"
 import { useEffect, useState } from "react"
-import { Operation } from "../types"
+import { Operation, OperationStatusEnum } from "../types"
 import { archiveOperation, fetchOperations } from "../request/request"
 import { SocketMessage, SocketMessageActionEnum, useWebsocket } from "../hooks/useWebsocket"
-import { formatDate, getOperationStatusColor } from "../utils"
+import { formatDate, getOperationStatusKind } from "../utils"
+import { StatusChip } from "./ui/StatusChip"
+import { useToast } from "../hooks/useToast"
+import { PageHeader } from "./ui/PageHeader"
+import { EmptyState } from "./ui/EmptyState"
+import { TaskCardSkeleton } from "./ui/TaskCardSkeleton"
+import { Add, CleaningServices } from "@mui/icons-material"
 
 interface OperationListProps {
   onOperationClick: (operation: Operation) => void
@@ -12,11 +18,13 @@ interface OperationListProps {
 
 export function OperationList({ onOperationClick, onNew }: OperationListProps) {
   const [operations, setOperations] = useState<Operation[]>([]);
+  const [loading, setLoading] = useState(true);
   const [archived, setArchived] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const perPage = 20;
   const { ws, connect, disconnect } = useWebsocket();
+  const { showToast } = useToast();
 
   const onToggleOperationArchived = (operation: Operation) => {
     const newArchived = operation.archived === 0 ? 1 : 0;
@@ -31,10 +39,12 @@ export function OperationList({ onOperationClick, onNew }: OperationListProps) {
       })
       .catch(err => {
         console.log("Error updating archive: ", newArchived, err)
+        showToast("Failed to update the operation", "error")
       })
   }
 
   useEffect(() => {
+    setLoading(true);
     fetchOperations({ archived, page, perPage })
       .then(res => {
         if (res.operations) {
@@ -44,8 +54,12 @@ export function OperationList({ onOperationClick, onNew }: OperationListProps) {
       })
       .catch(err => {
         console.log({ err });
+        showToast("Failed to load operations", "error")
       })
-  }, [archived, page, perPage])
+      .finally(() => {
+        setLoading(false);
+      })
+  }, [archived, page, perPage, showToast])
 
   useEffect(() => {
     if (ws) {
@@ -95,48 +109,96 @@ export function OperationList({ onOperationClick, onNew }: OperationListProps) {
   }, [connect, disconnect])
 
   return (
-    <Stack spacing={2} textAlign={"left"}>
+    <Stack spacing={3}>
+      <PageHeader
+        title="Defaults cleanup"
+        subtitle="Reset OWID template parameters on Commons pages back to their defaults"
+        action={(
+          <Button variant="contained" startIcon={<Add />} onClick={onNew}>
+            New cleanup
+          </Button>
+        )}
+      />
+
       <Box>
-        <Button sx={{ textTransform: "capitalize" }} variant="contained" onClick={onNew}>
-          New Defaults Cleanup
-        </Button>
-      </Box>
-      <hr />
-      <Box>
-        <ButtonGroup>
-          <Button onClick={() => { setArchived(0); setPage(1); }} variant={archived == 0 ? "contained" : undefined}>Recent</Button>
-          <Button onClick={() => { setArchived(1); setPage(1); }} variant={archived == 1 ? "contained" : undefined}>Archived</Button>
-        </ButtonGroup>
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={archived}
+          onChange={(_, value) => {
+            if (value !== null) {
+              setArchived(value);
+              setPage(1);
+            }
+          }}
+        >
+          <ToggleButton value={0}>Recent</ToggleButton>
+          <ToggleButton value={1}>Archived</ToggleButton>
+        </ToggleButtonGroup>
       </Box>
 
-      <Grid container spacing={4}>
-        {operations.map(operation => (
-          <Grid size={4} key={operation.id}>
-            <Card>
-              <CardActionArea onClick={() => onOperationClick(operation)}>
+      {loading && operations.length === 0 ? (
+        <Grid container spacing={3}>
+          {Array.from({ length: 3 }, (_, i) => (
+            <Grid size={{ xs: 12, sm: 6, lg: 4 }} key={i}>
+              <TaskCardSkeleton />
+            </Grid>
+          ))}
+        </Grid>
+      ) : operations.length === 0 ? (
+        <EmptyState
+          icon={<CleaningServices />}
+          title={archived ? "No archived cleanups" : "No cleanups yet"}
+          description={archived
+            ? "Cleanup runs you archive will show up here."
+            : "Start a cleanup run to reset template defaults across Commons pages."}
+          action={!archived && (
+            <Button variant="contained" startIcon={<Add />} onClick={onNew}>
+              New cleanup
+            </Button>
+          )}
+        />
+      ) : (
+        <Grid container spacing={3}>
+          {operations.map(operation => (
+            <Grid size={{ xs: 12, sm: 6, lg: 4 }} key={operation.id}>
+              <Card
+                role="button"
+                tabIndex={0}
+                sx={{ height: '100%', cursor: 'pointer' }}
+                onClick={() => onOperationClick(operation)}
+                onKeyDown={(e) => {
+                  if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    onOperationClick(operation);
+                  }
+                }}
+              >
                 <CardContent>
-                  <Box display="flex" alignItems="center" justifyContent="space-between">
-                    <Typography variant="subtitle1">Defaults Cleanup</Typography>
-                    <Chip
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                    <Typography sx={{ fontWeight: 600 }}>Defaults cleanup</Typography>
+                    <StatusChip
                       size="small"
                       label={operation.status}
-                      sx={{ backgroundColor: getOperationStatusColor(operation.status), color: "white", textTransform: "capitalize" }}
+                      kind={getOperationStatusKind(operation.status)}
+                      showSpinner={operation.status === OperationStatusEnum.Processing}
                     />
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    {formatDate(new Date(operation.createdAt * 1000))}
-                  </Typography>
+                  </Stack>
+                  <Divider sx={{ mb: 1 }} />
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" onClick={(e) => e.stopPropagation()}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      {formatDate(new Date(operation.createdAt * 1000))}
+                    </Typography>
+                    <Button size="small" onClick={() => onToggleOperationArchived(operation)}>
+                      {operation.archived === 0 ? "Archive" : "Unarchive"}
+                    </Button>
+                  </Stack>
                 </CardContent>
-              </CardActionArea>
-              <CardActions>
-                <Button size="small" onClick={() => onToggleOperationArchived(operation)}>
-                  {operation.archived === 0 ? "Archive" : "Unarchive"}
-                </Button>
-              </CardActions>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )}
 
       {totalPages > 1 && (
         <Box display="flex" justifyContent="center" mt={2}>
