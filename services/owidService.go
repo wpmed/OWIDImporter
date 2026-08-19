@@ -569,40 +569,12 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 
 	// Already uploaded, just update the description if changed
 	if len(page.ImageInfo) > 0 && page.ImageInfo[0].SHA1 == fileInfo.Sha1 {
-		// We ddin't fetch the wikitext or it failed, try again
-		if wikiText == "" {
-			wikiText, err = getFileWikiText(user, filename)
+		updated, err := updateFileDescriptionIfChanged(user, token, filename, wikiText, newFileDesc, data.Url)
+		if err != nil {
+			return filename, "", err
 		}
-
-		params := map[string]string{
-			"action":         "edit",
-			"comment":        "Updating description from " + data.Url,
-			"text":           newFileDesc,
-			"title":          "File:" + filename,
-			"ignorewarnings": "1",
-			"token":          token,
-		}
-
-		if wikiText != "" && strings.Compare(strings.TrimSpace(wikiText), strings.TrimSpace(newFileDesc)) != 0 {
-			// fmt.Println("Old Desc:\n", strings.TrimSpace(wikiText))
-			// fmt.Println("New Desc:\n", strings.TrimSpace(newFileDesc))
-
-			res, err := utils.DoApiReq[interface{}](user, params, nil)
-			if err != nil {
-				fmt.Println("Error updating description: ", err, res)
-			} else {
-				res2 := *res
-				res3, ok1 := res2.(map[string]interface{})
-				if ok1 {
-					_, ok2 := res3["error"]
-					if ok2 {
-						fmt.Println("Error updating description", res3)
-						return filename, "", fmt.Errorf("Error updating description")
-
-					}
-				}
-				return filename, "description_updated", nil
-			}
+		if updated {
+			return filename, "description_updated", nil
 		}
 		return filename, "skipped", nil
 	} else {
@@ -623,11 +595,52 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 			return filename, "", err
 		}
 		if res.Upload.Result == "Success" {
+			// The upload API only applies "text" to brand-new file pages, so
+			// the description must be edited separately on overwrite
+			if _, err := updateFileDescriptionIfChanged(user, token, filename, wikiText, newFileDesc, data.Url); err != nil {
+				return filename, "", err
+			}
 			return filename, "overwritten", nil
 		}
 		fmt.Println("Error uploading file", res)
 		return filename, "", fmt.Errorf("%s", res.Upload.Result)
 	}
+}
+
+func updateFileDescriptionIfChanged(user *models.User, token, filename, wikiText, newFileDesc, url string) (bool, error) {
+	// We didn't fetch the wikitext or it failed, try again
+	if wikiText == "" {
+		wikiText, _ = getFileWikiText(user, filename)
+	}
+
+	if wikiText == "" || strings.Compare(strings.TrimSpace(wikiText), strings.TrimSpace(newFileDesc)) == 0 {
+		return false, nil
+	}
+
+	params := map[string]string{
+		"action":         "edit",
+		"comment":        "Updating description from " + url,
+		"text":           newFileDesc,
+		"title":          "File:" + filename,
+		"ignorewarnings": "1",
+		"token":          token,
+	}
+
+	res, err := utils.DoApiReq[interface{}](user, params, nil)
+	if err != nil {
+		fmt.Println("Error updating description: ", err, res)
+		return false, nil
+	}
+	res2 := *res
+	res3, ok1 := res2.(map[string]interface{})
+	if ok1 {
+		_, ok2 := res3["error"]
+		if ok2 {
+			fmt.Println("Error updating description", res3)
+			return false, fmt.Errorf("Error updating description")
+		}
+	}
+	return true, nil
 }
 
 func downloadCommonsFile(filename, outputPath string, user *models.User) error {
