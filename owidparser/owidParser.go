@@ -482,6 +482,7 @@ func CleanupSVGForUpload(mapPath string) error {
 		return err
 	}
 
+	FlattenTitleText(&genericSVG)
 	CleanupAnchorElementsHref(&genericSVG)
 	CleanupTextElementsPreserveStructure(&genericSVG)
 
@@ -1054,6 +1055,36 @@ func extractAllTextContent(element *GenericElement) string {
 	}
 
 	return textBuilder.String()
+}
+
+// FlattenTitleText merges nested tspans in the chart title into a single text value,
+// e.g. <tspan>Fossil-fuel subsidies per capita<tspan>2021</tspan></tspan>
+// becomes <tspan>Fossil-fuel subsidies per capita, 2021</tspan>
+func FlattenTitleText(svg *GenericSVG) {
+	for _, titleEl := range svg.FindElementsByAttribute("id", "title") {
+		if titleEl.XMLName.Local != "a" {
+			continue
+		}
+		for _, textEl := range titleEl.FindElements("text") {
+			for _, tspan := range textEl.FindElements("tspan") {
+				nestedTspans := tspan.FindElements("tspan")
+				if len(nestedTspans) == 0 {
+					continue
+				}
+				mainText := strings.TrimSuffix(strings.TrimSpace(tspan.GetTextContent()), ",")
+				parts := []string{}
+				if mainText != "" {
+					parts = append(parts, mainText)
+				}
+				for _, nested := range nestedTspans {
+					if nestedText := strings.TrimSpace(extractAllTextContent(nested)); nestedText != "" {
+						parts = append(parts, nestedText)
+					}
+				}
+				tspan.SetTextContent(strings.Join(parts, ", "))
+			}
+		}
+	}
 }
 
 func CleanupAnchorElementsHref(svg *GenericSVG) {
