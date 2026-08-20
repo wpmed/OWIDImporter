@@ -1408,8 +1408,7 @@ func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
 	// TODO
 	endYear = *marker.MustAttribute("aria-valuemax")
 	// endYear = "2023"
-	title = page.MustElement(TITLE_SELECTOR).MustText()
-	title = strings.TrimSpace(title)
+	title = getMapTitleFromPage(page)
 	suffix := ", " + endYear
 	if strings.HasSuffix(title, suffix) {
 		title = strings.ReplaceAll(title, suffix, "")
@@ -1419,10 +1418,17 @@ func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
 }
 
 func getMapTitleFromPage(page *rod.Page) string {
-	title := page.MustElement(TITLE_SELECTOR).MustText()
-	title = strings.TrimSpace(title)
+	for _, selector := range strings.Split(TITLE_SELECTOR, ",") {
+		selector := strings.TrimSpace(selector)
+		if el, err := page.Element(selector); err == nil && el != nil {
+			title := el.MustText()
+			title = strings.TrimSpace(title)
+			return title
+		}
 
-	return title
+	}
+
+	return ""
 }
 
 func processRegion(user *models.User, task *models.Task, chartName string, region, downloadPath string, chartParamsMap map[string]string, title string, data StartData) error {
