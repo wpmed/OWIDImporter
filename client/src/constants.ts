@@ -18,9 +18,9 @@ export const CHART_INFO_MAP = `You can use $NAME (filename without extension), $
 
 export const INITIAL_CATEGORIES_CHART = [
   "Uploaded by OWID importer tool",
-  "Our World in Data graphs of {{subst:#ifeq:$REGION|World|the world|$REGION}}"
+  "Our World in Data graphs of {{subst:#ifeq:$REGION_NAME|World|the world|$REGION_NAME}}"
 ]
-export const CHART_INFO_CHART = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders`;
+export const CHART_INFO_CHART = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION (The country code), $REGION_NAME (The country name), $TITLE (Title of graph), and $URL as placeholders`;
 
 
 export const INITIAL_TEMPLATE_NAME = `$CHART_NAME`

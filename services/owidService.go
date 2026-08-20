@@ -724,15 +724,16 @@ func getFileInfo(fileDirectory string) (*FileInfo, error) {
 }
 
 type ReplaceVarsData struct {
-	Url       string
-	Title     string
-	Year      string
-	Region    string
-	StartYear string
-	EndYear   string
-	FileName  string
-	Comment   string
-	Params    map[string]string
+	Url        string
+	Title      string
+	Year       string
+	Region     string
+	RegionName string
+	StartYear  string
+	EndYear    string
+	FileName   string
+	Comment    string
+	Params     map[string]string
 }
 
 func replaceVars(value string, params ReplaceVarsData) string {
@@ -754,6 +755,13 @@ func replaceVars(value string, params ReplaceVarsData) string {
 	}
 	if params.Year != "" {
 		value = strings.ReplaceAll(value, "$YEAR", params.Year)
+	}
+	if params.RegionName != "" {
+		fmt.Println("================ Replacing region name: ")
+		fmt.Println(value)
+		fmt.Println(params.RegionName)
+		value = strings.ReplaceAll(value, "$REGION_NAME", params.RegionName)
+		fmt.Println(value)
 	}
 	if params.Region != "" {
 		value = strings.ReplaceAll(value, "$REGION", params.Region)
