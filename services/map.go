@@ -499,6 +499,7 @@ type ChartInfo struct {
 	CountriesList []string          `json:"countriesList"`
 	StableUrl     string            `json:"stableUrl"`
 	SingleImage   bool              `json:"singleImage"`
+	Source        string            `json:"source"`
 }
 
 /*
@@ -535,6 +536,7 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 				chartInfo.SingleImage = true
 
 				chartInfo.Title = getMapTitleFromPage(page)
+				chartInfo.Source = getMapSourceFromPage(page)
 				if chartInfo.Title != "" {
 					// for single image charts, we'll use the title as the chartName
 					chartInfo.ChartName = chartInfo.Title
@@ -577,6 +579,8 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 			chartInfo.StartYear = startYear
 			chartInfo.EndYear = endYear
 			chartInfo.Title = title
+			chartInfo.Source = getMapSourceFromPage(page)
+			fmt.Println("GOT Source", chartInfo.Source)
 			hasCountries, countriesList := getMapHasCountriesFromPage(page)
 			chartInfo.HasCountries = hasCountries
 			chartInfo.CountriesList = countriesList
@@ -1408,8 +1412,7 @@ func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
 	// TODO
 	endYear = *marker.MustAttribute("aria-valuemax")
 	// endYear = "2023"
-	title = page.MustElement(TITLE_SELECTOR).MustText()
-	title = strings.TrimSpace(title)
+	title = getMapTitleFromPage(page)
 	suffix := ", " + endYear
 	if strings.HasSuffix(title, suffix) {
 		title = strings.ReplaceAll(title, suffix, "")
@@ -1419,10 +1422,52 @@ func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
 }
 
 func getMapTitleFromPage(page *rod.Page) string {
-	title := page.MustElement(TITLE_SELECTOR).MustText()
-	title = strings.TrimSpace(title)
+	for _, selector := range strings.Split(TITLE_SELECTOR, ",") {
+		selector := strings.TrimSpace(selector)
+		if el, err := page.Element(selector); err == nil && el != nil {
+			title := el.MustText()
+			title = strings.TrimSpace(title)
+			return title
+		}
 
-	return title
+	}
+
+	return ""
+}
+
+func getMapSourceFromPage(page *rod.Page) string {
+	// The "Source" entry in the key-data section below the chart
+	if titles, err := page.Elements(SOURCE_KEY_DATA_TITLE_SELECTOR); err == nil {
+		for _, titleEl := range titles {
+			if text, err := titleEl.Text(); err != nil || strings.TrimSpace(text) != "Source" {
+				continue
+			}
+			if sibling, err := titleEl.Next(); err == nil && sibling != nil {
+				if source, err := sibling.Text(); err == nil && strings.TrimSpace(source) != "" {
+					return strings.TrimSpace(source)
+				}
+			}
+		}
+	}
+
+	// Fallback: the "Data source:" line in the chart footer
+	if lines, err := page.Elements(SOURCE_FOOTER_LINE_SELECTOR); err == nil {
+		for _, line := range lines {
+			text, err := line.Text()
+			if err != nil {
+				continue
+			}
+			text = strings.TrimSpace(text)
+			if !strings.HasPrefix(text, "Data source:") {
+				continue
+			}
+			if source := strings.TrimSpace(strings.TrimPrefix(text, "Data source:")); source != "" {
+				return source
+			}
+		}
+	}
+
+	return ""
 }
 
 func processRegion(user *models.User, task *models.Task, chartName string, region, downloadPath string, chartParamsMap map[string]string, title string, data StartData) error {

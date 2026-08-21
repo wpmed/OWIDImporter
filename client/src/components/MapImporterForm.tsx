@@ -8,6 +8,7 @@ import { Delete } from "@mui/icons-material";
 import { CHART_INFO_CHART, CHART_INFO_MAP, COMMONS_TEMPLATE_PREFIX, COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS, DESCRIPTION_OVERWRITE_OPTIONS, INITIAL_CATEGORIES_CHART, INITIAL_CATEGORIES_MAP, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX, URL_PLACEHOLDER } from "../constants";
 import { searchPageExists } from "../request/commons";
 import { FieldLoading } from "./FieldLoader";
+import { applyChartSourceToDescription } from "../utils";
 import { PlaceholderText } from "./ui/PlaceholderText";
 import { OverwriteBehaviourField } from "./OverwriteBehaviourField";
 import { monoStack, serifStack } from "../theme";
@@ -101,6 +102,8 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
               singleImage: res.info.singleImage,
               fileName: newInitialFilenameMap,
               countryFileName: newInitialFilenameChart,
+              description: applyChartSourceToDescription(value.description, res.info.source),
+              countryDescription: applyChartSourceToDescription(value.countryDescription, res.info.source),
               selectedChartParameters: selectedParams,
               templateNameFormat: newTemplateName,
               linkVerified: true,
@@ -120,7 +123,8 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
             onChange({
               ...value,
               fileName,
-              description,
+              description: applyChartSourceToDescription(description, res.info.source),
+              countryDescription: applyChartSourceToDescription(value.countryDescription, res.info.source),
               categories,
               singleImage: res.info.singleImage,
               linkVerified: true,
@@ -207,7 +211,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
         </Alert>
       )}
 
-      {chartInfo && (chartInfo.chartName || chartInfo.title || (chartInfo.startYear && chartInfo.endYear)) && (
+      {chartInfo && (chartInfo.chartName || chartInfo.title || (chartInfo.startYear && chartInfo.endYear) || chartInfo.source) && (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Stack spacing={1}>
             <Typography variant="overline" sx={{ color: 'text.secondary', lineHeight: 1.5 }}>
@@ -221,6 +225,9 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
             )}
             {chartInfo.startYear && chartInfo.endYear && (
               <ChartDetailRow label="Years" value={`${chartInfo.startYear} – ${chartInfo.endYear}`} />
+            )}
+            {chartInfo.source && (
+              <ChartDetailRow label="Author" value={chartInfo.source} />
             )}
           </Stack>
         </Paper>

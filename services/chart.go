@@ -129,6 +129,7 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 	models.UpdateTaskLastOperationAt(task.ID)
 	result := DownloadCountryGraphsFromPopover(url, downloadPath)
 	models.UpdateTaskLastOperationAt(task.ID)
+	countryCodeNameMap := constants.GetCountryCodeNameMap()
 
 	for country, path := range result {
 		if task.Status != models.TaskStatusProcessing {
@@ -172,6 +173,12 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 			FileName:  GetFileNameFromChartName(chartName),
 			Comment:   "Importing from " + data.Url,
 			Params:    chartParams,
+		}
+
+		if name, exists := countryCodeNameMap[country]; exists {
+			replaceData.RegionName = name
+		} else {
+			replaceData.RegionName = country
 		}
 
 		filename, status, err := uploadCountryChart(user, &token, replaceData, path, data)
@@ -449,6 +456,13 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 			Comment:   "Importing from " + data.Url,
 			Params:    chartParams,
 		}
+
+		if name != "" {
+			replaceData.RegionName = name
+		} else {
+			replaceData.RegionName = code
+		}
+
 		filename, status, err := uploadCountryChart(user, token, replaceData, countryDownloadPath, data)
 		if err != nil {
 			FailTaskProcess(taskProcess)

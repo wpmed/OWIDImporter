@@ -9,14 +9,18 @@ export const OWID_CHART_URL_PREFIX = "https://ourworldindata.org";
 export const URL_PLACEHOLDER = `https://ourworldindata.org/grapher/<NAME OF GRAPH>`;
 export const INITIAL_CATEGORIES_MAP = [
   "$YEAR maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}",
+  "Our World in Data maps of {{subst:#ifeq:$REGION|World|the world|$REGION}}",
   "SVG maps by Our World in Data",
   "Uploaded by OWID importer tool"
 ]
 
 export const CHART_INFO_MAP = `You can use $NAME (filename without extension), $YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders. This only works for graphs that are maps with data over multiple years.`;
 
-export const INITIAL_CATEGORIES_CHART = ["Uploaded by OWID importer tool"]
-export const CHART_INFO_CHART = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders`;
+export const INITIAL_CATEGORIES_CHART = [
+  "Uploaded by OWID importer tool",
+  "Our World in Data graphs of {{subst:#ifeq:$REGION_NAME|World|the world|$REGION_NAME}}"
+]
+export const CHART_INFO_CHART = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION (The country code), $REGION_NAME (The country name), $TITLE (Title of graph), and $URL as placeholders`;
 
 
 export const INITIAL_TEMPLATE_NAME = `$CHART_NAME`

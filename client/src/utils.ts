@@ -135,6 +135,13 @@ function copyExecCommand(text: string) {
   return false;
 }
 
+export function applyChartSourceToDescription(description: string, source?: string) {
+  if (!source) {
+    return description;
+  }
+  return description.replace(/author\s*=\s*Our World In Data/i, `author = ${source}`);
+}
+
 export function extractAndReplaceCategoriesFromDescription(description: string) {
   const matches = [...description.matchAll(/\[\[Category:([^\]]+)\]\]/g)];
   const categories: string[] = [];

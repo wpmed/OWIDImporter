@@ -6,7 +6,7 @@ const (
 	DOWNLOAD_SVG_SELECTOR           = "div.download-modal__tab-content:nth-child(1) button.download-button:nth-child(2), div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
 	DOWNLOAD_SVG_ICON_SELECTOR      = "div.download-modal__tab-content:nth-child(1) button.download-button:nth-child(2) .download-button__preview-image, div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2) .download-modal__download-preview-img"
 	START_MARKER_SELECTOR           = ".startMarker"
-	TITLE_SELECTOR                  = "h1.header__title, .HeaderHTML h1"
+	TITLE_SELECTOR                  = "h1 .markdown-text-wrap__line > span:first-child, h1.header__title, .HeaderHTML h1"
 	END_MARKER_SELECTOR             = ".endMarker"
 	DOWNLOAD_POPUP_CLOSE_BUTTON     = "div.download-modal-content button.close-button"
 	COUNTRY_SELECTED_OPTIONS_LIST   = ".entity-selector__content .entity-section ul li[data-flip-id^=\"selected_\"], .EntityList label.EntityPickerOption.selected .name"
@@ -15,4 +15,6 @@ const (
 	MAP_TOOLTIP_SELECTOR            = "#mapTooltip .content svg"
 	TABS_LABELS_SELECTOR            = ".ContentSwitchers__Container div.Tabs div.Tabs__Tab .label"
 	TABS_LABELS_ACTIVE_TAB_SELECTOR = ".ContentSwitchers__Container div.Tabs div.Tabs__Tab.active"
+	SOURCE_KEY_DATA_TITLE_SELECTOR  = "div.key-data__title"
+	SOURCE_FOOTER_LINE_SELECTOR     = ".markdown-text-wrap__line"
 )
