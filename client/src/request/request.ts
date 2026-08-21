@@ -397,6 +397,7 @@ export interface ChartInfo {
   startYear: string
   endYear: string
   singleImage: boolean
+  source: string
 }
 
 export interface ChartParamteres {

@@ -9,6 +9,7 @@ import { searchPageExists } from "../request/commons";
 import { useToast } from "../hooks/useToast";
 import { OverwriteBehaviourField } from "./OverwriteBehaviourField";
 import { monoStack } from "../theme";
+import { applyChartSourceToDescription } from "../utils";
 
 interface ProcessingLink {
   url: string
@@ -88,7 +89,7 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
           if (result) {
             if (result.info.singleImage) {
               imp.fileName = INITIAL_FILENAME_MAP_SINGLE_IMAGE;
-              imp.countryFileName = INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE;
+              imp.description = INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE;
               imp.categories = INITIAL_CATEGORIES_MAP_SINGLE_IMAGE;
               imp.singleImage = true;
             } else {
@@ -147,6 +148,11 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
           }
 
 
+
+          if (result?.info?.source) {
+            imp.description = applyChartSourceToDescription(imp.description, result.info.source);
+            imp.countryDescription = applyChartSourceToDescription(imp.countryDescription, result.info.source);
+          }
 
           if (!result.error) {
             imp.canImport = true;

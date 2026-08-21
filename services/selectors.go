@@ -15,4 +15,6 @@ const (
 	MAP_TOOLTIP_SELECTOR            = "#mapTooltip .content svg"
 	TABS_LABELS_SELECTOR            = ".ContentSwitchers__Container div.Tabs div.Tabs__Tab .label"
 	TABS_LABELS_ACTIVE_TAB_SELECTOR = ".ContentSwitchers__Container div.Tabs div.Tabs__Tab.active"
+	SOURCE_KEY_DATA_TITLE_SELECTOR  = "div.key-data__title"
+	SOURCE_FOOTER_LINE_SELECTOR     = ".markdown-text-wrap__line"
 )
