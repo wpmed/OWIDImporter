@@ -1,6 +1,5 @@
 # Golang build
-# FROM golang:1.23.2-alpine AS go-builder
-FROM debian:bullseye AS go-builder
+FROM debian:bookworm as go-builder
 WORKDIR /app
 
 RUN apt-get update -y && apt-get install -y wget gcc libc6-dev sqlite3 libsqlite3-dev git && rm -rf /var/lib/apt/lists/*
@@ -28,7 +27,7 @@ COPY .env.client ./client/.env
 RUN cd client && npm install && npm run build
 
 # Final image
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 WORKDIR /app
 
 # Install runtime dependencies from project.toml
