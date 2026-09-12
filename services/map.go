@@ -264,7 +264,7 @@ func processSingleImage(task *models.Task, user *models.User, chartInfo *ChartIn
 		return fmt.Errorf("Can't find DOWNLOAD_SVG_SELECTOR")
 	}
 
-	elements := page.MustElements(DOWNLOAD_SVG_ICON_SELECTOR)
+	elements := page.MustElements(DOWNLOAD_SVG_BUTTON_SELECTOR)
 
 	if err := elements[0].Click(proto.InputMouseButtonLeft, 1); err != nil {
 		// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
@@ -701,7 +701,7 @@ func TestDownloadPage(page *rod.Page) (bool, error) {
 	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
 		return false, err
 	}
-	downloadIcon := page.MustElement(DOWNLOAD_SVG_ICON_SELECTOR)
+	downloadIcon := page.MustElement(DOWNLOAD_SVG_BUTTON_SELECTOR)
 	fmt.Println("GOT DOWNLOAD ICON", downloadIcon)
 	if downloadIcon == nil {
 		return false, fmt.Errorf("SVG Download icon not found")
@@ -1018,7 +1018,7 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 			}
 			time.Sleep(time.Millisecond * 200)
 
-			err = page.MustElements(DOWNLOAD_SVG_ICON_SELECTOR)[0].Click(proto.InputMouseButtonLeft, 1)
+			err = page.MustElements(DOWNLOAD_SVG_BUTTON_SELECTOR)[0].Click(proto.InputMouseButtonLeft, 1)
 			if err != nil {
 				// utils.SendWSProgress(session, taskProcess)
 				fmt.Printf("%s, %s, %v", url, "Error clicking download svg button", err)

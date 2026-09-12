@@ -423,9 +423,11 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 			CloseDownloadPopup(page)
 			continue
 		}
+		fmt.Println("DONE WAITING FOR DOWNLOAD ICON")
 
-		elements := page.MustElements(DOWNLOAD_SVG_ICON_SELECTOR)
+		elements := page.MustElements(DOWNLOAD_SVG_BUTTON_SELECTOR)
 
+		fmt.Println("GOT DOWNLOAD ICON")
 		if err := elements[0].Click(proto.InputMouseButtonLeft, 1); err != nil {
 			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 			fmt.Println(code, "Error clicking download svg button", err)

@@ -4,7 +4,8 @@ const (
 	DOWNLOAD_BUTTON_SELECTOR        = `figure div[data-track-note="chart_click_download"] button, .Explorer .ActionButtons div[data-track-note="chart_click_download"] button`
 	PLAY_TIMELAPSE_BUTTON_SELECTOR  = `.GrapherTimeline`
 	DOWNLOAD_SVG_SELECTOR           = "div.download-modal__tab-content:nth-child(1) button.download-button:nth-child(2), div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2)"
-	DOWNLOAD_SVG_ICON_SELECTOR      = "div.download-modal__tab-content:nth-child(1) button.download-button:nth-child(2) .download-button__preview-image, div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2) .download-modal__download-preview-img"
+	DOWNLOAD_SVG_ICON_SELECTOR      = "div.download-modal__tab-content:nth-child(1) button.download-button:nth-child(2) .download-button__preview-image, div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2) .download-modal__download-preview-img, div.download-modal__download-buttons button:nth-child(2) div.download-button__download-icon"
+	DOWNLOAD_SVG_BUTTON_SELECTOR    = "div.download-modal__tab-content:nth-child(1) button.download-button:nth-child(2), div.download-modal__tab-content:nth-child(1) button.download-modal__download-button:nth-child(2), div.download-modal__download-buttons button:nth-child(2)"
 	START_MARKER_SELECTOR           = ".startMarker"
 	TITLE_SELECTOR                  = "h1 .markdown-text-wrap__line > span:first-child, h1.header__title, .HeaderHTML h1"
 	END_MARKER_SELECTOR             = ".endMarker"
