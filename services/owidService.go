@@ -531,6 +531,17 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 		return filename, "", fmt.Errorf("upload failed: %s", res.Upload.Result)
 	}
 
+	// Page already exists with different content: never lose svgtranslate translations
+	keepExisting := false
+	if page.ImageInfo[0].SHA1 != fileInfo.Sha1 {
+		var unchanged bool
+		fileInfo, unchanged, err = preserveExistingTranslations(filename, page.ImageInfo[0].URL, downloadPath, fileInfo)
+		if err != nil {
+			return filename, "", fmt.Errorf("error preserving translations: %w", err)
+		}
+		keepExisting = unchanged
+	}
+
 	// Page already exists
 	var wikiText string
 	newFileDesc := strings.TrimSpace(filedesc)
@@ -568,7 +579,7 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 	}
 
 	// Already uploaded, just update the description if changed
-	if len(page.ImageInfo) > 0 && page.ImageInfo[0].SHA1 == fileInfo.Sha1 {
+	if keepExisting || page.ImageInfo[0].SHA1 == fileInfo.Sha1 {
 		updated, err := updateFileDescriptionIfChanged(user, token, filename, wikiText, newFileDesc, data.Url)
 		if err != nil {
 			return filename, "", err
@@ -657,7 +668,25 @@ func downloadCommonsFile(filename, outputPath string, user *models.User) error {
 		return fmt.Errorf("no image URL returned for: %s", filename)
 	}
 
-	resp, err := http.Get(page.ImageInfo[0].URL)
+	return downloadCommonsFileFromURL(page.ImageInfo[0].URL, outputPath)
+}
+
+var commonsDownloadClient = &http.Client{Timeout: 60 * time.Second}
+
+const defaultCommonsUA = "OWIDImporter/1.0"
+
+func downloadCommonsFileFromURL(url, outputPath string) error {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	ua := os.Getenv("OWID_UA")
+	if ua == "" {
+		ua = defaultCommonsUA
+	}
+	req.Header.Set("User-Agent", ua)
+
+	resp, err := commonsDownloadClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -757,11 +786,7 @@ func replaceVars(value string, params ReplaceVarsData) string {
 		value = strings.ReplaceAll(value, "$YEAR", params.Year)
 	}
 	if params.RegionName != "" {
-		fmt.Println("================ Replacing region name: ")
-		fmt.Println(value)
-		fmt.Println(params.RegionName)
 		value = strings.ReplaceAll(value, "$REGION_NAME", params.RegionName)
-		fmt.Println(value)
 	}
 	if params.Region != "" {
 		value = strings.ReplaceAll(value, "$REGION", params.Region)
@@ -776,6 +801,9 @@ func replaceVars(value string, params ReplaceVarsData) string {
 	for k, v := range params.Params {
 		value = strings.ReplaceAll(value, fmt.Sprintf("$%s", k), v)
 	}
+
+	// Fallback if the client didn't replace $SOURCE
+	value = strings.ReplaceAll(value, "$SOURCE", "Our World in Data")
 
 	return value
 }
@@ -1057,16 +1085,6 @@ func GetChartTemplate(taskId string) (string, error) {
 
 func GetFileNameFromChartName(chartName string) string {
 	return strings.ReplaceAll(chartName, "-", " ")
-}
-
-func SVGHasSwitchElement(filePath string) bool {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return false
-	}
-
-	re := regexp.MustCompile(`(?i)<(?:[a-zA-Z_][\w.-]*:)?switch(?:\s|/|>)`)
-	return re.Match(data)
 }
 
 type WikiResponse struct {

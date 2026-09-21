@@ -227,7 +227,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
               <ChartDetailRow label="Years" value={`${chartInfo.startYear} – ${chartInfo.endYear}`} />
             )}
             {chartInfo.source && (
-              <ChartDetailRow label="Author" value={chartInfo.source} />
+              <ChartDetailRow label="Data source" value={chartInfo.source} />
             )}
           </Stack>
         </Paper>
