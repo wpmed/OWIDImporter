@@ -189,7 +189,7 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 			taskProcess.Update()
 			utils.SendWSTaskProcess(task.ID, taskProcess)
 			time.Sleep(time.Second * 2)
-			filename, status, err = uploadCountryChart(user, &token, replaceData, downloadPath, data)
+			filename, status, err = uploadCountryChart(user, &token, replaceData, path, data)
 			if err != nil {
 				fmt.Println("Error retrying for second time: ", country, err)
 				taskProcess.Status = models.TaskProcessStatusFailed

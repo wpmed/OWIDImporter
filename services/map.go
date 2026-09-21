@@ -1082,33 +1082,6 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 
 			// Collect metadata and inject it if at last file
 			if didReachStartYear(startMarker, endMarker, startYear) {
-				/**
-					We need to check if the file is already uploaded.
-					If it is, download that file and upload it instead if it have translations
-					Make sure to inject metadata again as some new year data might be available
-				**/
-				filename := replaceVars(data.FileName, replaceData)
-				existingMapPath := filepath.Join(downloadPath, currentYear+"_existing")
-				existingMapFilePath := path.Join(existingMapPath, "image.svg")
-				if err := os.Mkdir(existingMapPath, 0755); err == nil {
-					err := downloadCommonsFile(filename, existingMapFilePath, user)
-					if err == nil {
-						// Check if file has translation switch
-						if SVGHasSwitchElement(existingMapFilePath) {
-							newFileInfo, err := getFileInfo(existingMapPath)
-							if err == nil {
-								fileInfo = newFileInfo
-								mapPath = existingMapPath
-								fmt.Println("============= NEW FILE INFO: ", fileInfo.FilePath)
-							} else {
-								fmt.Println("============== ERROR Getting existing file info: ", err)
-							}
-						}
-					} else {
-						fmt.Println("============ ERROR DOWNLOADING commons file: ", err)
-					}
-				}
-
 				metadata, err := getRegionFileMetadata(task, region)
 				if err != nil {
 					fmt.Println("Error generating metadata: ", err)
@@ -1227,7 +1200,7 @@ func handleExistingMetadataCommonsFile(replaceData ReplaceVarsData, regionExisti
 	// Convert fills to SVG metadata element
 	metadata := generateSVGMetadataFromFills(allFills)
 	if err := InjectMetadataIntoSVGSameFile(existingMapFilePath, metadata); err != nil {
-		return fmt.Errorf("Error injecting metadata into svg: ", err)
+		return fmt.Errorf("Error injecting metadata into svg: %w", err)
 	}
 
 	replaceData.Comment = "Importing from " + data.Url + " with metadata"

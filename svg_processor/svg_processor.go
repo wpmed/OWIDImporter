@@ -33,15 +33,18 @@ type CountryFill struct {
 
 // ExtractCountryFills reads an SVG file and extracts country names and their fill colors
 func ExtractCountryFills(filepath string) ([]CountryFill, error) {
-	// Read the SVG file
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading file: %w", err)
 	}
+	return ExtractCountryFillsFromBytes(data)
+}
 
+// ExtractCountryFillsFromBytes extracts country names and fill colors from SVG markup
+func ExtractCountryFillsFromBytes(data []byte) ([]CountryFill, error) {
 	// Parse the XML
 	var svg SVG
-	err = xml.Unmarshal(data, &svg)
+	err := xml.Unmarshal(data, &svg)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing XML: %w", err)
 	}
