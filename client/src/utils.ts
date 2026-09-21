@@ -135,11 +135,11 @@ function copyExecCommand(text: string) {
   return false;
 }
 
+export const DEFAULT_DATA_SOURCE = "Our World in Data";
+
 export function applyChartSourceToDescription(description: string, source?: string) {
-  if (!source) {
-    return description;
-  }
-  return description.replace(/author\s*=\s*Our World In Data/i, `author = ${source}`);
+  const credit = source && source.trim() ? source.trim() : DEFAULT_DATA_SOURCE;
+  return description.replaceAll("$SOURCE", () => credit);
 }
 
 export function extractAndReplaceCategoriesFromDescription(description: string) {

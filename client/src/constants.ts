@@ -14,20 +14,20 @@ export const INITIAL_CATEGORIES_MAP = [
   "Uploaded by OWID importer tool"
 ]
 
-export const CHART_INFO_MAP = `You can use $NAME (filename without extension), $YEAR, $REGION, $TITLE (Title of graph), and $URL as placeholders. This only works for graphs that are maps with data over multiple years.`;
+export const CHART_INFO_MAP = `You can use $NAME (filename without extension), $YEAR, $REGION, $TITLE (Title of graph), $SOURCE (data source credited by OWID), and $URL as placeholders. This only works for graphs that are maps with data over multiple years.`;
 
 export const INITIAL_CATEGORIES_CHART = [
   "Uploaded by OWID importer tool",
   "Our World in Data graphs of {{subst:#ifeq:$REGION_NAME|World|the world|$REGION_NAME}}"
 ]
-export const CHART_INFO_CHART = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION (The country code), $REGION_NAME (The country name), $TITLE (Title of graph), and $URL as placeholders`;
+export const CHART_INFO_CHART = `You can use $NAME (filename without extension), $START_YEAR, $END_YEAR, $REGION (The country code), $REGION_NAME (The country name), $TITLE (Title of graph), $SOURCE (data source credited by OWID), and $URL as placeholders`;
 
 
 export const INITIAL_TEMPLATE_NAME = `$CHART_NAME`
 export const INITIAL_DESCRIPTION_MAP = `=={{int:filedesc}}==
 {{Information
 |description={{en|1=$TITLE, $REGION}}
-|author = Our World In Data
+|author = '''Infographic:''' Our World in Data<br>'''Data:''' $SOURCE
 |date= $YEAR
 |source = $URL
 |permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
@@ -35,7 +35,7 @@ export const INITIAL_DESCRIPTION_MAP = `=={{int:filedesc}}==
 }}
 {{Map showing old data|year=$YEAR}}
 =={{int:license-header}}==
-{{cc-by-4.0}}
+{{cc-by-4.0|attribution=Our World in Data}}
 `;
 
 export const INITIAL_FILENAME_MAP = `$NAME, $REGION, $YEAR.svg`;
@@ -45,13 +45,13 @@ export const INITIAL_FILENAME_MAP_SINGLE_IMAGE = `$NAME.svg`;
 export const INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE = `=={{int:filedesc}}==
 {{Information
 |description={{en|1=$TITLE}}
-|author = Our World In Data
+|author = '''Infographic:''' Our World in Data<br>'''Data:''' $SOURCE
 |source = $URL
 |permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
 |other versions =
 }}
 =={{int:license-header}}==
-{{cc-by-4.0}}
+{{cc-by-4.0|attribution=Our World in Data}}
 `;
 export const INITIAL_CATEGORIES_MAP_SINGLE_IMAGE = [
   "SVG maps by Our World in Data",
@@ -62,14 +62,14 @@ export const INITIAL_CATEGORIES_MAP_SINGLE_IMAGE = [
 export const INITIAL_DESCRIPTION_CHART = `=={{int:filedesc}}==
 {{Information
 |description={{en|1=$TITLE, $REGION}}
-|author = Our World In Data
+|author = '''Infographic:''' Our World in Data<br>'''Data:''' $SOURCE
 |date= $END_YEAR
 |source = $URL
 |permission = "License: All of Our World in Data is completely open access and all work is licensed under the Creative Commons BY license. You have the permission to use, distribute, and reproduce in any medium, provided the source and authors are credited."
 |other versions =
 }}
 =={{int:license-header}}==
-{{cc-by-4.0}}
+{{cc-by-4.0|attribution=Our World in Data}}
 `;
 // [[Category:Uploaded by OWID importer tool]]
 export const INITIAL_FILENAME_CHART = `$NAME, $REGION.svg`;

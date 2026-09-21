@@ -149,10 +149,8 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
 
 
 
-          if (result?.info?.source) {
-            imp.description = applyChartSourceToDescription(imp.description, result.info.source);
-            imp.countryDescription = applyChartSourceToDescription(imp.countryDescription, result.info.source);
-          }
+          imp.description = applyChartSourceToDescription(imp.description, result?.info?.source);
+          imp.countryDescription = applyChartSourceToDescription(imp.countryDescription, result?.info?.source);
 
           if (!result.error) {
             imp.canImport = true;
