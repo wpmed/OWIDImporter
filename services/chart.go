@@ -228,7 +228,7 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 	return nil
 }
 
-func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *string, chartName, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string, countriesCodes []string) error {
+func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *string, chartName, title, startYear, endYear, downloadPath string, data StartData, chartParams map[string]string, countriesCodes []string, countryNames map[string]string) error {
 	if len(countriesCodes) == 0 {
 		return nil
 	}
@@ -237,22 +237,12 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 		return fmt.Errorf("Task is not processing")
 	}
 
-	url := utils.AttachQueryParamToUrl(task.URL, fmt.Sprintf("tab=chart&country=~%s", countriesCodes[0]))
-	if task.ChartParameters != "" {
-		url = utils.AttachQueryParamToUrl(url, task.ChartParameters)
+	url, err := countryChartURL(task.URL, task.ChartParameters, countriesCodes[0])
+	if err != nil {
+		return err
 	}
 
 	fmt.Println("================== Processing country: ", url)
-
-	// Go to url
-	// Click on line/chart tab
-	//
-	// For each country code:
-	// 		Find selected countries if any, click to deselect
-	// 		Find Element for country and click
-	// 		Wait 200ms
-	// 		Download chart
-	// 		Upload to destination
 
 	l, browser := GetBrowser()
 	blankPage := browser.MustPage("")
@@ -269,7 +259,7 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 	page.MustWaitLoad()
 	page.MustWaitIdle()
 	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
-		return fmt.Errorf("Cannot find download button in page")
+		return fmt.Errorf("cannot find download button: %w", err)
 	}
 
 	lineTab, _ := GetTabByLabel(page, "line")
@@ -287,9 +277,6 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 
 	countriesCodeNameMap := constants.GetCountryCodeNameMap()
 
-	counter := 0
-	owidEnv := env.GetEnv().OWID_ENV
-	// var selectedItems rod.Elements
 	for _, code := range countriesCodes {
 		if task.Status != models.TaskStatusProcessing {
 			break
@@ -301,11 +288,6 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 			continue
 		}
 		fmt.Println("Processing code: ", code, name)
-		counter = counter + 1
-		if owidEnv == "development" && counter >= 5 {
-			// break
-		}
-
 		var taskProcess *models.TaskProcess
 		// Try to find existing process, otherwise create one
 		existingTB, err := models.FindTaskProcessByTaskRegionDate(code, "", task.ID)
@@ -329,62 +311,9 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 		utils.SendWSTaskProcess(task.ID, taskProcess)
 		models.UpdateTaskLastOperationAt(task.ID)
 
-		nameLowerCase := strings.ToLower(strings.TrimSpace(name))
-
-		selectedItemCounter := 0
-		for selectedItemCounter < 100 {
-			if err := utils.WaitElementWithTimeout(page, COUNTRY_SELECTED_OPTIONS_LIST, time.Second*2); err != nil {
-				break
-			}
-
-			selectedItems := page.MustElements(COUNTRY_SELECTED_OPTIONS_LIST)
-			if len(selectedItems) == 0 {
-				break
-			}
-
-			fmt.Println("Items length", len(selectedItems), selectedItems[0])
-			selectedItems[0].MustClick()
-			// fmt.Println("Clicked on item to deselect", selectedItems[0].MustText())
-			time.Sleep(time.Millisecond * 200)
-			selectedItemCounter = selectedItemCounter + 1
-		}
-
-		if selectedItemCounter > 100 {
-			fmt.Println("Something is wrong with deselecting selected items, aborting country loop")
+		if err := selectCountryFromPage(page, countryNames[code]); err != nil {
 			FailTaskProcess(taskProcess)
-			break
-		}
-
-		if err := utils.WaitElementWithTimeout(page, COUNTRY_SEARCH_INPUT, time.Second*5); err != nil {
-			fmt.Println("Cannot find search input in the page, aborting country loop")
-			FailTaskProcess(taskProcess)
-			break
-		}
-
-		// Trigger search to reduce result count
-		searchInput := page.MustElement(COUNTRY_SEARCH_INPUT)
-		if searchInput != nil {
-			searchInput.SelectAllText()
-			searchInput.MustInput(name)
-
-			time.Sleep(time.Second)
-		}
-
-		// countryId := strings.ReplaceAll(name, " ", "-")
-		items := page.MustElements(COUNTRY_SEARCH_RESULT_LIST)
-		foundEl := false
-		for _, el := range items {
-			if nameLowerCase == strings.ToLower(strings.TrimSpace(el.MustText())) {
-				el.MustClick()
-				foundEl = true
-				break
-			}
-		}
-
-		if !foundEl {
-			fmt.Println("=================== CANT FIND MENU ITEM FOR COUNTRY: ", code, name)
-			FailTaskProcess(taskProcess)
-			continue
+			return fmt.Errorf("selecting chart for %s: %w", code, err)
 		}
 
 		countryDownloadPath := path.Join(downloadPath, code)
@@ -493,6 +422,122 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 	fmt.Println("===================== COUNTRIES ALL DONE ==========================")
 
 	return nil
+}
+
+// getCountryNamesFromPage is the compatibility fallback when historical CSV
+// discovery is unavailable. It reads names without filtering selected-year values.
+func getCountryNamesFromPage(page *rod.Page) ([]string, map[string]string, error) {
+	page = page.Timeout(10 * time.Second)
+	search, err := page.Element(COUNTRY_SEARCH_INPUT)
+	if err != nil {
+		return nil, nil, fmt.Errorf("finding sidebar search: %w", err)
+	}
+	if err := search.SelectAllText(); err != nil {
+		return nil, nil, err
+	}
+	if err := search.Input(""); err != nil {
+		return nil, nil, err
+	}
+	// Allow both the regular sidebar and explorer search to restore their lists.
+	time.Sleep(200 * time.Millisecond)
+	items, err := page.Elements(COUNTRY_SEARCH_RESULT_LIST)
+	if err != nil {
+		return nil, nil, err
+	}
+	labels := make([]string, 0, len(items))
+	for _, item := range items {
+		text, err := item.Text()
+		if err != nil {
+			return nil, nil, err
+		}
+		labels = append(labels, text)
+	}
+	return countryNamesFromLabels(labels)
+}
+
+// selectCountryFromPage switches entities in the existing page using OWID's
+// own name. The selected-year value (including "No data") is irrelevant.
+func selectCountryFromPage(page *rod.Page, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("missing OWID entity name")
+	}
+	selectionPage := page.Timeout(15 * time.Second)
+	search, err := selectionPage.Element(COUNTRY_SEARCH_INPUT)
+	if err != nil {
+		return fmt.Errorf("finding entity search: %w", err)
+	}
+	// Clear the previous query so it cannot hide selected options in explorers.
+	if err := search.SelectAllText(); err != nil {
+		return err
+	}
+	if err := search.Input(""); err != nil {
+		return err
+	}
+	time.Sleep(100 * time.Millisecond)
+	for attempts := 0; ; attempts++ {
+		selected, err := selectionPage.Elements(COUNTRY_SELECTED_OPTIONS_LIST)
+		if err != nil {
+			return err
+		}
+		if len(selected) == 0 {
+			break
+		}
+		if attempts >= 100 {
+			return fmt.Errorf("could not clear selected entities")
+		}
+		if err := selected[0].Click(proto.InputMouseButtonLeft, 1); err != nil {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err := search.Input(name); err != nil {
+		return err
+	}
+	var option *rod.Element
+	for attempts := 0; attempts < 50 && option == nil; attempts++ {
+		items, err := selectionPage.Elements(COUNTRY_SEARCH_RESULT_LIST)
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			text, err := item.Text()
+			if err != nil {
+				return err
+			}
+			if strings.EqualFold(strings.TrimSpace(text), name) {
+				option = item
+				break
+			}
+		}
+		if option == nil {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	if option == nil {
+		return fmt.Errorf("cannot find OWID entity %q", name)
+	}
+	if err := option.Click(proto.InputMouseButtonLeft, 1); err != nil {
+		return err
+	}
+	for attempts := 0; attempts < 50; attempts++ {
+		selected, err := selectionPage.Elements(COUNTRY_SELECTED_OPTIONS_LIST)
+		if err != nil {
+			return err
+		}
+		if len(selected) == 1 {
+			text, err := selected[0].Text()
+			if err != nil {
+				return err
+			}
+			if strings.EqualFold(strings.TrimSpace(text), name) {
+				time.Sleep(200 * time.Millisecond)
+				return nil
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("could not confirm selection of %q", name)
 }
 
 func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
@@ -612,56 +657,4 @@ func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
 	fmt.Println(gotSvg)
 
 	return result
-}
-
-func GetCountryListFromPage(page *rod.Page) []string {
-	countries := []string{}
-
-	elements := page.MustElements(".entity-selector__content li")
-	// Is regular graph
-	if len(elements) > 0 {
-		for _, element := range elements {
-			label := element.MustElement(".label")
-			value := element.MustElement(".value")
-			if value != nil && value.MustText() != "" && strings.ToLower(value.MustText()) == "no data" {
-				continue
-			}
-			country := strings.TrimSpace(label.MustText())
-			countryCode, ok := constants.COUNTRY_CODES[country]
-			if !ok {
-				continue
-			}
-			// check if country is not already in list
-			if !utils.Contains(countries, countryCode) {
-				countries = append(countries, countryCode)
-			}
-		}
-
-		return countries
-	}
-
-	// Is explorer graph
-	elements = page.MustElements(".EntityList label.EntityPickerOption")
-	if len(elements) > 0 {
-		for _, element := range elements {
-			label := element.MustElement(".name")
-			classes := element.MustAttribute("class")
-
-			if strings.Contains(*classes, "MissingData") {
-				continue
-			}
-
-			country := strings.TrimSpace(label.MustText())
-			countryCode, ok := constants.COUNTRY_CODES[country]
-			if !ok {
-				continue
-			}
-			// check if country is not already in list
-			if !utils.Contains(countries, countryCode) {
-				countries = append(countries, countryCode)
-			}
-		}
-	}
-
-	return countries
 }

@@ -441,7 +441,7 @@ func processCountries(chartInfo *ChartInfo, user *models.User, task *models.Task
 						Description:                   task.CountryDescription,
 						DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
 					}
-					err = TraverseDownloadCountriesList(user, task, &token, task.ChartName, title, startYear, endYear, tmpDir, countriesStartData, chartParamsMap, countryList)
+					err := TraverseDownloadCountriesList(user, task, &token, task.ChartName, title, startYear, endYear, tmpDir, countriesStartData, chartParamsMap, countryList, chartInfo.CountryNames)
 
 					if err != nil {
 						fmt.Println("Error processing countries", err)
@@ -451,7 +451,9 @@ func processCountries(chartInfo *ChartInfo, user *models.User, task *models.Task
 				}
 			}(countryList))
 		}
-		countryGroup.Wait()
+		if err := countryGroup.Wait(); err != nil {
+			return err
+		}
 
 		elapsedTime := time.Since(startTime)
 		fmt.Println("Started in", time.Since(startTime).String())
@@ -497,6 +499,7 @@ type ChartInfo struct {
 	TemplateName  string            `json:"templateName"`
 	HasCountries  bool              `json:"hasCountries"`
 	CountriesList []string          `json:"countriesList"`
+	CountryNames  map[string]string `json:"-"`
 	StableUrl     string            `json:"stableUrl"`
 	SingleImage   bool              `json:"singleImage"`
 	Source        string            `json:"source"`
@@ -581,9 +584,13 @@ func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string)
 			chartInfo.Title = title
 			chartInfo.Source = getMapSourceFromPage(page)
 			fmt.Println("GOT Source", chartInfo.Source)
-			hasCountries, countriesList := getMapHasCountriesFromPage(page)
+			hasCountries, countriesList, countryNames, err := getMapHasCountriesFromPage(page)
+			if err != nil {
+				panic(err)
+			}
 			chartInfo.HasCountries = hasCountries
 			chartInfo.CountriesList = countriesList
+			chartInfo.CountryNames = countryNames
 			fmt.Println("GOT HasCountries", chartInfo.HasCountries)
 
 			chartName, err := GetChartNameFromUrl(url)
@@ -1277,9 +1284,16 @@ func moveToNextYear(page *rod.Page, startMarker, endMarker *rod.Element, current
 	return true
 }
 
-func getMapHasCountriesFromPage(page *rod.Page) (bool, []string) {
+func getMapHasCountriesFromPage(page *rod.Page) (bool, []string, map[string]string, error) {
 	activeTab, _ := GetActivePageTab(page)
+	defer func() {
+		if activeTab != nil {
+			activeTab.Click(proto.InputMouseButtonLeft, 1)
+			time.Sleep(time.Millisecond * 200)
+		}
+	}()
 	countriesList := make([]string, 0)
+	countryNames := make(map[string]string)
 	hasLines := false
 
 	lineTab, _ := GetTabByLabel(page, "line")
@@ -1295,84 +1309,16 @@ func getMapHasCountriesFromPage(page *rod.Page) (bool, []string) {
 	}
 
 	if hasLines {
-		countriesList = getCountryListFromPage(page)
-	}
-
-	if activeTab != nil {
-		activeTab.Click(proto.InputMouseButtonLeft, 1)
-		time.Sleep(time.Millisecond * 200)
-	}
-
-	return hasLines, countriesList
-}
-
-func getCountryListFromPage(page *rod.Page) []string {
-	// activeTab := GetActivePageTab(page)
-	// lineTab := GetTabByLabel(page, "line")
-	// chartTab := GetTabByLabel(page, "chart")
-
-	// if lineTab != nil {
-	// 	lineTab.Click(proto.InputMouseButtonLeft, 1)
-	// 	time.Sleep(time.Second)
-	// } else if chartTab != nil {
-	// 	chartTab.Click(proto.InputMouseButtonLeft, 1)
-	// 	time.Sleep(time.Second)
-	// }
-
-	countries := []string{}
-
-	elements := page.MustElements(".entity-selector__content li")
-	// Is regular graph
-	if len(elements) > 0 {
-		for _, element := range elements {
-			label := element.MustElement(".label")
-			value := element.MustElement(".value")
-			if value != nil && value.MustText() != "" && strings.ToLower(value.MustText()) == "no data" {
-				continue
-			}
-			country := strings.TrimSpace(label.MustText())
-			countryCode, ok := constants.COUNTRY_CODES[country]
-			if !ok {
-				continue
-			}
-			// check if country is not already in list
-			if !utils.Contains(countries, countryCode) {
-				countries = append(countries, countryCode)
-			}
-		}
-
-		return countries
-	}
-
-	// Is explorer graph
-	elements = page.MustElements(".EntityList label.EntityPickerOption")
-	if len(elements) > 0 {
-		for _, element := range elements {
-			label := element.MustElement(".name")
-			classes := element.MustAttribute("class")
-
-			if strings.Contains(*classes, "MissingData") {
-				continue
-			}
-
-			country := strings.TrimSpace(label.MustText())
-			countryCode, ok := constants.COUNTRY_CODES[country]
-			if !ok {
-				continue
-			}
-			// check if country is not already in list
-			if !utils.Contains(countries, countryCode) {
-				countries = append(countries, countryCode)
-			}
+		var err error
+		countriesList, countryNames, err = discoverChartCountries(page.MustInfo().URL, func() ([]string, map[string]string, error) {
+			return getCountryNamesFromPage(page)
+		})
+		if err != nil {
+			return false, nil, nil, err
 		}
 	}
 
-	// if activeTab != nil {
-	// 	activeTab.Click(proto.InputMouseButtonLeft, 1)
-	// 	time.Sleep(time.Second)
-	// }
-
-	return countries
+	return hasLines, countriesList, countryNames, nil
 }
 
 func getMapStartEndYearTitleFromPage(page *rod.Page) (string, string, string) {
