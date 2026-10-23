@@ -3,6 +3,7 @@ package services
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -93,7 +95,10 @@ type Page struct {
 	NS              int    `json:"ns"`
 	Title           string `json:"title"`
 	ImageRepository string `json:"imagerepository"`
-	ImageInfo       []struct {
+	// Redirect is set when the File: page itself is a redirect (needs prop=info).
+	// Its imageinfo then describes the redirect target, a different file.
+	Redirect  bool `json:"redirect"`
+	ImageInfo []struct {
 		SHA1 string `json:"sha1"`
 		URL  string `json:"url"`
 	} `json:"imageinfo"`
@@ -158,14 +163,12 @@ type movePageResponse struct {
 	Error *APIError
 }
 
-type SearchPagePrefixResponse struct {
-	Query struct {
-		Normalized []struct {
-			FromEncoded bool   `json:"fromencoded"`
-			From        string `json:"from"`
-			To          string `json:"to"`
-		} `json:"normalized"`
-		Pages []Page `json:"pages"`
+type allPagesResponse struct {
+	Continue map[string]string `json:"continue"`
+	Query    struct {
+		AllPages []struct {
+			Title string `json:"title"`
+		} `json:"allpages"`
 	} `json:"query"`
 }
 type FileRevisionsResponse struct {
@@ -346,9 +349,16 @@ func UpdateTemplateWithDefaults(user *models.User, wikiUrl string, title string)
 	return "updated", nil
 }
 
+// errMoveDryRun is returned by MovePage instead of moving when OWID_MOVE_DRY_RUN is set.
+var errMoveDryRun = errors.New("move not made: OWID_MOVE_DRY_RUN is set")
+
 func MovePage(user *models.User, token string, fromTitle, toTitle string) error {
 	fmt.Println("===================================")
 	fmt.Println("MOVE ACTION: FROM - ", fromTitle, " - TO - ", toTitle)
+	if dryRun, _ := strconv.ParseBool(os.Getenv("OWID_MOVE_DRY_RUN")); dryRun {
+		fmt.Println("MOVE DRY RUN: would move", fromTitle, "to", toTitle)
+		return errMoveDryRun
+	}
 	res, err := utils.DoApiReq[movePageResponse](user, map[string]string{
 		"action": "move",
 		"from":   fromTitle,
@@ -368,26 +378,34 @@ func MovePage(user *models.User, token string, fromTitle, toTitle string) error 
 	return nil
 }
 
-func SearchPageWithPrefix(user *models.User, title string) ([]string, error) {
+// SearchPageWithPrefix lists File: pages whose name starts with prefix (given
+// without the "File:" namespace). Redirects are left out so a name that was
+// already moved away is never offered as a move candidate.
+func SearchPageWithPrefix(user *models.User, prefix string) ([]string, error) {
 	titles := make([]string, 0)
-
-	res, err := utils.DoApiReq[SearchPagePrefixResponse](user, map[string]string{
-		"action":    "query",
-		"redirects": "1",
-		"generator": "search",
-		"gsrsearch": title,
-	}, nil)
-
-	if err != nil {
-		return titles, err
+	params := map[string]string{
+		"action":        "query",
+		"list":          "allpages",
+		"apnamespace":   "6",
+		"apprefix":      prefix,
+		"apfilterredir": "nonredirects",
+		"aplimit":       "max",
 	}
 
-	for _, v := range res.Query.Pages {
-		titles = append(titles, v.Title)
+	for {
+		res, err := utils.DoApiReq[allPagesResponse](user, params, nil)
+		if err != nil {
+			return titles, err
+		}
+		for _, p := range res.Query.AllPages {
+			titles = append(titles, p.Title)
+		}
+		next := res.Continue["apcontinue"]
+		if next == "" {
+			return titles, nil
+		}
+		params["apcontinue"] = next
 	}
-
-	fmt.Println(res.Query)
-	return titles, nil
 }
 
 func getPageWikiText(user *models.User, title string) (string, error) {
@@ -451,7 +469,7 @@ func createCommonsTemplatePage(user *models.User, token, title, wikiText string)
 func getCommonsFilePageByName(filename string, user *models.User) (*Page, error) {
 	res, err := utils.DoApiReq[QueryResponse](user, map[string]string{
 		"action": "query",
-		"prop":   "imageinfo",
+		"prop":   "imageinfo|info",
 		"titles": "File:" + filename,
 		"iiprop": "sha1|url",
 	}, nil)
@@ -487,6 +505,14 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 	page, err := getCommonsFilePageByName(filename, user)
 	if err != nil {
 		return filename, "", err
+	}
+
+	// The name is a redirect left by an earlier move: its imageinfo is the redirect
+	// target's, a different file. Upload to the name and replace the redirect.
+	replacingRedirect := page.Redirect
+	if replacingRedirect {
+		fmt.Println("File name is a redirect, uploading over it:", filename)
+		page.ImageInfo = nil
 	}
 
 	// Doesn't exist, upload and update description directly
@@ -526,6 +552,12 @@ func uploadMapFile(user *models.User, token string, replaceData ReplaceVarsData,
 			return filename, "", err
 		}
 		if res.Upload.Result == "Success" {
+			if replacingRedirect {
+				// "text" only applies to new pages; the redirect page has to be edited
+				if _, err := updateFileDescriptionIfChanged(user, token, filename, "", filedesc, data.Url); err != nil {
+					return filename, "", err
+				}
+			}
 			return filename, "uploaded", nil
 		}
 		return filename, "", fmt.Errorf("upload failed: %s", res.Upload.Result)
