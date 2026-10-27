@@ -17,16 +17,21 @@ import (
 )
 
 func uploadCountryChart(user *models.User, token *string, replaceData ReplaceVarsData, countryDownloadPath string, data StartData) (string, string, error) {
-	oldFileNameFormatMatcher := "$NAME, $START_YEAR $REGION.svg"
 	/**
 		Check if the country graph was uploaded before with a past year (year != endYear)
 		Old files had the format "$NAME, $START_YEAR to $END_YEAR, $REGION.svg"
-		We will search by "$NAME, $START_YEAR $REGION.svg"
+		We list files starting with "$NAME, $START_YEAR to "
 		$END_YEAR is excluded as it might have changed
 	**/
-	searchFileName := strings.TrimSpace("File:" + replaceVars(oldFileNameFormatMatcher, replaceData))
+	oldNamePrefix := replaceVars("$NAME, $START_YEAR to ", replaceData)
 	newFileName := strings.TrimSpace("File:" + replaceVars(data.FileName, replaceData))
-	titles, err := SearchPageWithPrefix(user, searchFileName)
+	titles, err := SearchPageWithPrefix(user, oldNamePrefix)
+	// Some old files used the OWID slug as name ("Number-of-deaths-from-tetanus, 1980 to 2021, IND.svg")
+	if slugName := strings.ReplaceAll(replaceData.FileName, " ", "-"); err == nil && slugName != replaceData.FileName {
+		var slugTitles []string
+		slugTitles, err = SearchPageWithPrefix(user, strings.Replace(oldNamePrefix, replaceData.FileName, slugName, 1))
+		titles = append(titles, slugTitles...)
+	}
 	if err == nil && len(titles) > 0 {
 		fmt.Println("============ MATCHED FILES WITH OLD PREFIX: ", titles)
 		for _, title := range titles {
@@ -37,11 +42,9 @@ func uploadCountryChart(user *models.User, token *string, replaceData ReplaceVar
 				Check if not the same file
 			**/
 			sameFileName := strings.EqualFold(newFileNameTrimmed, existingTitleTrimmed)
-			hasRegionSuffix := strings.HasSuffix(existingTitleTrimmed, fmt.Sprintf("%s.svg", strings.ToLower(replaceData.Region)))
-			hasSameChartTitle := strings.Contains(existingTitleTrimmed, strings.ToLower(replaceData.FileName))
-			hasStartingYear := strings.Contains(existingTitleTrimmed, strings.ToLower(replaceData.StartYear))
-			if !sameFileName && hasRegionSuffix && hasSameChartTitle && hasStartingYear {
-				fmt.Println("Move: Not same file name, has region suffix, has same chart title, has starting year")
+			isOldNameOfThisFile := isOldFormatTitleFor(existingTitle, replaceData.FileName, replaceData.StartYear, replaceData.Region)
+			if !sameFileName && isOldNameOfThisFile {
+				fmt.Println("Move: Not same file name, title is the old name of this chart, start year and region")
 				// Check if it's an OWID file by checking for "Uploaded by OWID Importer tool" category
 				pageText, err := getPageWikiText(user, title)
 				if err != nil {
@@ -57,19 +60,12 @@ func uploadCountryChart(user *models.User, token *string, replaceData ReplaceVar
 				}
 				fmt.Println("Move: have owid category Category:uploaded by owid importer")
 
-				// Check if it has the chart url in the wikitext
-				chartUrlParts := strings.Split(replaceData.Url, "?")
-				if len(chartUrlParts) == 0 {
-					fmt.Println("Move: can't get chart url, skipping for safety")
+				// Check the wikitext points at this exact chart (path and chart-defining params)
+				if !pageIsForChart(pageText, replaceData.Url) {
+					fmt.Println("Move: page is not for chart", replaceData.Url, "skipping")
 					continue
 				}
-
-				hasChartUrl := strings.Contains(lowercasePageText, strings.ToLower(chartUrlParts[0]))
-				if !hasChartUrl {
-					fmt.Println("Move: doesn't have owid chart url, skipping")
-					continue
-				}
-				fmt.Println("Move: have chart url", chartUrlParts[0])
+				fmt.Println("Move: have chart url", replaceData.Url)
 
 				// Move the page to the newFileName
 				fmt.Println("============== MOVING TO THE NEW NAME", newFileName)
