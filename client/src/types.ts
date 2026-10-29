@@ -28,7 +28,8 @@ export interface TaskProcess {
 
 export enum TaskTypeEnum {
   MAP = "map",
-  CHART = "chart"
+  CHART = "chart",
+  IFRAME = "iframe"
 }
 
 export enum DescriptionOverwriteBehaviour {
@@ -131,4 +132,25 @@ export interface MapImporterFormItem {
   linkVerified: boolean
   templateExists: boolean
   canImport: boolean
+}
+
+export interface IframeInfo {
+  path: string
+  chartName: string
+  title: string
+  source: string
+}
+
+export interface IframeImporterFormItem {
+  id: string
+  url: string
+  fileName: string
+  description: string
+  categories: string[]
+  descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour
+  info: IframeInfo | null
+  linkVerified: boolean
+  canImport: boolean
+  // Set when a lookup replaced $SOURCE in the description: the text before and after, so a URL change can undo it.
+  sourceApplied?: { template: string, applied: string }
 }

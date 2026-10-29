@@ -183,6 +183,11 @@ func monitorQueuedTasks() {
 					if err != nil {
 						log.Println("Error starting map", err)
 					}
+				case models.TaskTypeIframe:
+					fmt.Println("Action message iframe", task.URL)
+					if err := services.StartIframe(task.ID, user); err != nil {
+						log.Println("Error starting iframe", err)
+					}
 				}
 			}()
 		}

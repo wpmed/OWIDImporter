@@ -1,5 +1,5 @@
 import { SESSION_ID_KEY } from "../constants";
-import { DescriptionOverwriteBehaviour, Operation, OperationItem, Task, TaskProcess, TaskTypeEnum } from "../types";
+import { DescriptionOverwriteBehaviour, IframeInfo, Operation, OperationItem, Task, TaskProcess, TaskTypeEnum } from "../types";
 
 export interface ReplaceSessionResponse {
   sessionId: string,
@@ -58,7 +58,7 @@ export async function logout() {
 export interface CreateTaskData {
   action: string,
   url: string,
-  chartParameters: string, // Query string for the chart parameters
+  chartParameters?: string, // Query string for the chart parameters (maps)
   fileName: string,
   description: string,
   descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour
@@ -67,7 +67,7 @@ export interface CreateTaskData {
   countryFileName?: string,
   countryDescription?: string,
   countryDescriptionOverwriteBehaviour?: DescriptionOverwriteBehaviour,
-  templateNameFormat: string
+  templateNameFormat?: string
 }
 
 export interface CreateTaskResponse {
@@ -446,6 +446,34 @@ export async function getMultiChartParameters(urls: string[]) {
   });
 
   const responseData = await response.json() as GetMultiChartParametersResponse;
+
+  return responseData;
+}
+
+export interface GetIframeInfoResponse {
+  info?: IframeInfo
+  error?: string
+}
+
+// 200 -> { info }, 400 -> { error: "This chart cannot be imported" }
+export async function getIframeInfo(url: string) {
+  const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
+
+  const response = await fetch(`${API_BASE}/iframe/info`, {
+    method: "POST",
+    body: JSON.stringify({ url }),
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionId ? {
+        [SESSION_ID_KEY]: sessionId
+      } : {})
+    }
+  });
+
+  const responseData = await response.json() as GetIframeInfoResponse;
+  if (!response.ok && !responseData.error) {
+    responseData.error = "This chart cannot be imported";
+  }
 
   return responseData;
 }
