@@ -13,11 +13,14 @@ import Stack from '@mui/material/Stack';
 import MapIcon from '@mui/icons-material/Map';
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
+import CodeIcon from '@mui/icons-material/Code';
+import PostAddIcon from '@mui/icons-material/PostAdd';
 import MenuIcon from '@mui/icons-material/Menu';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 
 import { ListItemIcon } from '@mui/material';
 import { MapImporter } from './components/MapImporter';
+import { IframeImporter } from './components/IframeImporter';
 import { Login } from './components/Login';
 import { useReplaceSession } from './hooks/useReplaceSession';
 import { SESSION_ID_KEY, USERNAME_KEY } from './constants';
@@ -41,6 +44,9 @@ enum TABS {
   OPERATION_LIST = 6,
   OPERATION_DETAILS = 7,
   NEW_OPERATION = 8,
+  IFRAME_LIST = 9,
+  IFRAME_DETAILS = 10,
+  IMPORT_IFRAME = 11,
 }
 
 interface NavItem {
@@ -57,7 +63,7 @@ interface NavSection {
 
 const NAV_SECTIONS: NavSection[] = [
   {
-    label: "Import",
+    label: "All Commons",
     items: [
       {
         id: TABS.MAP_LIST,
@@ -70,6 +76,23 @@ const NAV_SECTIONS: NavSection[] = [
         title: "Import map",
         icon: <AddPhotoAlternateIcon />,
         match: [TABS.IMPORT_MAP],
+      },
+    ],
+  },
+  {
+    label: "Iframe",
+    items: [
+      {
+        id: TABS.IFRAME_LIST,
+        title: "Iframe imports",
+        icon: <CodeIcon />,
+        match: [TABS.IFRAME_LIST, TABS.IFRAME_DETAILS],
+      },
+      {
+        id: TABS.IMPORT_IFRAME,
+        title: "Import iframe",
+        icon: <PostAddIcon />,
+        match: [TABS.IMPORT_IFRAME],
       },
     ],
   },
@@ -116,6 +139,7 @@ export default function App() {
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedOperationId, setSelectedOperationId] = useState("");
   const [importerKey, setImporterKey] = useState(0);
+  const [iframeKey, setIframeKey] = useState(0);
   const [operationKey, setOperationKey] = useState(0);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -127,6 +151,9 @@ export default function App() {
   const selectedTaskType = useMemo(() => {
     if ([TABS.MAP_LIST, TABS.MAP_DETAILS].includes(tab)) {
       return TaskTypeEnum.MAP
+    }
+    if ([TABS.IFRAME_LIST, TABS.IFRAME_DETAILS].includes(tab)) {
+      return TaskTypeEnum.IFRAME
     }
     return TaskTypeEnum.CHART
   }, [tab])
@@ -143,6 +170,12 @@ export default function App() {
     setSelectedTaskId("");
     setImporterKey((key) => key + 1);
     setTab(TABS.IMPORT_MAP);
+  }
+
+  const onNewIframeClick = () => {
+    setSelectedTaskId("");
+    setIframeKey((key) => key + 1);
+    setTab(TABS.IMPORT_IFRAME);
   }
 
   const onNewOperationClick = () => {
@@ -166,6 +199,8 @@ export default function App() {
     setSelectedTaskId(task.id);
     if (selectedTaskType === TaskTypeEnum.MAP) {
       setTab(TABS.MAP_DETAILS);
+    } else if (selectedTaskType === TaskTypeEnum.IFRAME) {
+      setTab(TABS.IFRAME_DETAILS);
     } else if (selectedTaskType == TaskTypeEnum.CHART) {
       setTab(TABS.CHART_DETAILS);
     }
@@ -180,6 +215,8 @@ export default function App() {
     setMobileOpen(false);
     if (item.id === TABS.IMPORT_MAP) {
       onNewClick()
+    } else if (item.id === TABS.IMPORT_IFRAME) {
+      onNewIframeClick()
     } else {
       setSelectedTaskId("");
       setSelectedOperationId("");
@@ -284,7 +321,14 @@ export default function App() {
             <Toolbar />
             <Box sx={{ maxWidth: 1400, mx: 'auto' }}>
               {[TABS.MAP_LIST, TABS.CHART_LIST].includes(tab) ? (
-                <TaskList taskType={selectedTaskType} onNew={onNewClick} onTaskClick={onTaskClick} />
+                <TaskList key={selectedTaskType} taskType={selectedTaskType} onNew={onNewClick} onTaskClick={onTaskClick} />
+              ) : tab === TABS.IFRAME_LIST ? (
+                <TaskList key={selectedTaskType} taskType={selectedTaskType} onNew={onNewIframeClick} onTaskClick={onTaskClick} />
+              ) : [TABS.IMPORT_IFRAME, TABS.IFRAME_DETAILS].includes(tab) ? (
+                <IframeImporter
+                  key={`${iframeKey}-${selectedTaskId}`}
+                  taskId={selectedTaskId}
+                />
               ) : [TABS.IMPORT_MAP, TABS.MAP_DETAILS].includes(tab) ? (
                 <MapImporter
                   key={`${importerKey}-${selectedTaskId}`}

@@ -28,6 +28,7 @@ const (
 const (
 	TaskProcessTypeMap     TaskProcessType = "map"
 	TaskProcessTypeCountry TaskProcessType = "country"
+	TaskProcessTypeIframe  TaskProcessType = "iframe"
 )
 
 type TaskProcess struct {

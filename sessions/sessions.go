@@ -31,12 +31,64 @@ var (
 
 var assignSubscriptionSessionMutex = sync.Mutex{}
 
+// AddSubscriptionSession registers session for subscriptionId. A connection that
+// is already subscribed to subscriptionId is not added twice.
 func AddSubscriptionSession(subscriptionId string, session *SubscriptionSession) {
 	assignSubscriptionSessionMutex.Lock()
+	defer assignSubscriptionSessionMutex.Unlock()
 
+	for _, s := range SubscriptionSessions[subscriptionId] {
+		if session.Ws != nil && s.Ws == session.Ws {
+			return
+		}
+	}
 	SubscriptionSessions[subscriptionId] = append(SubscriptionSessions[subscriptionId], session)
+}
 
-	assignSubscriptionSessionMutex.Unlock()
+// GetSubscriptionSessions returns a snapshot of the sessions subscribed to
+// subscriptionId, safe to iterate while subscriptions change concurrently.
+func GetSubscriptionSessions(subscriptionId string) []*SubscriptionSession {
+	assignSubscriptionSessionMutex.Lock()
+	defer assignSubscriptionSessionMutex.Unlock()
+
+	subs := SubscriptionSessions[subscriptionId]
+	out := make([]*SubscriptionSession, len(subs))
+	copy(out, subs)
+	return out
+}
+
+// RemoveSubscriptionConn removes the subscription of connection ws from
+// subscriptionId (other connections of the same session are kept).
+func RemoveSubscriptionConn(subscriptionId string, ws *websocket.Conn) {
+	assignSubscriptionSessionMutex.Lock()
+	defer assignSubscriptionSessionMutex.Unlock()
+
+	removeConnLocked(subscriptionId, ws)
+}
+
+// RemoveConnSubscriptions removes every subscription held by connection ws.
+func RemoveConnSubscriptions(ws *websocket.Conn) {
+	assignSubscriptionSessionMutex.Lock()
+	defer assignSubscriptionSessionMutex.Unlock()
+
+	for subscriptionId := range SubscriptionSessions {
+		removeConnLocked(subscriptionId, ws)
+	}
+}
+
+func removeConnLocked(subscriptionId string, ws *websocket.Conn) {
+	subs := SubscriptionSessions[subscriptionId]
+	kept := make([]*SubscriptionSession, 0, len(subs))
+	for _, s := range subs {
+		if s.Ws != ws {
+			kept = append(kept, s)
+		}
+	}
+	if len(kept) == 0 {
+		delete(SubscriptionSessions, subscriptionId)
+	} else {
+		SubscriptionSessions[subscriptionId] = kept
+	}
 }
 
 func RemoveSubscriptionSession(subscriptionId, id string) {

@@ -29,8 +29,9 @@ const (
 )
 
 const (
-	TaskTypeMap   TaskType = "map"
-	TaskTypeChart TaskType = "chart"
+	TaskTypeMap    TaskType = "map"
+	TaskTypeChart  TaskType = "chart"
+	TaskTypeIframe TaskType = "iframe"
 )
 
 const (

@@ -222,26 +222,21 @@ func SendWSOperation(operation *models.Operation) error {
 
 func sendWSTaskMessage(taskId string, messageType string, msg string) {
 	go func() {
-		if len(sessions.SubscriptionSessions[taskId]) > 0 {
-			failedSessions := make([]string, 0)
-			for _, s := range sessions.SubscriptionSessions[taskId] {
-				s.WsMutex.Lock()
-				err := s.Ws.WriteJSON(map[string]string{
-					"type": messageType,
-					"msg":  msg,
-				})
-				if err != nil {
-					fmt.Println("Error sending msg ", messageType, "-", msg, ": ", err)
-					failedSessions = append(failedSessions, s.Id)
-				}
-				s.WsMutex.Unlock()
-			}
-
-			// Remove failed receives, most probably disconnected
-			if len(failedSessions) > 0 {
-				for _, id := range failedSessions {
-					sessions.RemoveSubscriptionSession(taskId, id)
-				}
+		// Snapshot under the sessions lock: the map/slices change concurrently
+		// as clients (un)subscribe.
+		subs := sessions.GetSubscriptionSessions(taskId)
+		for _, s := range subs {
+			// WsMutex is shared by every subscription on the same connection.
+			s.WsMutex.Lock()
+			err := s.Ws.WriteJSON(map[string]string{
+				"type": messageType,
+				"msg":  msg,
+			})
+			s.WsMutex.Unlock()
+			if err != nil {
+				fmt.Println("Error sending msg ", messageType, "-", msg, ": ", err)
+				// Most probably disconnected
+				sessions.RemoveSubscriptionConn(taskId, s.Ws)
 			}
 		}
 	}()

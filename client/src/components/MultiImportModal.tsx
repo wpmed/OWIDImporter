@@ -1,15 +1,16 @@
 import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Link, Stack, TextField, Typography } from "@mui/material"
 import { useCallback, useMemo, useState } from "react";
-import { COMMONS_TEMPLATE_PREFIX, DESCRIPTION_OVERWRITE_OPTIONS, generateBlankImport, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX } from "../constants";
-import { getChartParameters } from "../request/request";
+import { COMMONS_TEMPLATE_PREFIX, DESCRIPTION_OVERWRITE_OPTIONS, generateBlankIframeImport, generateBlankImport, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX } from "../constants";
+import { getChartParameters, getIframeInfo } from "../request/request";
 import pLimit from 'p-limit';
 import { CheckCircle, Close as CloseIcon } from "@mui/icons-material";
-import { MapImporterFormItem, SelectedParameter } from "../types";
+import { IframeImporterFormItem, MapImporterFormItem, SelectedParameter } from "../types";
 import { searchPageExists } from "../request/commons";
 import { useToast } from "../hooks/useToast";
 import { OverwriteBehaviourField } from "./OverwriteBehaviourField";
 import { monoStack } from "../theme";
 import { applyChartSourceToDescription } from "../utils";
+import { normalizeIframeChartPath } from "../iframe";
 
 interface ProcessingLink {
   url: string
@@ -17,10 +18,14 @@ interface ProcessingLink {
 }
 
 export interface MultiImportModalProps {
-  onAdd: (imports: MapImporterFormItem[]) => void
+  // Defaults to the map importer; "iframe" creates iframe import cards via /iframe/info.
+  variant?: "map" | "iframe"
+  onAdd?: (imports: MapImporterFormItem[]) => void
+  onAddIframe?: (imports: IframeImporterFormItem[]) => void
 }
 
-export function MultiImportModal({ onAdd }: MultiImportModalProps) {
+export function MultiImportModal({ variant = "map", onAdd = () => { }, onAddIframe = () => { } }: MultiImportModalProps) {
+  const isIframe = variant === "iframe";
   const [open, setOpen] = useState(false);
   const [links, setLinks] = useState("");
   const [processedLinks, setProcessedLinks] = useState<ProcessingLink[]>([]);
@@ -44,20 +49,92 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
       .filter(l => l.trim())
   }, [links])
 
+  const invalidIframeLinksCount = useMemo(() => {
+    return linksArray.filter(l => !normalizeIframeChartPath(l)).length
+  }, [linksArray])
+
   const linksAreValid = useMemo(() => {
+    if (isIframe) {
+      return true
+    }
     if (linksArray.length) {
       return linksArray
         .every(l => l.startsWith(OWID_CHART_URL_PREFIX));
     }
     return true
-  }, [linksArray])
+  }, [linksArray, isIframe])
 
   const disabled = useMemo(() => {
     return loading;
   }, [loading])
 
 
+  const updateLinkStatus = useCallback((url: string, status: ProcessingLink["status"]) => {
+    setProcessedLinks(old => {
+      const urlIndex = old.findIndex(item => item.url == url);
+      if (urlIndex != -1) {
+        old[urlIndex].status = status;
+      }
+      return [...old];
+    });
+  }, [])
+
+  const onSubmitIframe = useCallback(() => {
+    if (linksArray.length == 0) {
+      return showToast("No links are submitted", "error");
+    }
+
+    setLoading(true);
+    const limit = pLimit(2);
+    setProcessedLinks(linksArray.map(url => ({ url, status: "pending" })));
+    const input = linksArray.map(url =>
+      limit(async () => {
+        updateLinkStatus(url, "loading");
+        const imp = generateBlankIframeImport();
+        imp.url = url.trim();
+        imp.descriptionOverwriteBehaviour = descriptionOverwriteBehaviour;
+
+        const path = normalizeIframeChartPath(url);
+        if (!path) {
+          imp.linkVerified = true;
+          updateLinkStatus(url, "failed");
+          return imp;
+        }
+
+        try {
+          const result = await getIframeInfo(path);
+          imp.linkVerified = true;
+          if (!result.error && result.info) {
+            imp.info = result.info;
+            imp.canImport = true;
+            imp.description = applyChartSourceToDescription(imp.description, result.info.source);
+          }
+          updateLinkStatus(url, imp.canImport ? "done" : "failed");
+        } catch (err) {
+          // Left unverified so the card looks the chart up again on its own.
+          console.log("Error getting iframe info: ", url, err);
+          updateLinkStatus(url, "failed");
+        }
+        return imp;
+      }))
+    Promise.all(input)
+      .then(imports => {
+        onAddIframe(imports);
+        handleClose()
+      })
+      .catch(err => {
+        console.log("Error getting multi iframe info: ", err);
+        showToast("Failed to load chart details", "error");
+      })
+      .finally(() => {
+        setLoading(false);
+      })
+  }, [descriptionOverwriteBehaviour, linksArray, updateLinkStatus, onAddIframe, handleClose, showToast])
+
   const onSubmit = useCallback(() => {
+    if (isIframe) {
+      return onSubmitIframe();
+    }
     if (linksArray.length == 0) {
       return showToast("No links are submitted", "error");
     }
@@ -197,7 +274,7 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
       .finally(() => {
         setLoading(false);
       })
-  }, [descriptionOverwriteBehaviour, linksArray, setLoading, setProcessedLinks, onAdd, handleClose, showToast])
+  }, [isIframe, onSubmitIframe, descriptionOverwriteBehaviour, linksArray, setLoading, setProcessedLinks, onAdd, handleClose, showToast])
 
   return (
     <>
@@ -209,7 +286,7 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
         maxWidth="sm"
         aria-labelledby="multi-import-title"
       >
-        <DialogTitle id="multi-import-title">Import multiple charts</DialogTitle>
+        <DialogTitle id="multi-import-title">{isIframe ? "Import multiple iframes" : "Import multiple charts"}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={3}>
             <TextField
@@ -219,8 +296,12 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
               fullWidth
               disabled={disabled}
               label="Chart URLs"
-              placeholder={`${OWID_CHART_URL_PREFIX}/grapher/life-expectancy\n${OWID_CHART_URL_PREFIX}/grapher/child-mortality`}
-              helperText="One Our World in Data chart URL per line"
+              placeholder={isIframe
+                ? `${OWID_CHART_URL_PREFIX}/grapher/life-expectancy\nexplorers/minerals?tab=map`
+                : `${OWID_CHART_URL_PREFIX}/grapher/life-expectancy\n${OWID_CHART_URL_PREFIX}/grapher/child-mortality`}
+              helperText={isIframe
+                ? "One Our World in Data chart URL or path (grapher/... or explorers/...) per line"
+                : "One Our World in Data chart URL per line"}
               value={links}
               onChange={(e) => setLinks(e.target.value)}
               sx={{
@@ -231,6 +312,11 @@ export function MultiImportModal({ onAdd }: MultiImportModalProps) {
             {!linksAreValid && (
               <Alert severity="error" variant="outlined">
                 Some links are invalid — every line must start with {OWID_CHART_URL_PREFIX}
+              </Alert>
+            )}
+            {isIframe && invalidIframeLinksCount > 0 && (
+              <Alert severity="warning" variant="outlined">
+                {invalidIframeLinksCount} {invalidIframeLinksCount === 1 ? "line cannot" : "lines cannot"} be imported. Only grapher/ and explorers/ charts are supported. {invalidIframeLinksCount === 1 ? "It" : "They"} will be added as cards showing the error.
               </Alert>
             )}
             {processedLinks.length > 0 && (

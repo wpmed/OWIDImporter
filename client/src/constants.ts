@@ -1,4 +1,4 @@
-import { DescriptionOverwriteBehaviour, MapImporterFormItem } from "./types";
+import { DescriptionOverwriteBehaviour, IframeImporterFormItem, MapImporterFormItem } from "./types";
 
 export const SESSION_ID_KEY = "sessionId";
 export const USERNAME_KEY = "username";
@@ -58,6 +58,15 @@ export const INITIAL_CATEGORIES_MAP_SINGLE_IMAGE = [
   "Uploaded by OWID importer tool"
 ]
 
+// IFRAME
+export const IFRAME_URL_PLACEHOLDER = `https://ourworldindata.org/grapher/<NAME OF GRAPH>`;
+export const INITIAL_FILENAME_IFRAME = `$NAME.svg`;
+export const INITIAL_DESCRIPTION_IFRAME = INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE;
+export const INITIAL_CATEGORIES_IFRAME = [
+  "Uploaded by OWID importer tool"
+]
+export const IFRAME_INFO = `$NAME is the filename OWID gives its Wikipedia-optimized SVG download, without the extension. $TITLE is the title of the graph, $SOURCE the data source credited by OWID, and $URL the chart address. They can be used in the file name and the description.`;
+
 // CHART
 export const INITIAL_DESCRIPTION_CHART = `=={{int:filedesc}}==
 {{Information
@@ -104,6 +113,20 @@ export function generateBlankImport(): MapImporterFormItem {
   }
 }
 
+export function generateBlankIframeImport(): IframeImporterFormItem {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    url: "",
+    fileName: INITIAL_FILENAME_IFRAME,
+    description: INITIAL_DESCRIPTION_IFRAME,
+    categories: INITIAL_CATEGORIES_IFRAME,
+    descriptionOverwriteBehaviour: DescriptionOverwriteBehaviour.ALL,
+    info: null,
+    linkVerified: false,
+    canImport: false,
+  }
+}
+
 export const DESCRIPTION_OVERWRITE_OPTIONS = [
   {
     value: DescriptionOverwriteBehaviour.ALL,
@@ -126,6 +149,13 @@ export const DESCRIPTION_OVERWRITE_OPTIONS = [
     description: "If a file already exists, no modifications will be made and all prior years will be skipped as well.",
   }
 ]
+
+// Iframe imports upload one file, so "Skip" has no prior years to skip
+export const IFRAME_DESCRIPTION_OVERWRITE_OPTIONS = DESCRIPTION_OVERWRITE_OPTIONS.map(option =>
+  option.value === DescriptionOverwriteBehaviour.SKIP
+    ? { ...option, description: "If a file with this name already exists, it is left unchanged and its name is used in the output." }
+    : option
+)
 
 export const COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS = [
   {

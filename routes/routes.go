@@ -53,6 +53,9 @@ func BuildRoutes() *gin.Engine {
 	router.POST("/chart/parameters", GetChartParameters)
 	router.POST("/chart/parameters/multi", GetMultiChartParameters)
 
+	// Iframe import
+	router.POST("/iframe/info", GetIframeInfo)
+
 	router.Static("/assets", filepath.Join(clientBuildPath, "assets"))
 	// Handle SPA routing
 	router.NoRoute(func(c *gin.Context) {

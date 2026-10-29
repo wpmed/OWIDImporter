@@ -59,14 +59,29 @@ func CreateTask(c *gin.Context) {
 		return
 	}
 
-	data.Url = utils.CleanupTaskURLQueryParams(data.Url)
-
 	var modelType models.TaskType
+	chartName := ""
 	switch data.Action {
 	case "startMap":
 		modelType = models.TaskTypeMap
 	case "startChart":
 		modelType = models.TaskTypeChart
+	case "startIframe":
+		modelType = models.TaskTypeIframe
+	}
+
+	if modelType == models.TaskTypeIframe {
+		// Iframe imports keep the exact chart path, query string included
+		path, err := utils.NormalizeIframeChartPath(data.Url)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		data.Url = path
+		// Replaced by the page title once the task has read it
+		chartName = utils.ToTitle(utils.IframeChartSlug(path))
+	} else {
+		data.Url = utils.CleanupTaskURLQueryParams(data.Url)
 	}
 
 	importCountries := 0
@@ -85,7 +100,7 @@ func CreateTask(c *gin.Context) {
 		data.FileName,
 		data.Description,
 		data.DescriptionOverwriteBehaviour,
-		"",
+		chartName,
 		models.TaskStatusQueued,
 		modelType,
 		importCountries,
@@ -165,6 +180,12 @@ func GetTask(c *gin.Context) {
 			res.WikiText = text
 		case models.TaskTypeChart:
 			text, err := services.GetChartTemplate(task.ID)
+			if err != nil {
+				fmt.Println("Error getting task wikitext", taskId, err)
+			}
+			res.WikiText = text
+		case models.TaskTypeIframe:
+			text, err := services.GetIframeTemplate(task)
 			if err != nil {
 				fmt.Println("Error getting task wikitext", taskId, err)
 			}

@@ -3,7 +3,7 @@ import { Task, TaskStatusEnum, TaskTypeEnum } from "../types"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { archiveTask, fetchTasks, retryFailedTasks } from "../request/request"
 import { TaskListItem } from "./TaskListItem"
-import { Add, Map as MapIcon, Refresh, Search, SearchOff } from "@mui/icons-material"
+import { Add, Code as CodeIcon, Map as MapIcon, Refresh, Search, SearchOff } from "@mui/icons-material"
 import { SocketMessage, SocketMessageActionEnum, useWebsocket } from "../hooks/useWebsocket"
 import { useToast } from "../hooks/useToast"
 import { PageHeader } from "./ui/PageHeader"
@@ -19,6 +19,20 @@ const STATUS_OPTIONS: { label: string; value: string }[] = [
   { label: "Failed", value: TaskStatusEnum.Failed },
   { label: "Cancelled", value: TaskStatusEnum.Cancelled },
 ]
+
+const LIST_COPY: Partial<Record<TaskTypeEnum, { title: string, subtitle: string, emptyHint: string }>> = {
+  [TaskTypeEnum.IFRAME]: {
+    title: "Iframe imports",
+    subtitle: "Imports of Our World in Data iframe charts (SVG + {{OWID}} wikitext) into Wikimedia Commons",
+    emptyHint: "Import your first Our World in Data iframe chart to see it here.",
+  },
+}
+
+const DEFAULT_LIST_COPY = {
+  title: "Map imports",
+  subtitle: "Imports of Our World in Data maps into Wikimedia Commons",
+  emptyHint: "Import your first Our World in Data map to see it here.",
+}
 
 interface TaskListProps {
   taskType: TaskTypeEnum
@@ -39,6 +53,9 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { ws, connect, disconnect } = useWebsocket();
   const { showToast } = useToast();
+
+  const copy = LIST_COPY[taskType] ?? DEFAULT_LIST_COPY;
+  const EmptyIcon = taskType === TaskTypeEnum.IFRAME ? CodeIcon : MapIcon;
 
   const filtersActive = search.trim() !== "" || status !== "";
 
@@ -164,8 +181,8 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
   return (
     <Stack spacing={3}>
       <PageHeader
-        title="Map imports"
-        subtitle="Imports of Our World in Data maps into Wikimedia Commons"
+        title={copy.title}
+        subtitle={copy.subtitle}
         action={(
           <Button variant="contained" startIcon={<Add />} onClick={onNew}>
             New import
@@ -260,11 +277,11 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
           />
         ) : (
           <EmptyState
-            icon={<MapIcon />}
+            icon={<EmptyIcon />}
             title={archived ? "No archived imports" : "No imports yet"}
             description={archived
               ? "Imports you archive will show up here."
-              : "Import your first Our World in Data map to see it here."}
+              : copy.emptyHint}
             action={!archived && (
               <Button variant="contained" startIcon={<Add />} onClick={onNew}>
                 New import

@@ -18,4 +18,12 @@ const (
 	TABS_LABELS_ACTIVE_TAB_SELECTOR = ".ContentSwitchers__Container div.Tabs div.Tabs__Tab.active"
 	SOURCE_KEY_DATA_TITLE_SELECTOR  = "div.key-data__title"
 	SOURCE_FOOTER_LINE_SELECTOR     = "footer .markdown-text-wrap__line, footer .sources-link"
+
+	// Iframe import: the download modal's SVG button and option checkboxes (matched by label text)
+	IFRAME_DOWNLOAD_SVG_BUTTON_SELECTOR     = `.download-modal-content button[data-track-note="chart_download_modal_vis_svg"]`
+	IFRAME_DOWNLOAD_CHECKBOX_LABEL_SELECTOR = `.download-modal-content .checkbox label`
+	IFRAME_DOWNLOAD_CHECKBOX_TEXT_SELECTOR  = `.label`
+	IFRAME_DOWNLOAD_CHECKBOX_INPUT_SELECTOR = `input[type="checkbox"]`
+	IFRAME_OPTIMIZE_SVG_LABEL               = "Optimize SVG for Wikipedia upload"
+	IFRAME_TERMINOLOGY_LABEL                = "Include terminology definitions"
 )
