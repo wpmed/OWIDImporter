@@ -16,13 +16,13 @@ import (
 func Websocket(c *gin.Context) {
 	queryParams := c.Request.URL.Query()
 
+	// A connection without a known session is anonymous: it may only follow
+	// single tasks (public import pages), never lists or operations.
 	sessionId := queryParams.Get("sessionId")
-	if sessionId == "" {
-		return
-	}
 	session, ok := sessions.Sessions[sessionId]
-	if !ok {
-		return
+	if sessionId == "" || !ok || session == nil {
+		session = nil
+		sessionId = ""
 	}
 	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -33,8 +33,10 @@ func Websocket(c *gin.Context) {
 	// One write mutex per connection, shared by every subscription on it:
 	// gorilla/websocket allows only one concurrent writer per connection.
 	wsMutex := &sync.Mutex{}
-	session.Ws = ws
-	session.WsMutex = wsMutex
+	if session != nil {
+		session.Ws = ws
+		session.WsMutex = wsMutex
+	}
 	newSubscription := func() *sessions.SubscriptionSession {
 		return &sessions.SubscriptionSession{
 			Id:      sessionId,
@@ -68,10 +70,22 @@ func Websocket(c *gin.Context) {
 					log.Println("Error unmarshalling message", err)
 					continue
 				}
+				isTaskAction := actionMessage.Action == "subscribe_task" || actionMessage.Action == "unsubscribe_task"
+				if session == nil && !isTaskAction {
+					// List and operation subscriptions require a session
+					continue
+				}
 				switch actionMessage.Action {
 				case "subscribe_task":
 					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
-					sessions.AddSubscriptionSession(actionMessage.Content, newSubscription())
+					// Only ids of existing tasks (tasks are public). Topics share one
+					// namespace, so this also keeps anyone off another user's
+					// "<userId>_task_list" / operation topics.
+					task, err := models.FindTaskById(actionMessage.Content)
+					if err != nil || task == nil {
+						continue
+					}
+					sessions.AddSubscriptionSession(task.ID, newSubscription())
 				case "unsubscribe_task":
 					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
 					sessions.RemoveSubscriptionConn(actionMessage.Content, ws)
@@ -91,7 +105,16 @@ func Websocket(c *gin.Context) {
 					sessions.RemoveSubscriptionConn(fmt.Sprintf("%s_task_list", user.ID), ws)
 				case "subscribe_operation":
 					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
-					sessions.AddSubscriptionSession(actionMessage.Content, newSubscription())
+					// Operations are private: only the session user's own
+					user, err := models.FindUserByUsername(session.Username)
+					if err != nil || user == nil {
+						continue
+					}
+					operation, err := models.FindOperationById(actionMessage.Content)
+					if err != nil || operation == nil || operation.UserId != user.ID {
+						continue
+					}
+					sessions.AddSubscriptionSession(operation.ID, newSubscription())
 				case "unsubscribe_operation":
 					fmt.Println("Action message", actionMessage.Action, ": ", actionMessage)
 					sessions.RemoveSubscriptionConn(actionMessage.Content, ws)

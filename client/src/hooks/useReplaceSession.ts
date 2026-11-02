@@ -1,10 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { replaceSession, verifySession } from "../request/request";
 import { SESSION_ID_KEY, USERNAME_KEY } from "../constants";
+import { consumeReturnPath } from "../routing";
 
 export const useReplaceSession = () => {
+  // Read during render: child route effects (e.g. the "/" redirect) run before
+  // this effect and may already have dropped the ?sessionId= query.
+  const [search] = useState(() => window.location.search);
+
   useEffect(() => {
-    const search = window.location.search;
 
     if (search.includes(SESSION_ID_KEY)) {
       const parts = search.replace("?", "").split("&");
@@ -17,7 +21,8 @@ export const useReplaceSession = () => {
               if (res.sessionId) {
                 window.localStorage.setItem(SESSION_ID_KEY, res.sessionId);
                 window.localStorage.setItem(USERNAME_KEY, res.username);
-                window.location.href = "/";
+                // Back to the page the user was on before logging in (a shared link)
+                window.location.href = consumeReturnPath();
               }
             }).catch(err => {
               console.log("Error replacing session", err);
@@ -38,9 +43,10 @@ export const useReplaceSession = () => {
             console.log("Error verifying session", err);
             window.localStorage.removeItem(SESSION_ID_KEY);
             window.localStorage.removeItem(USERNAME_KEY);
-            window.location.href = "/";
+            // Reload the same page: a public shared link stays open, a private page shows the login
+            window.location.reload();
           })
       }
     }
-  }, [])
+  }, [search])
 }

@@ -274,7 +274,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
       <Stack spacing={1}>
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography variant="body2" sx={{ fontWeight: 600 }}>Categories</Typography>
-          <Button onClick={() => handleChange("categories", INITIAL_CATEGORIES_MAP)} size="small">Reset</Button>
+          <Button onClick={() => handleChange("categories", INITIAL_CATEGORIES_MAP)} disabled={disabled} size="small">Reset</Button>
         </Stack>
         <CategoriesSearchInput value={value.categories} onChange={(newCategories) => handleChange("categories", newCategories)} disabled={disabled} />
       </Stack>

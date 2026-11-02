@@ -1,5 +1,6 @@
 import { Box, Button, Divider, Stack, Typography } from "@mui/material";
 import LoginIcon from '@mui/icons-material/Login';
+import { LOGIN_URL, rememberCurrentPage } from "../login";
 
 const STEPS = [
   {
@@ -17,8 +18,6 @@ const STEPS = [
 ];
 
 export const Login = () => {
-  const loginUrl = import.meta.env.VITE_BASE_URL + "/login";
-
   return (
     <Stack alignItems="center" sx={{ pt: { xs: 4, md: 10 } }}>
       <Stack spacing={4} alignItems="center" sx={{ maxWidth: 720, textAlign: "center" }}>
@@ -37,7 +36,8 @@ export const Login = () => {
         <Button
           variant="contained"
           size="large"
-          href={loginUrl}
+          href={LOGIN_URL}
+          onClick={rememberCurrentPage}
           startIcon={<LoginIcon />}
           sx={{ px: 4 }}
         >

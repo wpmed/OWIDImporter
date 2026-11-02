@@ -1,4 +1,5 @@
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Drawer from '@mui/material/Drawer';
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
@@ -17,43 +18,39 @@ import CodeIcon from '@mui/icons-material/Code';
 import PostAddIcon from '@mui/icons-material/PostAdd';
 import MenuIcon from '@mui/icons-material/Menu';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import LoginIcon from '@mui/icons-material/Login';
 
 import { ListItemIcon } from '@mui/material';
-import { MapImporter } from './components/MapImporter';
-import { IframeImporter } from './components/IframeImporter';
+import { Link as RouterLink, Navigate, Outlet, Route, Routes, useLocation, useMatch } from 'react-router';
 import { Login } from './components/Login';
 import { useReplaceSession } from './hooks/useReplaceSession';
 import { SESSION_ID_KEY, USERNAME_KEY } from './constants';
 import { Logout } from '@mui/icons-material';
-import { ReactNode, useCallback, useMemo, useState } from 'react';
-import { Operation, Task, TaskTypeEnum } from './types';
+import { ReactNode, useState } from 'react';
 import { logout } from './request/request';
-import { TaskList } from './components/TaskList';
-import { OperationList } from './components/OperationList';
-import { OperationRunner } from './components/OperationRunner';
 import { serifStack } from './theme';
+import { isNavActive, NavMatch, PATHS } from './routing';
+import { LOGIN_URL, rememberCurrentPage } from './login';
+import {
+  IframeListPage,
+  IframeTaskPage,
+  MapListPage,
+  MapTaskPage,
+  NewIframePage,
+  NewMapPage,
+  NewOperationPage,
+  NotFoundPage,
+  OperationListPage,
+  OperationPage,
+} from './pages';
 
 const drawerWidth = 240;
 
-enum TABS {
-  MAP_LIST = 0,
-  MAP_DETAILS = 1,
-  CHART_LIST = 2,
-  CHART_DETAILS = 3,
-  IMPORT_MAP = 4,
-  OPERATION_LIST = 6,
-  OPERATION_DETAILS = 7,
-  NEW_OPERATION = 8,
-  IFRAME_LIST = 9,
-  IFRAME_DETAILS = 10,
-  IMPORT_IFRAME = 11,
-}
-
 interface NavItem {
-  id: TABS
+  to: string
   title: string
   icon: ReactNode
-  match: TABS[]
+  match: NavMatch
 }
 
 interface NavSection {
@@ -66,16 +63,16 @@ const NAV_SECTIONS: NavSection[] = [
     label: "All Commons",
     items: [
       {
-        id: TABS.MAP_LIST,
+        to: PATHS.MAPS,
         title: "Map imports",
         icon: <MapIcon />,
-        match: [TABS.MAP_LIST, TABS.MAP_DETAILS],
+        match: { list: PATHS.MAPS, newPath: PATHS.NEW_MAP },
       },
       {
-        id: TABS.IMPORT_MAP,
+        to: PATHS.NEW_MAP,
         title: "Import map",
         icon: <AddPhotoAlternateIcon />,
-        match: [TABS.IMPORT_MAP],
+        match: { exact: PATHS.NEW_MAP },
       },
     ],
   },
@@ -83,16 +80,16 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Iframe",
     items: [
       {
-        id: TABS.IFRAME_LIST,
+        to: PATHS.IFRAMES,
         title: "Iframe imports",
         icon: <CodeIcon />,
-        match: [TABS.IFRAME_LIST, TABS.IFRAME_DETAILS],
+        match: { list: PATHS.IFRAMES, newPath: PATHS.NEW_IFRAME },
       },
       {
-        id: TABS.IMPORT_IFRAME,
+        to: PATHS.NEW_IFRAME,
         title: "Import iframe",
         icon: <PostAddIcon />,
-        match: [TABS.IMPORT_IFRAME],
+        match: { exact: PATHS.NEW_IFRAME },
       },
     ],
   },
@@ -100,10 +97,11 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Maintenance",
     items: [
       {
-        id: TABS.OPERATION_LIST,
+        to: PATHS.OPERATIONS,
         title: "Defaults cleanup",
         icon: <CleaningServicesIcon />,
-        match: [TABS.OPERATION_LIST, TABS.OPERATION_DETAILS, TABS.NEW_OPERATION],
+        // Covers the list, /operations/new and /operations/:id
+        match: { list: PATHS.OPERATIONS, newPath: "" },
       },
     ],
   },
@@ -134,29 +132,28 @@ function Brand() {
   )
 }
 
-export default function App() {
-  const [tab, setTab] = useState(TABS.MAP_LIST);
-  const [selectedTaskId, setSelectedTaskId] = useState("");
-  const [selectedOperationId, setSelectedOperationId] = useState("");
-  const [importerKey, setImporterKey] = useState(0);
-  const [iframeKey, setIframeKey] = useState(0);
-  const [operationKey, setOperationKey] = useState(0);
-  const [mobileOpen, setMobileOpen] = useState(false);
+const isLoggedIn = () => !!window.localStorage.getItem(SESSION_ID_KEY);
 
-  useReplaceSession();
+// Private pages show the login screen to anonymous visitors (the URL is kept,
+// so logging in brings them back here).
+function RequireAuth() {
+  return isLoggedIn() ? <Outlet /> : <Login />
+}
+
+// True on the public import pages (/maps/:id, /iframes/:id), not on the new-import forms
+function useOnPublicPage() {
+  const mapMatch = useMatch("/maps/:id");
+  const iframeMatch = useMatch("/iframes/:id");
+  return [mapMatch, iframeMatch].some(m => m && m.params.id !== "new");
+}
+
+function Layout() {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { pathname } = useLocation();
+  const onPublicPage = useOnPublicPage();
 
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY);
   const username = window.localStorage.getItem(USERNAME_KEY);
-
-  const selectedTaskType = useMemo(() => {
-    if ([TABS.MAP_LIST, TABS.MAP_DETAILS].includes(tab)) {
-      return TaskTypeEnum.MAP
-    }
-    if ([TABS.IFRAME_LIST, TABS.IFRAME_DETAILS].includes(tab)) {
-      return TaskTypeEnum.IFRAME
-    }
-    return TaskTypeEnum.CHART
-  }, [tab])
 
   const onLogout = () => {
     logout().finally(() => {
@@ -164,64 +161,6 @@ export default function App() {
       window.localStorage.removeItem(USERNAME_KEY);
       window.location.reload();
     })
-  }
-
-  const onNewClick = () => {
-    setSelectedTaskId("");
-    setImporterKey((key) => key + 1);
-    setTab(TABS.IMPORT_MAP);
-  }
-
-  const onNewIframeClick = () => {
-    setSelectedTaskId("");
-    setIframeKey((key) => key + 1);
-    setTab(TABS.IMPORT_IFRAME);
-  }
-
-  const onNewOperationClick = () => {
-    setSelectedOperationId("");
-    setOperationKey((key) => key + 1);
-    setTab(TABS.NEW_OPERATION);
-  }
-
-  const onOperationClick = (operation: Operation) => {
-    setSelectedOperationId(operation.id);
-    setTab(TABS.OPERATION_DETAILS);
-  }
-
-  const onNavigateToOperationList = useCallback(() => {
-    setSelectedOperationId("");
-    setTab(TABS.OPERATION_LIST);
-    window.scrollTo({ left: 0, top: 0 })
-  }, [setTab])
-
-  const onTaskClick = (task: Task) => {
-    setSelectedTaskId(task.id);
-    if (selectedTaskType === TaskTypeEnum.MAP) {
-      setTab(TABS.MAP_DETAILS);
-    } else if (selectedTaskType === TaskTypeEnum.IFRAME) {
-      setTab(TABS.IFRAME_DETAILS);
-    } else if (selectedTaskType == TaskTypeEnum.CHART) {
-      setTab(TABS.CHART_DETAILS);
-    }
-  }
-
-  const onNavigateToList = useCallback(() => {
-    setTab(TABS.MAP_LIST);
-    window.scrollTo({ left: 0, top: 0 })
-  }, [setTab])
-
-  const onNavItemClick = (item: NavItem) => {
-    setMobileOpen(false);
-    if (item.id === TABS.IMPORT_MAP) {
-      onNewClick()
-    } else if (item.id === TABS.IMPORT_IFRAME) {
-      onNewIframeClick()
-    } else {
-      setSelectedTaskId("");
-      setSelectedOperationId("");
-      setTab(item.id);
-    }
   }
 
   const drawerContent = (
@@ -236,10 +175,12 @@ export default function App() {
           </Typography>
           <List disablePadding>
             {section.items.map(item => (
-              <ListItem key={item.id} disablePadding>
+              <ListItem key={item.to} disablePadding>
                 <ListItemButton
-                  onClick={() => onNavItemClick(item)}
-                  selected={item.match.includes(tab)}
+                  component={RouterLink}
+                  to={item.to}
+                  onClick={() => setMobileOpen(false)}
+                  selected={isNavActive(item.match, pathname)}
                 >
                   <ListItemIcon>
                     {item.icon}
@@ -288,6 +229,16 @@ export default function App() {
               sx={{ display: { xs: 'none', sm: 'flex' } }}
             />
           )}
+          {!sessionId && onPublicPage && (
+            <Button
+              variant="outlined"
+              href={LOGIN_URL}
+              onClick={rememberCurrentPage}
+              startIcon={<LoginIcon />}
+            >
+              Log in
+            </Button>
+          )}
         </Toolbar>
       </AppBar>
       {sessionId ? (
@@ -320,39 +271,45 @@ export default function App() {
           <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 4 }, minWidth: 0 }}>
             <Toolbar />
             <Box sx={{ maxWidth: 1400, mx: 'auto' }}>
-              {[TABS.MAP_LIST, TABS.CHART_LIST].includes(tab) ? (
-                <TaskList key={selectedTaskType} taskType={selectedTaskType} onNew={onNewClick} onTaskClick={onTaskClick} />
-              ) : tab === TABS.IFRAME_LIST ? (
-                <TaskList key={selectedTaskType} taskType={selectedTaskType} onNew={onNewIframeClick} onTaskClick={onTaskClick} />
-              ) : [TABS.IMPORT_IFRAME, TABS.IFRAME_DETAILS].includes(tab) ? (
-                <IframeImporter
-                  key={`${iframeKey}-${selectedTaskId}`}
-                  taskId={selectedTaskId}
-                />
-              ) : [TABS.IMPORT_MAP, TABS.MAP_DETAILS].includes(tab) ? (
-                <MapImporter
-                  key={`${importerKey}-${selectedTaskId}`}
-                  taskId={selectedTaskId}
-                  onNavigateToList={onNavigateToList}
-                />
-              ) : tab === TABS.OPERATION_LIST ? (
-                <OperationList onNew={onNewOperationClick} onOperationClick={onOperationClick} />
-              ) : [TABS.NEW_OPERATION, TABS.OPERATION_DETAILS].includes(tab) ? (
-                <OperationRunner
-                  key={`${operationKey}-${selectedOperationId}`}
-                  operationId={selectedOperationId}
-                  onNavigateToList={onNavigateToOperationList}
-                />
-              ) : null}
+              <Outlet />
             </Box>
           </Box>
         </>
       ) : (
-        <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 4 } }}>
+        <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 4 }, minWidth: 0 }}>
           <Toolbar />
-          <Login />
+          <Box sx={{ maxWidth: 1400, mx: 'auto' }}>
+            <Outlet />
+          </Box>
         </Box>
       )}
     </Box>
+  );
+}
+
+export default function App() {
+  useReplaceSession();
+
+  return (
+    <Routes>
+      <Route element={<Layout />}>
+        {/* Public: a single import, read-only unless the viewer created it */}
+        <Route path="/maps/:id" element={<MapTaskPage />} />
+        <Route path="/iframes/:id" element={<IframeTaskPage />} />
+
+        <Route element={<RequireAuth />}>
+          <Route index element={<Navigate to={PATHS.MAPS} replace />} />
+          <Route path={PATHS.MAPS} element={<MapListPage />} />
+          <Route path={PATHS.NEW_MAP} element={<NewMapPage />} />
+          <Route path={PATHS.IFRAMES} element={<IframeListPage />} />
+          <Route path={PATHS.NEW_IFRAME} element={<NewIframePage />} />
+          <Route path={PATHS.OPERATIONS} element={<OperationListPage />} />
+          <Route path={PATHS.NEW_OPERATION} element={<NewOperationPage />} />
+          <Route path="/operations/:id" element={<OperationPage />} />
+        </Route>
+
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    </Routes>
   );
 }

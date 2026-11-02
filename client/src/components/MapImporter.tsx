@@ -14,6 +14,7 @@ import { PageHeader } from "./ui/PageHeader";
 import { EmptyState } from "./ui/EmptyState";
 import { CodeBlock } from "./ui/CodeBlock";
 import { monoStack } from "../theme";
+import { ShareLinkButton } from "./ShareLinkButton";
 
 
 export interface MapImporterSubmitData {
@@ -25,9 +26,11 @@ export interface MapImporterSubmitData {
 export interface MapImporterProps {
   taskId?: string
   onNavigateToList: () => void
+  // Called with the new task id after a single import is created
+  onCreated?: (taskId: string) => void
 }
 
-export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImporterProps) {
+export function MapImporter({ taskId: incomingTaskId, onNavigateToList, onCreated }: MapImporterProps) {
   const [loading, setLoading] = useState(false);
   const [parametersLoading, setParametersLoading] = useState(false);
   const { showToast } = useToast();
@@ -42,6 +45,11 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
   const [retryLoading, setRetryLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [wikiText, setWikiText] = useState("");
+  // Only the creator may retry or cancel an existing import; everyone else sees it read-only
+  const [isOwner, setIsOwner] = useState(false);
+  // The task could not be loaded (unknown id or request failed)
+  const [loadError, setLoadError] = useState(false);
+  const canControl = !incomingTaskId || isOwner;
 
   const disabled = useMemo(() => {
     return !!taskId || !!incomingTaskId || !!task
@@ -72,8 +80,11 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
   const getTask = useCallback((taskId: string, updateItems?: boolean) => {
     fetchTaskById(taskId)
       .then(res => {
+        if (!res.task) throw new Error("task missing");
         const task = res.task;
+        setLoadError(false);
         setTask(task);
+        setIsOwner(!!res.isOwner);
 
         const { description, categories } = extractAndReplaceCategoriesFromDescription(res.task.description)
         const importItem: MapImporterFormItem = {
@@ -106,6 +117,7 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
       })
       .catch((err) => {
         console.log("Error fetching task", err);
+        setLoadError(true);
         showToast("Failed to load the task", "error")
       })
       .finally(() => {
@@ -175,7 +187,11 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
       }));
 
       if (imports.length == 1 && taskId) {
-        setTaskId(taskId)
+        if (onCreated) {
+          onCreated(taskId)
+        } else {
+          setTaskId(taskId)
+        }
       } else {
         onNavigateToList();
       }
@@ -190,6 +206,7 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
     setTaskId,
     setLoading,
     onNavigateToList,
+    onCreated,
     showToast
   ])
 
@@ -289,11 +306,13 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
   return (
     <Stack spacing={3}>
       <PageHeader
-        title={task ? "Map import" : "Import map"}
-        subtitle={task
+        title={task || incomingTaskId ? "Map import" : "Import map"}
+        subtitle={task || incomingTaskId
           ? "Live progress and details for this import"
           : "Import an Our World in Data map into Wikimedia Commons"}
-        action={!task ? (
+        action={incomingTaskId ? (
+          <ShareLinkButton />
+        ) : !task ? (
           <MultiImportModal onAdd={(newImports) => setImports((oldImports) => {
             const allImports = [...oldImports, ...newImports].filter(imp => imp.url.trim())
             return allImports;
@@ -301,233 +320,241 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList }: MapImp
         ) : undefined}
       />
 
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 7 }}>
-          <Stack spacing={3}>
-            {task && (
-              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
-                <Stack spacing={1} direction="row" alignItems="center">
-                  <Typography sx={{ fontWeight: 600 }}>Status</Typography>
-                  <StatusChip
-                    kind={getStatusKind(task.status)}
-                    label={task.status}
-                    showSpinner={task.status === TaskStatusEnum.Processing}
-                  />
-                </Stack>
-                {canRetry && (
-                  <Stack alignItems="flex-end" spacing={0.5}>
-                    <Button variant="outlined" color="warning" loading={retryLoading} onClick={onRetry}>
-                      Retry failed items
-                    </Button>
-                    {failedItemsCount > 0 && (
-                      <Typography variant="caption" color="error">{failedItemsCount} failed items</Typography>
-                    )}
-                  </Stack>
-                )}
-              </Stack>
-            )}
-
-            <Stack spacing={2}>
-              {imports.map((i, index) => {
-                const comp = <MapImporterForm
-                  value={i}
-                  disabled={disabled}
-                  canRemove={!disabled && imports.length > 1}
-                  onChange={onMapFormChange(index)}
-                  onParamtersLoadingChange={(loading) => setParametersLoading(loading)}
-                  onDelete={() => {
-                    const newImports = imports.slice();
-                    newImports.splice(index, 1);
-                    setImports(newImports);
-                  }}
-                />
-
-                return (
-                  <Box key={i.id}>
-                    {imports.length > 1 ? (
-                      <Accordion expanded={expanded == i.id} onChange={(_, expanded) => setExpanded(expanded ? i.id : false)}>
-                        <AccordionSummary
-                          id={i.id}
-                          aria-controls={i.id}
-                          expandIcon={<ExpandMore />}
-                        >
-                          <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-                            <Typography
-                              component="span"
-                              sx={{
-                                fontFamily: monoStack,
-                                fontSize: 13,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {i.url || "New import"}
-                            </Typography>
-                            {i.linkVerified && !i.canImport && expanded !== i.id && (
-                              <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: 'warning.main' }}>
-                                <WarningAmber fontSize="small" />
-                                <Typography variant="body2">
-                                  This chart cannot be imported
-                                </Typography>
-                              </Stack>
-                            )}
-                          </Stack>
-                        </AccordionSummary>
-                        <AccordionDetails>
-                          {comp}
-                        </AccordionDetails>
-                      </Accordion>
-                    ) : comp}
-                  </Box>
-                )
-              }
-              )}
-            </Stack>
-
-            {!submitDisabled && (
-              <Stack alignItems="center">
-                <Button
-                  startIcon={<Add />}
-                  disabled={parametersLoading}
-                  variant="outlined"
-                  color="primary"
-                  onClick={() => {
-                    const newImport = generateBlankImport();
-                    setImports([...imports, newImport]);
-                    setExpanded(newImport.id);
-                    window.scrollTo({ left: 0, top: 0 })
-                  }}
-                >
-                  Add another URL
-                </Button>
-              </Stack>
-            )}
-
-            <Stack direction="row" justifyContent="flex-end" spacing={2}>
-              <Button
-                onClick={onCancel}
-                disabled={cancelLoading || cancelDisabled}
-                loading={cancelLoading}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={submit}
-                disabled={submitDisabled}
-                loading={loading}
-              >
-                Submit
-              </Button>
-            </Stack>
-
-            {task && wikiText && (
-              <Stack spacing={1.5}>
+      {incomingTaskId && loadError && !task ? (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Typography variant="body2" color="error">Failed to load this task.</Typography>
+        </Paper>
+      ) : (
+        <Grid container spacing={3}>
+          <Grid size={{ xs: 12, md: 7 }}>
+            <Stack spacing={3}>
+              {task && (
                 <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    {task.type === TaskTypeEnum.MAP ? (
-                      <>If using this with {`{{owidslider}}`}, you can use the following wikicode for the gallery list page:</>
-                    ) : (
-                      <>If using this with {`{{owidslider}}`}, please add the following to your {`{{owidslidersrcs}}`}:</>
-                    )}
-                  </Typography>
-                  {task.commonsTemplateName && (
-                    <Link
-                      target="_blank"
-                      href={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`}
-                      sx={{ whiteSpace: 'nowrap' }}
-                    >
-                      Uploaded template
-                    </Link>
+                  <Stack spacing={1} direction="row" alignItems="center">
+                    <Typography sx={{ fontWeight: 600 }}>Status</Typography>
+                    <StatusChip
+                      kind={getStatusKind(task.status)}
+                      label={task.status}
+                      showSpinner={task.status === TaskStatusEnum.Processing}
+                    />
+                  </Stack>
+                  {canRetry && canControl && (
+                    <Stack alignItems="flex-end" spacing={0.5}>
+                      <Button variant="outlined" color="warning" loading={retryLoading} onClick={onRetry}>
+                        Retry failed items
+                      </Button>
+                      {failedItemsCount > 0 && (
+                        <Typography variant="caption" color="error">{failedItemsCount} failed items</Typography>
+                      )}
+                    </Stack>
                   )}
                 </Stack>
-                <CodeBlock code={wikiText} />
-              </Stack>
-            )}
-          </Stack>
-        </Grid>
+              )}
 
-        <Grid size={{ xs: 12, md: 5 }}>
-          <Paper
-            variant="outlined"
-            sx={{
-              position: { md: 'sticky' },
-              top: 88,
-              display: 'flex',
-              flexDirection: 'column',
-              maxHeight: { md: 'calc(100vh - 120px)' },
-            }}
-          >
-            <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ px: 2, py: 1.5 }}>
-              <Typography sx={{ fontWeight: 600 }}>Progress</Typography>
-              {items.length > 0 && (
-                <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: monoStack }}>
-                  {doneItemsCount}/{items.length}
-                  {failedItemsCount > 0 ? ` · ${failedItemsCount} failed` : ""}
-                </Typography>
+              <Stack spacing={2}>
+                {imports.map((i, index) => {
+                  const comp = <MapImporterForm
+                    value={i}
+                    disabled={disabled}
+                    canRemove={!disabled && imports.length > 1}
+                    onChange={onMapFormChange(index)}
+                    onParamtersLoadingChange={(loading) => setParametersLoading(loading)}
+                    onDelete={() => {
+                      const newImports = imports.slice();
+                      newImports.splice(index, 1);
+                      setImports(newImports);
+                    }}
+                  />
+
+                  return (
+                    <Box key={i.id}>
+                      {imports.length > 1 ? (
+                        <Accordion expanded={expanded == i.id} onChange={(_, expanded) => setExpanded(expanded ? i.id : false)}>
+                          <AccordionSummary
+                            id={i.id}
+                            aria-controls={i.id}
+                            expandIcon={<ExpandMore />}
+                          >
+                            <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+                              <Typography
+                                component="span"
+                                sx={{
+                                  fontFamily: monoStack,
+                                  fontSize: 13,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {i.url || "New import"}
+                              </Typography>
+                              {i.linkVerified && !i.canImport && expanded !== i.id && (
+                                <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: 'warning.main' }}>
+                                  <WarningAmber fontSize="small" />
+                                  <Typography variant="body2">
+                                    This chart cannot be imported
+                                  </Typography>
+                                </Stack>
+                              )}
+                            </Stack>
+                          </AccordionSummary>
+                          <AccordionDetails>
+                            {comp}
+                          </AccordionDetails>
+                        </Accordion>
+                      ) : comp}
+                    </Box>
+                  )
+                }
+                )}
+              </Stack>
+
+              {!submitDisabled && (
+                <Stack alignItems="center">
+                  <Button
+                    startIcon={<Add />}
+                    disabled={parametersLoading}
+                    variant="outlined"
+                    color="primary"
+                    onClick={() => {
+                      const newImport = generateBlankImport();
+                      setImports([...imports, newImport]);
+                      setExpanded(newImport.id);
+                      window.scrollTo({ left: 0, top: 0 })
+                    }}
+                  >
+                    Add another URL
+                  </Button>
+                </Stack>
+              )}
+
+              {canControl && (
+                <Stack direction="row" justifyContent="flex-end" spacing={2}>
+                  <Button
+                    onClick={onCancel}
+                    disabled={cancelLoading || cancelDisabled}
+                    loading={cancelLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={submit}
+                    disabled={submitDisabled}
+                    loading={loading}
+                  >
+                    Submit
+                  </Button>
+                </Stack>
+              )}
+
+              {task && wikiText && (
+                <Stack spacing={1.5}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                      {task.type === TaskTypeEnum.MAP ? (
+                        <>If using this with {`{{owidslider}}`}, you can use the following wikicode for the gallery list page:</>
+                      ) : (
+                        <>If using this with {`{{owidslider}}`}, please add the following to your {`{{owidslidersrcs}}`}:</>
+                      )}
+                    </Typography>
+                    {task.commonsTemplateName && (
+                      <Link
+                        target="_blank"
+                        href={`${import.meta.env.VITE_MW_BASE_URL}/${task.commonsTemplateName}`}
+                        sx={{ whiteSpace: 'nowrap' }}
+                      >
+                        Uploaded template
+                      </Link>
+                    )}
+                  </Stack>
+                  <CodeBlock code={wikiText} />
+                </Stack>
               )}
             </Stack>
-            <Divider />
-            <Box sx={{ overflowY: 'auto', flexGrow: 1 }}>
-              {items.length === 0 ? (
-                <Box sx={{ p: 2 }}>
-                  <EmptyState
-                    icon={<HourglassEmpty />}
-                    title="Nothing yet"
-                    description="Per-region progress will appear here once the import starts."
-                  />
-                </Box>
-              ) : (
-                items.map(msg => (
-                  <Stack
-                    key={msg.id}
-                    direction="row"
-                    spacing={1.5}
-                    alignItems="flex-start"
-                    sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}
-                  >
-                    <Box
-                      sx={{
-                        width: 8,
-                        height: 8,
-                        mt: '6px',
-                        borderRadius: '50%',
-                        flexShrink: 0,
-                        backgroundColor: (t) => t.palette.status[getTaskProcessStatusKind(msg.status)],
-                      }}
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 5 }}>
+            <Paper
+              variant="outlined"
+              sx={{
+                position: { md: 'sticky' },
+                top: 88,
+                display: 'flex',
+                flexDirection: 'column',
+                maxHeight: { md: 'calc(100vh - 120px)' },
+              }}
+            >
+              <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ px: 2, py: 1.5 }}>
+                <Typography sx={{ fontWeight: 600 }}>Progress</Typography>
+                {items.length > 0 && (
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: monoStack }}>
+                    {doneItemsCount}/{items.length}
+                    {failedItemsCount > 0 ? ` · ${failedItemsCount} failed` : ""}
+                  </Typography>
+                )}
+              </Stack>
+              <Divider />
+              <Box sx={{ overflowY: 'auto', flexGrow: 1 }}>
+                {items.length === 0 ? (
+                  <Box sx={{ p: 2 }}>
+                    <EmptyState
+                      icon={<HourglassEmpty />}
+                      title="Nothing yet"
+                      description="Per-region progress will appear here once the import starts."
                     />
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {msg.region}{msg.date ? ` · ${msg.date}` : ""}
-                      </Typography>
-                      <Typography
-                        variant="caption"
+                  </Box>
+                ) : (
+                  items.map(msg => (
+                    <Stack
+                      key={msg.id}
+                      direction="row"
+                      spacing={1.5}
+                      alignItems="flex-start"
+                      sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}
+                    >
+                      <Box
                         sx={{
-                          textTransform: 'capitalize',
-                          color: (t) => t.palette.status[getTaskProcessStatusKind(msg.status)],
+                          width: 8,
+                          height: 8,
+                          mt: '6px',
+                          borderRadius: '50%',
+                          flexShrink: 0,
+                          backgroundColor: (t) => t.palette.status[getTaskProcessStatusKind(msg.status)],
                         }}
-                      >
-                        {msg.status?.replace("_", " ")}
-                      </Typography>
-                      {msg.filename && (
-                        <Link
-                          target="_blank"
-                          href={`${import.meta.env.VITE_MW_BASE_URL}/File:${msg.filename}`}
-                          sx={{ ml: 1, fontFamily: monoStack, fontSize: 12 }}
+                      />
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {msg.region}{msg.date ? ` · ${msg.date}` : ""}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            textTransform: 'capitalize',
+                            color: (t) => t.palette.status[getTaskProcessStatusKind(msg.status)],
+                          }}
                         >
-                          {msg.filename}
-                        </Link>
-                      )}
-                    </Box>
-                  </Stack>
-                ))
-              )}
-            </Box>
-          </Paper>
+                          {msg.status?.replace("_", " ")}
+                        </Typography>
+                        {msg.filename && (
+                          <Link
+                            target="_blank"
+                            href={`${import.meta.env.VITE_MW_BASE_URL}/File:${msg.filename}`}
+                            sx={{ ml: 1, fontFamily: monoStack, fontSize: 12 }}
+                          >
+                            {msg.filename}
+                          </Link>
+                        )}
+                      </Box>
+                    </Stack>
+                  ))
+                )}
+              </Box>
+            </Paper>
+          </Grid>
         </Grid>
-      </Grid>
+      )}
     </Stack>
   )
 }

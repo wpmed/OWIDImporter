@@ -12,9 +12,11 @@ import { monoStack } from "../theme"
 interface OperationRunnerProps {
   operationId: string
   onNavigateToList: () => void
+  // Called with the new operation id after it is created
+  onCreated?: (operationId: string) => void
 }
 
-export function OperationRunner({ operationId: initialOperationId, onNavigateToList }: OperationRunnerProps) {
+export function OperationRunner({ operationId: initialOperationId, onNavigateToList, onCreated }: OperationRunnerProps) {
   const [operationId, setOperationId] = useState(initialOperationId);
   const [operation, setOperation] = useState<Operation | null>(null);
   const [items, setItems] = useState<OperationItem[]>([]);
@@ -50,7 +52,11 @@ export function OperationRunner({ operationId: initialOperationId, onNavigateToL
     createOperation({ type: OperationTypeEnum.UPDATE_DEFAULTS, pages })
       .then(res => {
         if (res.operationId) {
-          setOperationId(res.operationId);
+          if (onCreated) {
+            onCreated(res.operationId);
+          } else {
+            setOperationId(res.operationId);
+          }
         } else {
           setError(res.error || "Error creating operation");
           setInvalidPages(res.invalid || []);

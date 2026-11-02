@@ -32,6 +32,34 @@ type GetTaskResponse struct {
 	Task      models.Task          `json:"task"`
 	Processes []models.TaskProcess `json:"processes"`
 	WikiText  string               `json:"wikiText"`
+	// IsOwner is true when the optional sessionId header belongs to the task's creator
+	IsOwner bool `json:"isOwner"`
+}
+
+// isTaskOwner reports whether sessionId belongs to the user who created task.
+// An empty or unknown session is never the owner.
+func isTaskOwner(task *models.Task, sessionId string) bool {
+	if sessionId == "" {
+		return false
+	}
+	session, ok := sessions.Sessions[sessionId]
+	if !ok || session == nil {
+		return false
+	}
+	user, err := models.FindUserByUsername(session.Username)
+	if err != nil || user == nil {
+		return false
+	}
+	return task.UserId == user.ID
+}
+
+// rejectNonOwner answers 403 and returns true when user did not create task.
+func rejectNonOwner(c *gin.Context, task *models.Task, user *models.User) bool {
+	if task.UserId != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only the creator of this task can change it"})
+		return true
+	}
+	return false
 }
 
 func CreateTask(c *gin.Context) {
@@ -169,6 +197,7 @@ func GetTask(c *gin.Context) {
 		Task:      *task,
 		Processes: processes,
 		WikiText:  "",
+		IsOwner:   isTaskOwner(task, c.Request.Header.Get("sessionId")),
 	}
 	if task.Status == models.TaskStatusDone {
 		switch task.Type {
@@ -284,6 +313,9 @@ func ArchiveTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrying task"})
 		return
 	}
+	if rejectNonOwner(c, task, user) {
+		return
+	}
 
 	if task.Status == models.TaskStatusProcessing {
 		fmt.Println("Cannot archive processing task ", task.Status, task.ID)
@@ -332,6 +364,9 @@ func RetryTask(c *gin.Context) {
 	if err != nil || task == nil {
 		fmt.Println("Error retrying task: ", err, task)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrying task"})
+		return
+	}
+	if rejectNonOwner(c, task, user) {
 		return
 	}
 
@@ -411,6 +446,9 @@ func CancelTask(c *gin.Context) {
 	if err != nil || task == nil {
 		fmt.Println("Error retrying task: ", err, task)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrying task"})
+		return
+	}
+	if rejectNonOwner(c, task, user) {
 		return
 	}
 

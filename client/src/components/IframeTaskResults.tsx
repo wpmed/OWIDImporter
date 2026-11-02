@@ -11,15 +11,19 @@ import { monoStack } from "../theme";
 import { StatusChip } from "./ui/StatusChip";
 import { CodeBlock } from "./ui/CodeBlock";
 import { EmptyState } from "./ui/EmptyState";
+import { Link as RouterLink } from "react-router";
+import { iframePath } from "../routing";
 
 interface TaskState {
   task: Task | null
   processes: TaskProcess[]
   wikiText: string
   error: boolean
+  // Only the creator gets retry/cancel; other viewers see the task read-only
+  isOwner: boolean
 }
 
-const EMPTY_STATE: TaskState = { task: null, processes: [], wikiText: "", error: false };
+const EMPTY_STATE: TaskState = { task: null, processes: [], wikiText: "", error: false, isOwner: false };
 
 export interface IframeTaskResultsProps {
   taskIds: string[]
@@ -27,6 +31,8 @@ export interface IframeTaskResultsProps {
   failedSubmissions?: IframeSubmitFailure[]
   resubmitting?: boolean
   onResubmit?: () => void
+  // Link each task title to its own shareable page (used for a batch of submissions)
+  linkRows?: boolean
 }
 
 function isFailed(state: TaskState) {
@@ -34,14 +40,14 @@ function isFailed(state: TaskState) {
 }
 
 function canRetry(state: TaskState) {
-  if (!state.task) return false;
+  if (!state.task || !state.isOwner) return false;
   if ([TaskStatusEnum.Failed, TaskStatusEnum.Cancelled].includes(state.task.status)) return true;
   return state.task.status === TaskStatusEnum.Done && state.processes.some(p => p.status === TaskProcessStatusEnum.Failed);
 }
 
 const NO_FAILED_SUBMISSIONS: IframeSubmitFailure[] = [];
 
-export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMISSIONS, resubmitting = false, onResubmit }: IframeTaskResultsProps) {
+export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMISSIONS, resubmitting = false, onResubmit, linkRows = false }: IframeTaskResultsProps) {
   const { showToast } = useToast();
   const { ws, connect, disconnect } = useWebsocket();
   const [states, setStates] = useState<Record<string, TaskState>>({});
@@ -60,6 +66,7 @@ export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMI
           processes: updateProcesses ? (res.processes ?? []) : old.processes,
           wikiText: res.wikiText ?? "",
           error: false,
+          isOwner: !!res.isOwner,
         }));
       })
       .catch(err => {
@@ -198,15 +205,27 @@ export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMI
         const { task, processes, wikiText } = state;
         const process = processes[0];
         const title = task ? (task.chartName || task.url) : "Loading...";
-        const cancellable = !!task && [TaskStatusEnum.Processing, TaskStatusEnum.Queued].includes(task.status);
+        const cancellable = !!task && state.isOwner && [TaskStatusEnum.Processing, TaskStatusEnum.Queued].includes(task.status);
         return (
           <Paper key={id} variant="outlined" sx={{ p: 2 }} data-testid="iframe-task">
             <Stack spacing={1.5}>
               <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
                 <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {title}
-                  </Typography>
+                  {linkRows ? (
+                    <Link
+                      component={RouterLink}
+                      to={iframePath(id)}
+                      underline="hover"
+                      color="inherit"
+                      sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {title}
+                    </Link>
+                  ) : (
+                    <Typography sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {title}
+                    </Typography>
+                  )}
                   {task && (
                     <Link
                       href={iframeChartUrl(task.url)}
