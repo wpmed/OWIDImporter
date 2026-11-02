@@ -40,7 +40,8 @@ export const useWebsocket = () => {
 
   const connect = useCallback(() => {
     const sessionId = window.localStorage.getItem(SESSION_ID_KEY);
-    const url = import.meta.env.VITE_BASE_URL + `/ws?${SESSION_ID_KEY}=${sessionId}`;
+    // Without a session the server accepts an anonymous connection that can only follow single tasks
+    const url = import.meta.env.VITE_BASE_URL + (sessionId ? `/ws?${SESSION_ID_KEY}=${sessionId}` : "/ws");
 
     const ws = new WebSocket(
       url

@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { ThemeProvider } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router';
 import '@fontsource-variable/fraunces';
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
@@ -20,7 +21,9 @@ createRoot(document.getElementById('root')!).render(
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <ToastProvider>
-        <App />
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
       </ToastProvider>
     </ThemeProvider>
   </StrictMode>,

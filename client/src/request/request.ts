@@ -186,6 +186,8 @@ export interface FetchTaskByIdResponse {
   task: Task,
   processes: TaskProcess[],
   wikiText?: string
+  // True when the stored session belongs to the task's creator
+  isOwner?: boolean
 }
 
 export async function fetchTaskById(id: string) {

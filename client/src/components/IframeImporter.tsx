@@ -13,17 +13,19 @@ import { IframeTaskResults } from "./IframeTaskResults";
 import { MultiImportModal } from "./MultiImportModal";
 
 export interface IframeImporterProps {
-  // Opens an existing task (from the Iframe imports list)
-  taskId?: string
+  // Called when a single submitted item created its task, so its own page can open
+  onCreated?: (taskId: string) => void
 }
 
-export function IframeImporter({ taskId: incomingTaskId }: IframeImporterProps) {
+// The new-import form; after a batch submit it shows the batch's results here.
+// An existing task opens on its own page (IframeTaskPage).
+export function IframeImporter({ onCreated }: IframeImporterProps) {
   const { showToast } = useToast();
   const [imports, setImports] = useState([generateBlankIframeImport()]);
   const [expanded, setExpanded] = useState<string | false>(imports[0].id);
   const [loading, setLoading] = useState(false);
   const [infoLoading, setInfoLoading] = useState(false);
-  const [createdTaskIds, setCreatedTaskIds] = useState<string[]>(incomingTaskId ? [incomingTaskId] : []);
+  const [createdTaskIds, setCreatedTaskIds] = useState<string[]>([]);
 
   const [submitFailures, setSubmitFailures] = useState<{ item: IframeImporterFormItem, error: string }[]>([]);
 
@@ -64,6 +66,10 @@ export function IframeImporter({ taskId: incomingTaskId }: IframeImporterProps) 
       const results = await createTasks(items);
       const ids = results.flatMap(r => r.taskId ? [r.taskId] : []);
       const failed = results.flatMap(r => r.taskId ? [] : [{ item: r.item, error: r.error ?? "" }]);
+      if (onCreated && createdTaskIds.length === 0 && items.length === 1 && ids.length === 1) {
+        onCreated(ids[0]);
+        return;
+      }
       setCreatedTaskIds(old => [...old, ...ids]);
       setSubmitFailures(failed);
       if (failed.length > 0) {
@@ -75,7 +81,7 @@ export function IframeImporter({ taskId: incomingTaskId }: IframeImporterProps) 
     } finally {
       setLoading(false);
     }
-  }, [createTasks, showToast])
+  }, [createTasks, showToast, onCreated, createdTaskIds.length])
 
   const submit = useCallback(() => submitItems(imports.filter(i => i.canImport)), [imports, submitItems])
 
@@ -109,7 +115,7 @@ export function IframeImporter({ taskId: incomingTaskId }: IframeImporterProps) 
       />
 
       {showingTasks ? (
-        <IframeTaskResults taskIds={taskIds} failedSubmissions={failedSubmissions} resubmitting={loading} onResubmit={resubmit} />
+        <IframeTaskResults taskIds={taskIds} failedSubmissions={failedSubmissions} resubmitting={loading} onResubmit={resubmit} linkRows />
       ) : (
         <Stack spacing={3} sx={{ maxWidth: 900 }}>
           <Stack spacing={2}>
