@@ -26,12 +26,16 @@ type CreateTaskData struct {
 	GenerateTemplateCommons              bool                                 `json:"generateTemplateCommons"`
 	ChartParameters                      string                               `json:"chartParameters"`    // query string for the chart params
 	TemplateNameFormat                   string                               `json:"templateNameFormat"` // formatting for OWID Template name
+	// Iframe imports: the form's lookup of the chart, used only for the provisional file name
+	IframeHints *services.IframeNameHints `json:"iframeHints"`
 }
 
 type GetTaskResponse struct {
 	Task      models.Task          `json:"task"`
 	Processes []models.TaskProcess `json:"processes"`
 	WikiText  string               `json:"wikiText"`
+	// WikiTextFinal is false while an iframe task's wikitext still uses the provisional file name
+	WikiTextFinal bool `json:"wikiTextFinal"`
 	// IsOwner is true when the optional sessionId header belongs to the task's creator
 	IsOwner bool `json:"isOwner"`
 }
@@ -122,6 +126,13 @@ func CreateTask(c *gin.Context) {
 		generateTemplateCommons = 1
 	}
 
+	// An iframe task gets its process before the queue can see it (the queue only takes
+	// "queued" tasks), or StartIframe could create a second one
+	initialStatus := models.TaskStatusQueued
+	if modelType == models.TaskTypeIframe {
+		initialStatus = models.TaskStatusRetrying
+	}
+
 	task, err := models.NewTask(
 		user.ID,
 		data.Url,
@@ -129,7 +140,7 @@ func CreateTask(c *gin.Context) {
 		data.Description,
 		data.DescriptionOverwriteBehaviour,
 		chartName,
-		models.TaskStatusQueued,
+		initialStatus,
 		modelType,
 		importCountries,
 		data.CountryFileName,
@@ -143,6 +154,18 @@ func CreateTask(c *gin.Context) {
 		fmt.Println("Error creating task ", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Error creating task"})
 		return
+	}
+	if modelType == models.TaskTypeIframe {
+		// Lets the {{OWID}} block show right away; the task itself does not depend on it
+		if _, err := services.CreateIframeTaskProcess(task, data.IframeHints); err != nil {
+			fmt.Println("Error creating iframe task process", task.ID, err)
+		}
+		if err := models.UpdateTaskStatus(task.ID, models.TaskStatusQueued); err != nil {
+			fmt.Println("Error queueing iframe task", task.ID, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Error creating task"})
+			return
+		}
+		task.Status = models.TaskStatusQueued
 	}
 
 	// go func() {
@@ -220,6 +243,10 @@ func GetTask(c *gin.Context) {
 			}
 			res.WikiText = text
 		}
+		res.WikiTextFinal = res.WikiText != ""
+	} else if task.Type == models.TaskTypeIframe && (task.Status == models.TaskStatusQueued || task.Status == models.TaskStatusProcessing) {
+		// Provisional block while the upload runs (empty until a file name is known)
+		res.WikiText, _ = services.GetIframeTemplate(task)
 	}
 
 	c.JSON(http.StatusOK, res)

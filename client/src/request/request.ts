@@ -1,5 +1,5 @@
 import { SESSION_ID_KEY } from "../constants";
-import { DescriptionOverwriteBehaviour, IframeInfo, Operation, OperationItem, Task, TaskProcess, TaskTypeEnum } from "../types";
+import { DescriptionOverwriteBehaviour, IframeInfo, IframeNameHints, Operation, OperationItem, Task, TaskProcess, TaskTypeEnum } from "../types";
 
 export interface ReplaceSessionResponse {
   sessionId: string,
@@ -68,6 +68,7 @@ export interface CreateTaskData {
   countryDescription?: string,
   countryDescriptionOverwriteBehaviour?: DescriptionOverwriteBehaviour,
   templateNameFormat?: string
+  iframeHints?: IframeNameHints
 }
 
 export interface CreateTaskResponse {
@@ -186,6 +187,8 @@ export interface FetchTaskByIdResponse {
   task: Task,
   processes: TaskProcess[],
   wikiText?: string
+  // False while an iframe task's wikitext uses the provisional file name
+  wikiTextFinal?: boolean
   // True when the stored session belongs to the task's creator
   isOwner?: boolean
 }

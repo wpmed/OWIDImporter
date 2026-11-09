@@ -124,6 +124,7 @@ export function generateBlankIframeImport(): IframeImporterFormItem {
     info: null,
     linkVerified: false,
     canImport: false,
+    useLatestTime: true,
   }
 }
 

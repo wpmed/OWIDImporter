@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { createTask } from "../request/request";
 import { IframeImporterFormItem } from "../types";
 import { generateBlankIframeImport } from "../constants";
-import { buildDescriptionWithCategories, IframeItemUpdate, IframeSubmitFailure } from "../iframe";
+import { buildDescriptionWithCategories, effectiveIframeUrl, iframeNameHints, IframeItemUpdate, IframeSubmitFailure } from "../iframe";
 import { useToast } from "../hooks/useToast";
 import { monoStack } from "../theme";
 import { PageHeader } from "./ui/PageHeader";
@@ -43,10 +43,12 @@ export function IframeImporter({ onCreated }: IframeImporterProps) {
       try {
         const response = await createTask({
           action: "startIframe",
-          url: imp.url.trim(),
+          url: effectiveIframeUrl(imp).trim(),
           fileName: imp.fileName,
           description: buildDescriptionWithCategories(imp.description, imp.categories),
           descriptionOverwriteBehaviour: imp.descriptionOverwriteBehaviour,
+          // Lets the server show the {{OWID}} code before the upload
+          iframeHints: iframeNameHints(imp),
         });
         if (response.error || !response.taskId) {
           return { item: imp, error: response.error || "No task was created" };

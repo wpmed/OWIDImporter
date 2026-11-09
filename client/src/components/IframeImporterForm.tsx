@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Paper, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Checkbox, FormControlLabel, Paper, Stack, TextField, Typography } from "@mui/material";
 import { Delete } from "@mui/icons-material";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDebounce } from "use-debounce";
@@ -9,7 +9,7 @@ import { OverwriteBehaviourField } from "./OverwriteBehaviourField";
 import { PlaceholderText } from "./ui/PlaceholderText";
 import { IFRAME_DESCRIPTION_OVERWRITE_OPTIONS, IFRAME_INFO, IFRAME_URL_PLACEHOLDER, INITIAL_CATEGORIES_IFRAME } from "../constants";
 import { getIframeInfo } from "../request/request";
-import { applyIframeLookupFailure, applyIframeLookupInfo, editIframeUrl, IframeItemUpdate, normalizeIframeChartPath } from "../iframe";
+import { applyIframeLookupFailure, applyLatestTime, effectiveIframeUrl, applyIframeLookupInfo, editIframeUrl, IframeItemUpdate, normalizeIframeChartPath, resolveIframeFileName } from "../iframe";
 import { monoStack, serifStack } from "../theme";
 
 export interface IframeImporterFormProps {
@@ -87,7 +87,7 @@ export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfo
     }
     setLastCheckedUrl(debouncedUrl);
 
-    const path = normalizeIframeChartPath(debouncedUrl);
+    const path = normalizeIframeChartPath(value.useLatestTime ? applyLatestTime(debouncedUrl) : debouncedUrl);
     if (!path) {
       onChange(prev => applyIframeLookupFailure(prev, debouncedUrl));
       return;
@@ -121,9 +121,14 @@ export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfo
           setInfoLoading(false);
         }
       })
-  }, [disabled, debouncedUrl, lastCheckedUrl, value.url, value.linkVerified, onChange, onInfoLoadingChange])
+  }, [disabled, debouncedUrl, lastCheckedUrl, value.url, value.useLatestTime, value.linkVerified, onChange, onInfoLoadingChange])
 
   const info = value.info;
+  const originalPath = normalizeIframeChartPath(value.url);
+  const effectivePath = normalizeIframeChartPath(effectiveIframeUrl(value));
+  const showEffectivePath = value.useLatestTime && !!effectivePath && effectivePath !== originalPath;
+  // The Commons name this import will get, when the lookup resolves the file name template
+  const resolvedFileName = info ? resolveIframeFileName(value.fileName, info.path, info) : undefined;
 
   return (
     <Stack spacing={3}>
@@ -158,7 +163,26 @@ export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfo
         )}
       </Box>
 
-      {info && (info.chartName || info.title || info.source) && (
+      <Box sx={{ mt: "-12px !important" }}>
+        <FormControlLabel
+          control={
+            <Checkbox
+              size="small"
+              checked={value.useLatestTime}
+              onChange={e => handleChange("useLatestTime", e.target.checked)}
+              disabled={disabled}
+            />
+          }
+          label={<Typography variant="body2">Use the latest year (time=latest)</Typography>}
+        />
+        {showEffectivePath && (
+          <Typography variant="caption" sx={{ display: "block", color: "text.secondary", fontFamily: monoStack, wordBreak: "break-all" }}>
+            Will import: {effectivePath}
+          </Typography>
+        )}
+      </Box>
+
+      {info && (info.chartName || info.title || info.source || resolvedFileName) && (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Stack spacing={1}>
             <Typography variant="overline" sx={{ color: 'text.secondary', lineHeight: 1.5 }}>
@@ -172,6 +196,9 @@ export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfo
             )}
             {info.source && (
               <ChartDetailRow label="Data source" value={info.source} />
+            )}
+            {resolvedFileName && (
+              <ChartDetailRow label="File" value={resolvedFileName} />
             )}
           </Stack>
         </Paper>

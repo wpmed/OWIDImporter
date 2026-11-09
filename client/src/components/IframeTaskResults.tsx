@@ -1,12 +1,12 @@
-import { Box, Button, Link, Paper, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Link, Paper, Stack, Typography } from "@mui/material";
 import { ContentCopy, HourglassEmpty } from "@mui/icons-material";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SocketMessage, SocketMessageActionEnum, SocketMessageTypeEnum, useWebsocket } from "../hooks/useWebsocket";
 import { useToast } from "../hooks/useToast";
 import { cancelTask, fetchTaskById, retryTask } from "../request/request";
 import { Task, TaskProcess, TaskProcessStatusEnum, TaskStatusEnum } from "../types";
 import { copyText, getStatusKind, getTaskProcessStatusKind } from "../utils";
-import { iframeChartUrl, IframeSubmitFailure, joinWikitextBlocks } from "../iframe";
+import { EMPTY_IFRAME_WIKITEXT, iframeChartUrl, iframeFileOnCommons, IframeSubmitFailure, IframeWikiTextState, joinWikitextBlocks, trackIframeWikiText } from "../iframe";
 import { monoStack } from "../theme";
 import { StatusChip } from "./ui/StatusChip";
 import { CodeBlock } from "./ui/CodeBlock";
@@ -14,16 +14,15 @@ import { EmptyState } from "./ui/EmptyState";
 import { Link as RouterLink } from "react-router";
 import { iframePath } from "../routing";
 
-interface TaskState {
+interface TaskState extends IframeWikiTextState {
   task: Task | null
   processes: TaskProcess[]
-  wikiText: string
   error: boolean
   // Only the creator gets retry/cancel; other viewers see the task read-only
   isOwner: boolean
 }
 
-const EMPTY_STATE: TaskState = { task: null, processes: [], wikiText: "", error: false, isOwner: false };
+const EMPTY_STATE: TaskState = { ...EMPTY_IFRAME_WIKITEXT, task: null, processes: [], error: false, isOwner: false };
 
 export interface IframeTaskResultsProps {
   taskIds: string[]
@@ -52,24 +51,33 @@ export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMI
   const { ws, connect, disconnect } = useWebsocket();
   const [states, setStates] = useState<Record<string, TaskState>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
+  // Latest states for the socket listener, and the newest fetch per task so an older response cannot win
+  const statesRef = useRef(states);
+  statesRef.current = states;
+  const fetchSeq = useRef<Record<string, number>>({});
 
   const patch = useCallback((id: string, update: (old: TaskState) => TaskState) => {
     setStates(old => ({ ...old, [id]: update(old[id] ?? EMPTY_STATE) }));
   }, []);
 
   const loadTask = useCallback((id: string, updateProcesses: boolean) => {
+    const seq = (fetchSeq.current[id] ?? 0) + 1;
+    fetchSeq.current[id] = seq;
     fetchTaskById(id)
       .then(res => {
+        if (seq !== fetchSeq.current[id]) return;
         if (!res.task) throw new Error("task missing");
+        const final = !!res.wikiTextFinal || res.task.status === TaskStatusEnum.Done;
         patch(id, old => ({
+          ...trackIframeWikiText(old, res.wikiText ?? "", final),
           task: res.task,
           processes: updateProcesses ? (res.processes ?? []) : old.processes,
-          wikiText: res.wikiText ?? "",
           error: false,
           isOwner: !!res.isOwner,
         }));
       })
       .catch(err => {
+        if (seq !== fetchSeq.current[id]) return;
         console.log("Error fetching task", id, err);
         patch(id, old => ({ ...old, error: true }));
         showToast("Failed to load the task", "error");
@@ -97,6 +105,11 @@ export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMI
       if (info.type === SocketMessageTypeEnum.TASK_PROCESS) {
         const process = JSON.parse(info.msg) as TaskProcess;
         if (!taskIds.includes(process.taskId)) return;
+        // A new file name (provisional or final) changes the {{OWID}} block
+        const known = statesRef.current[process.taskId]?.processes.find(p => p.id === process.id);
+        if (process.filename && process.filename !== known?.filename) {
+          loadTask(process.taskId, false);
+        }
         patch(process.taskId, old => {
           const processes = old.processes.slice();
           const index = processes.findIndex(p => p.id === process.id);
@@ -135,7 +148,7 @@ export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMI
     try {
       if (action === "retry") {
         await retryTask(id);
-        patch(id, old => old.task ? { ...old, task: { ...old.task, status: TaskStatusEnum.Queued }, wikiText: "" } : old);
+        patch(id, old => old.task ? { ...old, ...EMPTY_IFRAME_WIKITEXT, task: { ...old.task, status: TaskStatusEnum.Queued } } : old);
       } else {
         await cancelTask(id);
         loadTask(id, true);
@@ -203,7 +216,10 @@ export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMI
 
       {ordered.map(({ id, state }) => {
         const { task, processes, wikiText } = state;
-        const process = processes[0];
+        // A queued task's process exists up front (for the early code); show progress only once it runs
+        const process = task?.status === TaskStatusEnum.Queued && processes[0]?.status === TaskProcessStatusEnum.Processing
+          ? undefined
+          : processes[0];
         const title = task ? (task.chartName || task.url) : "Loading...";
         const cancellable = !!task && state.isOwner && [TaskStatusEnum.Processing, TaskStatusEnum.Queued].includes(task.status);
         return (
@@ -274,7 +290,7 @@ export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMI
                       >
                         {process.status?.replace("_", " ")}
                       </Typography>
-                      {process.filename && (
+                      {process.filename && (iframeFileOnCommons(process.status) ? (
                         <Link
                           target="_blank"
                           href={`${import.meta.env.VITE_MW_BASE_URL}/File:${process.filename}`}
@@ -282,7 +298,12 @@ export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMI
                         >
                           {process.filename}
                         </Link>
-                      )}
+                      ) : (
+                        // Not on Commons yet: its File: page would not exist
+                        <Typography sx={{ fontFamily: monoStack, fontSize: 12, overflowWrap: 'anywhere', color: 'text.secondary' }}>
+                          {process.filename}
+                        </Typography>
+                      ))}
                     </Box>
                   </Stack>
                 ) : (
@@ -313,6 +334,16 @@ export function IframeTaskResults({ taskIds, failedSubmissions = NO_FAILED_SUBMI
                   <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                     Wikitext for the {`{{OWID}}`} template:
                   </Typography>
+                  {!state.final && (
+                    <Alert severity="info" variant="outlined" data-testid="iframe-code-provisional">
+                      Provisional — the file is still uploading; this updates if Commons stores it under another name.
+                    </Alert>
+                  )}
+                  {state.changed && (
+                    <Alert severity="warning" variant="outlined" data-testid="iframe-code-changed">
+                      File name changed after upload — copy the code again.
+                    </Alert>
+                  )}
                   <CodeBlock code={wikiText} />
                 </Stack>
               )}

@@ -139,6 +139,16 @@ export interface IframeInfo {
   chartName: string
   title: string
   source: string
+  // OWID's SVG download name ($NAME), empty when the lookup could not download it
+  downloadName?: string
+}
+
+// A lookup's values sent with a new iframe task, used only for its provisional file name
+export interface IframeNameHints {
+  path: string
+  downloadName: string
+  title: string
+  source: string
 }
 
 export interface IframeImporterFormItem {
@@ -151,6 +161,8 @@ export interface IframeImporterFormItem {
   info: IframeInfo | null
   linkVerified: boolean
   canImport: boolean
+  // Import with `time=latest` in place of a single-year `time=<year>` (default on).
+  useLatestTime: boolean
   // Set when a lookup replaced $SOURCE in the description: the text before and after, so a URL change can undo it.
   sourceApplied?: { template: string, applied: string }
 }

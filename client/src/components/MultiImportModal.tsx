@@ -10,7 +10,7 @@ import { useToast } from "../hooks/useToast";
 import { OverwriteBehaviourField } from "./OverwriteBehaviourField";
 import { monoStack } from "../theme";
 import { applyChartSourceToDescription } from "../utils";
-import { normalizeIframeChartPath } from "../iframe";
+import { effectiveIframeUrl, normalizeIframeChartPath } from "../iframe";
 
 interface ProcessingLink {
   url: string
@@ -94,7 +94,7 @@ export function MultiImportModal({ variant = "map", onAdd = () => { }, onAddIfra
         imp.url = url.trim();
         imp.descriptionOverwriteBehaviour = descriptionOverwriteBehaviour;
 
-        const path = normalizeIframeChartPath(url);
+        const path = normalizeIframeChartPath(effectiveIframeUrl({ url, useLatestTime: imp.useLatestTime }));
         if (!path) {
           imp.linkVerified = true;
           updateLinkStatus(url, "failed");

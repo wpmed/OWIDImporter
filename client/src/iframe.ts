@@ -1,6 +1,6 @@
 import { OWID_CHART_URL_PREFIX } from "./constants";
 import { applyChartSourceToDescription } from "./utils";
-import { IframeImporterFormItem, IframeInfo, TaskProcess, TaskProcessStatusEnum } from "./types";
+import { IframeImporterFormItem, IframeInfo, IframeNameHints, TaskProcess, TaskProcessStatusEnum } from "./types";
 
 // Mirrors the OWIDPopup gadget's accepted `data-chart` values and the server's NormalizeIframeChartPath.
 export const IFRAME_CHART_PATH_REGEX = /^(grapher|explorers)\/[a-z0-9-]+?($|\?)/;
@@ -21,10 +21,52 @@ export function normalizeIframeChartPath(input: string): string | null {
   let path = input.trim();
   path = path.replace(OWID_URL_PREFIX_REGEX, "");
   path = path.replace(/^\/+/, "");
+  path = stripOverlayParam(path);
   if (!IFRAME_CHART_PATH_REGEX.test(path) || FORBIDDEN_CHART_PATH_REGEX.test(path)) {
     return null;
   }
   return path;
+}
+
+/**
+ * Removes every `overlay` query parameter (`overlay=download-vis` opens OWID's download modal on load,
+ * for readers too); mirrors the server. Everything else is kept byte-for-byte; a bare `?` is dropped.
+ */
+export function stripOverlayParam(path: string): string {
+  const queryStart = path.indexOf("?");
+  if (queryStart === -1) return path;
+  const hashStart = path.indexOf("#", queryStart);
+  const queryEnd = hashStart === -1 ? path.length : hashStart;
+  const params = path.slice(queryStart + 1, queryEnd).split("&");
+  const kept = params.filter(param => param.split("=", 1)[0] !== "overlay");
+  if (kept.length === params.length) return path;
+  const query = kept.join("&");
+  return query ? path.slice(0, queryStart + 1) + query + path.slice(queryEnd) : path.slice(0, queryStart) + path.slice(queryEnd);
+}
+
+/**
+ * Replaces a single-year `time=<year>` query parameter with `time=latest`. Ranges, dates, `latest`,
+ * `earliest` and URLs without a `time` parameter are returned unchanged, as is everything else
+ * (parameter order, encoding, fragment). Works on full URLs and bare paths; surrounding whitespace is trimmed.
+ */
+export function applyLatestTime(input: string): string {
+  const urlOrPath = input.trim();
+  const queryStart = urlOrPath.indexOf("?");
+  if (queryStart === -1) {
+    return urlOrPath;
+  }
+  const hashStart = urlOrPath.indexOf("#", queryStart);
+  const queryEnd = hashStart === -1 ? urlOrPath.length : hashStart;
+  const query = urlOrPath.slice(queryStart + 1, queryEnd)
+    .split("&")
+    .map(param => /^time=-?\d+$/.test(param) ? "time=latest" : param)
+    .join("&");
+  return urlOrPath.slice(0, queryStart + 1) + query + urlOrPath.slice(queryEnd);
+}
+
+/** The URL an item is imported with: `time=<year>` becomes `time=latest` while the item's option is on. */
+export function effectiveIframeUrl(item: Pick<IframeImporterFormItem, "url" | "useLatestTime">): string {
+  return item.useLatestTime ? applyLatestTime(item.url) : item.url;
 }
 
 export function iframeChartUrl(path: string) {
@@ -118,4 +160,75 @@ export function applyIframeLookupFailure(prev: IframeImporterFormItem, requested
 export function iframeFinalFileName(processes: Pick<TaskProcess, "filename" | "status">[]): string | undefined {
   const done = processes.find(p => p.filename && p.status !== TaskProcessStatusEnum.Failed);
   return done?.filename.replace(/^File:/, "");
+}
+
+// What Commons turns into "-" on upload (MediaWiki's wfStripIllegalFilenameChars): characters not legal in
+// titles (# < > [ ] | { } and control characters) plus `:`, `/` and `\`.
+// eslint-disable-next-line no-control-regex
+const COMMONS_ILLEGAL_FILE_CHARS = /[#<>[\]|{}:/\\\u0000-\u001f\u007f]/g;
+
+/**
+ * A file name as Commons stores it (mirrors the server's CommonsFileName): characters an upload cannot use
+ * become `-`, `_` becomes a space, runs of spaces collapse, the name is trimmed and its first letter uppercased.
+ */
+export function commonsFileName(name: string): string {
+  const cleaned = name.trim().replace(/^File:/, "")
+    .replace(COMMONS_ILLEGAL_FILE_CHARS, "-")
+    .replaceAll("_", " ")
+    .replace(/ {2,}/g, " ")
+    .trim();
+  if (!cleaned) return "";
+  const first = String.fromCodePoint(cleaned.codePointAt(0)!);
+  return first.toUpperCase() + cleaned.slice(first.length);
+}
+
+/**
+ * The Commons file name an import's file name template resolves to with a lookup of `path`
+ * (mirrors the server's ProvisionalIframeFileName). Undefined when the template needs a value
+ * the lookup does not have ($NAME without a download name, $TITLE/$SOURCE without a lookup).
+ */
+export function resolveIframeFileName(template: string, path: string, info?: Pick<IframeInfo, "path" | "downloadName" | "title" | "source"> | null): string | undefined {
+  const lookedUp = !!info && info.path === path;
+  const name = lookedUp ? (info.downloadName ?? "").replace(/\.svg$/i, "") : "";
+  if (template.includes("$NAME") && !name) return undefined;
+  if (!lookedUp && (template.includes("$TITLE") || template.includes("$SOURCE"))) return undefined;
+  let value = template;
+  if (lookedUp && info.source) value = value.replaceAll("$SOURCE", () => info.source);
+  value = value.replaceAll("$URL", () => iframeChartUrl(path)).replaceAll("$NAME", () => name);
+  if (lookedUp && info.title) value = value.replaceAll("$TITLE", () => info.title);
+  value = value.replaceAll("$SOURCE", "Our World in Data");
+  return commonsFileName(value) || undefined;
+}
+
+/** The lookup values sent with a new task for its provisional file name; only when they are for the URL being imported. */
+export function iframeNameHints(item: Pick<IframeImporterFormItem, "url" | "useLatestTime" | "info">): IframeNameHints | undefined {
+  const { info } = item;
+  if (!info || info.path !== normalizeIframeChartPath(effectiveIframeUrl(item))) return undefined;
+  return { path: info.path, downloadName: info.downloadName ?? "", title: info.title, source: info.source };
+}
+
+/** True once the process's file is on Commons (before that its File: page may not exist). */
+export function iframeFileOnCommons(status: TaskProcessStatusEnum) {
+  return [TaskProcessStatusEnum.Uploaded, TaskProcessStatusEnum.Overwritten, TaskProcessStatusEnum.Skipped, TaskProcessStatusEnum.DescriptionUpdated].includes(status);
+}
+
+/** A task's {{OWID}} block as shown: provisional until the upload is done. */
+export interface IframeWikiTextState {
+  wikiText: string
+  final: boolean
+  // Provisional blocks shown so far (the user may have copied any of them)
+  provisionalSeen: string[]
+  // The final block differs from a provisional one that was shown
+  changed: boolean
+}
+
+export const EMPTY_IFRAME_WIKITEXT: IframeWikiTextState = { wikiText: "", final: false, provisionalSeen: [], changed: false };
+
+/** The state after a fetch returned `wikiText` (final or provisional). */
+export function trackIframeWikiText(prev: IframeWikiTextState, wikiText: string, final: boolean): IframeWikiTextState {
+  const provisionalSeen = !final && wikiText && !prev.provisionalSeen.includes(wikiText)
+    ? [...prev.provisionalSeen, wikiText]
+    : prev.provisionalSeen;
+  const changed = final && !!wikiText && provisionalSeen.some(seen => seen !== wikiText);
+  return { wikiText, final, provisionalSeen, changed };
 }

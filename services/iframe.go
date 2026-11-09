@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/input"
@@ -28,6 +31,10 @@ const (
 // (a var so tests can shorten it).
 var iframePageLoadTimeout = 60 * time.Second
 
+// iframeInfoDownloadTimeout bounds the lookup's name-only SVG download, so a slow OWID export
+// cannot hold /iframe/info (a var so tests can shorten it). The task's own download is not affected.
+var iframeInfoDownloadTimeout = 25 * time.Second
+
 // iframeDetailsTimeout bounds reading the title and source from a loaded page together,
 // so a renderer that hangs after load cannot stall /iframe/info or a task.
 var iframeDetailsTimeout = 15 * time.Second
@@ -38,6 +45,87 @@ type IframeInfo struct {
 	ChartName string `json:"chartName"`
 	Title     string `json:"title"`
 	Source    string `json:"source"`
+	// OWID's SVG download name (e.g. mica-production.svg), the value of $NAME; empty when the
+	// lookup could neither read the displaySlug nor download the SVG
+	DownloadName string `json:"downloadName"`
+	// Where DownloadName came from: iframeNameFromSlug or iframeNameFromDownload ("" when unknown)
+	downloadNameSource string
+}
+
+const (
+	iframeNameFromSlug     = "displaySlug"
+	iframeNameFromDownload = "download"
+)
+
+// iframeSlugTimeout bounds reading the chart's displaySlug (a var so tests can shorten it).
+var iframeSlugTimeout = 5 * time.Second
+
+// OWID's DownloadModal names the SVG manager.displaySlug + ".svg", where displaySlug is the
+// chart's slug or slugify(title). window.grapher is whichever Grapher mounted last (on data
+// pages often a related chart), so it is not trusted on its own: grapher pages use the page's
+// own chart config slug, explorer pages the explorer's grapher state (one per page).
+const iframeDisplaySlugJS = `() => {
+	const read = f => { try { const v = f(); return typeof v === "string" ? v : ""; } catch (e) { return ""; } };
+	return {
+		config: read(() => window._OWID_GRAPHER_CONFIG.slug),
+		grapher: read(() => window.grapher.grapherState.displaySlug),
+		explorer: read(() => window.explorer.grapherState.displaySlug),
+	};
+}`
+
+// iframeSlugCandidates are the displaySlug values read from the chart page.
+type iframeSlugCandidates struct {
+	Config   string // window._OWID_GRAPHER_CONFIG.slug (grapher pages)
+	Grapher  string // window.grapher.grapherState.displaySlug (last mounted Grapher)
+	Explorer string // window.explorer.grapherState.displaySlug (explorer pages)
+}
+
+// slugify output: ASCII letters, digits, "_" and "-"
+var iframeDisplaySlugRegex = regexp.MustCompile(`^[\w-]+$`)
+
+// readIframeDisplaySlug returns the candidates, all empty when they cannot be read in time.
+func readIframeDisplaySlug(page *rod.Page) iframeSlugCandidates {
+	timed := page.Timeout(iframeSlugTimeout)
+	defer timed.CancelTimeout()
+	res, err := timed.Eval(iframeDisplaySlugJS)
+	if err != nil || res == nil {
+		return iframeSlugCandidates{}
+	}
+	return iframeSlugCandidates{Config: res.Value.Get("config").Str(), Grapher: res.Value.Get("grapher").Str(), Explorer: res.Value.Get("explorer").Str()}
+}
+
+// pickIframeDisplaySlug is the main chart's displaySlug for path, or "" when it is not
+// known for sure (the caller then downloads the SVG).
+func pickIframeDisplaySlug(path string, c iframeSlugCandidates) string {
+	slug := c.Config
+	if strings.HasPrefix(path, "explorers/") {
+		slug = c.Explorer
+	}
+	if !iframeDisplaySlugRegex.MatchString(slug) {
+		return ""
+	}
+	return slug
+}
+
+// chooseIframeDownloadName is OWID's download name from a valid displaySlug, else from
+// download() (the name-only SVG download); it also returns which source was used.
+func chooseIframeDownloadName(displaySlug string, download func() string) (string, string) {
+	if iframeDisplaySlugRegex.MatchString(displaySlug) {
+		return displaySlug + ".svg", iframeNameFromSlug
+	}
+	if name := download(); name != "" {
+		return name, iframeNameFromDownload
+	}
+	return "", ""
+}
+
+// IframeNameHints are a lookup's results sent with a new iframe task. They only feed the
+// provisional file name shown before the upload; the task still reads the page itself.
+type IframeNameHints struct {
+	Path         string `json:"path"`
+	DownloadName string `json:"downloadName"`
+	Title        string `json:"title"`
+	Source       string `json:"source"`
 }
 
 // iframeVars are the placeholder values available to iframe file names and descriptions.
@@ -61,6 +149,71 @@ func trimSVGExtension(name string) string {
 		return name[:len(name)-len(".svg")]
 	}
 	return name
+}
+
+var (
+	commonsSpaceRun = regexp.MustCompile(` {2,}`)
+	// What MediaWiki's wfStripIllegalFilenameChars turns into "-" on upload: characters that
+	// are not legal in titles (# < > [ ] | { } and control characters) plus $wgIllegalFileChars (: / \)
+	commonsIllegalFileChars = regexp.MustCompile(`[#<>\[\]|{}:/\\\x00-\x1f\x7f]`)
+)
+
+// CommonsFileName is name as Commons stores it (without "File:"): characters an upload
+// cannot use become "-" (as Commons does on upload), "_" becomes a space, runs of spaces
+// collapse, the name is trimmed and its first letter uppercased. Final and provisional
+// names both go through it, so the {{OWID}} block does not change only because of the
+// spelling form.
+func CommonsFileName(name string) string {
+	name = strings.TrimPrefix(strings.TrimSpace(name), "File:")
+	name = commonsIllegalFileChars.ReplaceAllString(name, "-")
+	name = strings.ReplaceAll(name, "_", " ")
+	name = strings.TrimSpace(commonsSpaceRun.ReplaceAllString(name, " "))
+	if name == "" {
+		return ""
+	}
+	r, size := utf8.DecodeRuneInString(name)
+	return string(unicode.ToUpper(r)) + name[size:]
+}
+
+// iframeFileName is the Commons name a task's file name template resolves to.
+func iframeFileName(template string, v iframeVars) string {
+	return CommonsFileName(resolveIframeVars(template, v))
+}
+
+// ProvisionalIframeFileName resolves a new task's file name template from the lookup hints,
+// so the {{OWID}} block can be shown before the task runs. It returns "" when the template
+// needs a value the hints do not give ($NAME without a download name, $TITLE/$SOURCE without
+// a lookup of this exact path).
+func ProvisionalIframeFileName(template, path string, hints *IframeNameHints) string {
+	v := iframeVars{Url: utils.IframeChartURL(path)}
+	lookedUp := hints != nil && hints.Path == path
+	if lookedUp {
+		v.Name = trimSVGExtension(hints.DownloadName)
+		v.Title = hints.Title
+		v.Source = hints.Source
+	}
+	if strings.Contains(template, "$NAME") && v.Name == "" {
+		return ""
+	}
+	if !lookedUp && (strings.Contains(template, "$TITLE") || strings.Contains(template, "$SOURCE")) {
+		return ""
+	}
+	return iframeFileName(template, v)
+}
+
+// CreateIframeTaskProcess creates a new iframe task's single process up front, carrying the
+// provisional file name when hints resolve it, so the {{OWID}} block is available at once.
+// StartIframe reuses this process, so call it before the task is queued.
+func CreateIframeTaskProcess(task *models.Task, hints *IframeNameHints) (*models.TaskProcess, error) {
+	path, err := utils.NormalizeIframeChartPath(task.URL)
+	if err != nil {
+		return nil, err
+	}
+	if existing, _ := models.FindTaskProcessByTaskRegionDate("ALL", "", task.ID); existing != nil {
+		return existing, nil
+	}
+	filename := ProvisionalIframeFileName(task.FileName, path, hints)
+	return models.NewTaskProcess("ALL", "", filename, models.TaskProcessStatusProcessing, models.TaskProcessTypeIframe, task.ID)
 }
 
 // IframeCaption is the caption for a final Commons file name: the name without
@@ -87,18 +240,39 @@ func BuildIframeWikiText(path, filename string) string {
 	}, "\n")
 }
 
-// GetIframeTemplate returns the wikitext for a done iframe task.
+// GetIframeTemplate returns the wikitext for an iframe task's file: the final name once
+// uploaded, before that the provisional one. A failed process has none.
 func GetIframeTemplate(task *models.Task) (string, error) {
 	processes, err := models.FindTaskProcessesByTaskId(task.ID)
 	if err != nil {
 		return "", err
 	}
-	for _, p := range processes {
-		if p.FileName != "" && p.Status != models.TaskProcessStatusFailed {
-			return BuildIframeWikiText(task.URL, p.FileName), nil
+	// A file on Commons wins over a provisional name (e.g. a stray second process)
+	var provisional *models.TaskProcess
+	for i, p := range processes {
+		if p.FileName == "" || p.Status == models.TaskProcessStatusFailed {
+			continue
+		}
+		if iframeFileOnCommons(p.Status) {
+			return BuildIframeWikiText(task.URL, CommonsFileName(p.FileName)), nil
+		}
+		if provisional == nil {
+			provisional = &processes[i]
 		}
 	}
-	return "", fmt.Errorf("no uploaded file for task %s", task.ID)
+	if provisional != nil {
+		return BuildIframeWikiText(task.URL, CommonsFileName(provisional.FileName)), nil
+	}
+	return "", fmt.Errorf("no file name yet for task %s", task.ID)
+}
+
+// iframeFileOnCommons reports whether a process status means its file is on Commons.
+func iframeFileOnCommons(status models.TaskProcessStatus) bool {
+	switch status {
+	case models.TaskProcessStatusUploaded, models.TaskProcessStatusOverwritten, models.TaskProcessStatusSkipped, models.TaskProcessStatusDescriptionUpdated:
+		return true
+	}
+	return false
 }
 
 func iframeTitleFallback(path string) string {
@@ -171,7 +345,41 @@ func GetIframeInfo(browser *rod.Browser, input string) (*IframeInfo, error) {
 	}
 	defer page.Close()
 	title, source := readIframePageDetails(page, path)
-	return &IframeInfo{Path: path, ChartName: iframeChartName(title, utils.IframeChartSlug(path)), Title: title, Source: source}, nil
+	info := &IframeInfo{Path: path, ChartName: iframeChartName(title, utils.IframeChartSlug(path)), Title: title, Source: source}
+	slugs := readIframeDisplaySlug(page)
+	info.DownloadName, info.downloadNameSource = chooseIframeDownloadName(pickIframeDisplaySlug(path, slugs), func() string {
+		return lookupIframeDownloadName(page, path)
+	})
+	fmt.Printf("Iframe info: download name %q for %s from %q (slugs %+v)\n", info.DownloadName, path, info.downloadNameSource, slugs)
+	return info, nil
+}
+
+// lookupIframeDownloadName downloads the SVG once like the task does to learn OWID's file
+// name ($NAME). It gives up after iframeInfoDownloadTimeout; a failure or timeout returns "".
+// The caller closing page (and its browser) ends a download still running after the deadline.
+func lookupIframeDownloadName(page *rod.Page, path string) string {
+	dir, err := os.MkdirTemp("", "owid-iframe-info")
+	if err != nil {
+		return ""
+	}
+	timed := page.Timeout(iframeInfoDownloadTimeout)
+	result := make(chan string, 1)
+	go func() {
+		defer os.RemoveAll(dir)
+		defer timed.CancelTimeout()
+		name, err := downloadOWIDSVG(timed, dir, true, false)
+		if err != nil {
+			fmt.Println("Iframe info: SVG download failed", path, err)
+		}
+		result <- name
+	}()
+	select {
+	case name := <-result:
+		return name
+	case <-time.After(iframeInfoDownloadTimeout + time.Second):
+		fmt.Println("Iframe info: SVG download timed out", path)
+		return ""
+	}
 }
 
 // iframeChartName mirrors the map import: the page title when there is one, else the slug in title case.
@@ -574,18 +782,9 @@ func StartIframe(taskId string, user *models.User) error {
 	}
 	chartURL := utils.IframeChartURL(path)
 
-	var taskProcess *models.TaskProcess
-	if existing, _ := models.FindTaskProcessByTaskRegionDate("ALL", "", task.ID); existing != nil {
-		existing.Status = models.TaskProcessStatusProcessing
-		if err := existing.Update(); err != nil {
-			fmt.Println("Error updating task process to processing", err)
-		}
-		taskProcess = existing
-	} else {
-		taskProcess, err = models.NewTaskProcess("ALL", "", "", models.TaskProcessStatusProcessing, models.TaskProcessTypeIframe, task.ID)
-		if err != nil {
-			return failIframeTask(task, nil, fmt.Errorf("couldn't create task process: %w", err))
-		}
+	taskProcess, err := ClaimIframeTaskProcess(task.ID)
+	if err != nil {
+		return failIframeTask(task, nil, fmt.Errorf("couldn't create task process: %w", err))
 	}
 	utils.SendWSTaskProcess(task.ID, taskProcess)
 
@@ -626,6 +825,15 @@ func StartIframe(taskId string, user *models.User) error {
 	task.ChartName = iframeChartName(title, utils.IframeChartSlug(path))
 
 	vars := iframeVars{Name: trimSVGExtension(downloadName), Title: title, Source: source, Url: chartURL}
+	// The name is known now: publish it before the upload so the {{OWID}} block shows at once
+	if provisional := iframeFileName(task.FileName, vars); provisional != "" && provisional != taskProcess.FileName {
+		taskProcess.FileName = provisional
+		if err := taskProcess.Update(); err != nil {
+			fmt.Println("Error saving provisional iframe file name", err)
+		}
+		utils.SendWSTaskProcess(task.ID, taskProcess)
+	}
+
 	filename, status, err := uploadIframeFile(user, token, iframeUploadInput{
 		FileName:    resolveIframeVars(task.FileName, vars),
 		Description: resolveIframeVars(task.Description, vars),
@@ -658,6 +866,19 @@ func StartIframe(taskId string, user *models.User) error {
 	}
 	utils.SendWSTask(task)
 	return nil
+}
+
+// ClaimIframeTaskProcess marks a task's "ALL" process as processing, reusing the one created
+// with the task (or on an earlier run), else creating it.
+func ClaimIframeTaskProcess(taskId string) (*models.TaskProcess, error) {
+	if existing, _ := models.FindTaskProcessByTaskRegionDate("ALL", "", taskId); existing != nil {
+		existing.Status = models.TaskProcessStatusProcessing
+		if err := existing.Update(); err != nil {
+			fmt.Println("Error updating task process to processing", err)
+		}
+		return existing, nil
+	}
+	return models.NewTaskProcess("ALL", "", "", models.TaskProcessStatusProcessing, models.TaskProcessTypeIframe, taskId)
 }
 
 // downloadIframeSVG downloads the Wikipedia-optimized SVG (terminology definitions off)

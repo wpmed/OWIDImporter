@@ -25,10 +25,40 @@ func NormalizeIframeChartPath(input string) (string, error) {
 	path := strings.TrimSpace(input)
 	path = owidSitePrefixRegex.ReplaceAllString(path, "")
 	path = strings.TrimLeft(path, "/")
+	path = stripOverlayParam(path)
 	if !IframeChartPathRegex.MatchString(path) || breaksWikiTemplate(path) {
 		return "", ErrIframeChartCannotBeImported
 	}
 	return path, nil
+}
+
+// stripOverlayParam removes every "overlay" query parameter (e.g. overlay=download-vis
+// opens OWID's download modal on load, for readers too). The rest of the path is kept
+// byte for byte; a "?" left without parameters is dropped.
+func stripOverlayParam(path string) string {
+	queryStart := strings.Index(path, "?")
+	if queryStart == -1 {
+		return path
+	}
+	queryEnd := len(path)
+	if i := strings.Index(path[queryStart:], "#"); i >= 0 {
+		queryEnd = queryStart + i
+	}
+	params := strings.Split(path[queryStart+1:queryEnd], "&")
+	kept := params[:0]
+	for _, param := range params {
+		if strings.SplitN(param, "=", 2)[0] != "overlay" {
+			kept = append(kept, param)
+		}
+	}
+	if len(kept) == len(params) {
+		return path
+	}
+	query := strings.Join(kept, "&")
+	if query == "" {
+		return path[:queryStart] + path[queryEnd:]
+	}
+	return path[:queryStart+1] + query + path[queryEnd:]
 }
 
 // breaksWikiTemplate reports whether path would break the {{OWID}} block it is
