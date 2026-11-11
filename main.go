@@ -127,70 +127,11 @@ func monitorQueuedOperations() {
 	}
 }
 
+// Maps run one at a time; iframe imports run OWID_IFRAME_CONCURRENCY at a time
 func monitorQueuedTasks() {
-	for {
-		time.Sleep(time.Second * 10)
-		count, err := models.FindProcessingTasksCount()
-		if err != nil {
-			fmt.Println("Error finding processing tasks count", err)
-			continue
-		}
-
-		if count < 1 {
-			task, err := models.FindNextTaskToProcess()
-			if err != nil {
-				fmt.Println("Error finding next task to process", err)
-				continue
-
-			}
-			if task == nil {
-				// fmt.Println("No next task to process")
-				continue
-			}
-			fmt.Println("Next task: ", task.URL, task.ID)
-
-			user, err := models.FindUserByID(task.UserId)
-			if err != nil {
-				fmt.Println("Error find next task's user", err)
-			}
-			if user == nil {
-				fmt.Println("Can't find user for the task", task.ID)
-			}
-			if err != nil || user == nil {
-				// Fail the task to get the next
-				task.Status = models.TaskStatusFailed
-				task.Update()
-				utils.SendWSTask(task)
-				continue
-			}
-
-			go func() {
-				switch task.Type {
-				case models.TaskTypeMap:
-					fmt.Println("Action message map", task.URL)
-					err := services.StartMap(task.ID, user, services.StartData{
-						Url:                                  task.URL,
-						FileName:                             task.FileName,
-						Description:                          task.Description,
-						DescriptionOverwriteBehaviour:        task.DescriptionOverwriteBehaviour,
-						ImportCountries:                      task.ImportCountries == 1,
-						CountryFileName:                      task.CountryFileName,
-						CountryDescription:                   task.CountryDescription,
-						CountryDescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-						GenerateTemplateCommons:              task.GenerateTemplateCommons == 1,
-						TemplateNameFormat:                   task.CommonsTemplateNameFormat,
-					})
-					if err != nil {
-						log.Println("Error starting map", err)
-					}
-				case models.TaskTypeIframe:
-					fmt.Println("Action message iframe", task.URL)
-					if err := services.StartIframe(task.ID, user); err != nil {
-						log.Println("Error starting iframe", err)
-					}
-				}
-			}()
-		}
-
+	limits := map[models.TaskType]int{
+		models.TaskTypeMap:    1,
+		models.TaskTypeIframe: env.GetEnv().OWID_IFRAME_CONCURRENCY,
 	}
+	services.NewTaskQueue(limits, services.RunTask).Run(services.TaskQueuePollInterval)
 }

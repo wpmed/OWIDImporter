@@ -33,6 +33,10 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 	if err != nil {
 		return err
 	}
+	// Cancelled after the queue claimed it
+	if task.Status == models.TaskStatusCancelled {
+		return nil
+	}
 
 	task.Status = models.TaskStatusProcessing
 	if err := task.Update(); err != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -336,60 +337,69 @@ func FindStalledTasks() (*[]Task, error) {
 	return &tasks, nil
 }
 
-func FindProcessingTasksCount() (int, error) {
-	rows, err := db.Query("SELECT COUNT(id) FROM task where status=?", TaskStatusProcessing)
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
+const nextQueuedTaskColumns = "id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at"
 
-	var count int
-	if rows.Next() {
-		err = rows.Scan(&count)
-		if err != nil {
-			return 0, err
+// FindNextQueuedTask returns the oldest queued task of the given type, skipping excludeIDs
+// (tasks whose previous run is still going), or nil when there is none.
+func FindNextQueuedTask(taskType TaskType, excludeIDs []string) (*Task, error) {
+	query := "SELECT " + nextQueuedTaskColumns + " FROM task WHERE status=? AND type=?"
+	args := []any{TaskStatusQueued, taskType}
+	if len(excludeIDs) > 0 {
+		query += " AND id NOT IN (?" + strings.Repeat(",?", len(excludeIDs)-1) + ")"
+		for _, id := range excludeIDs {
+			args = append(args, id)
 		}
 	}
+	query += " ORDER BY created_at ASC LIMIT 1"
 
-	return count, nil
-}
-
-func FindNextTaskToProcess() (*Task, error) {
-	rows, err := db.Query("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at FROM task WHERE status=? ORDER BY created_at ASC LIMIT 1", TaskStatusQueued)
+	rows, err := db.Query(query, args...)
 	if err != nil {
-		fmt.Println("Error scaning for next task to process ", err)
-		return nil, fmt.Errorf("Cannot find requested record")
+		return nil, err
 	}
 	defer rows.Close()
 
-	var task Task
-	if rows.Next() {
-		rows.Scan(
-			&task.ID,
-			&task.UserId,
-			&task.URL,
-			&task.FileName,
-			&task.Description,
-			&task.DescriptionOverwriteBehaviour,
-			&task.ChartName,
-			&task.Status,
-			&task.Type,
-			&task.ImportCountries,
-			&task.CountryFileName,
-			&task.CountryDescription,
-			&task.CountryDescriptionOverwriteBehaviour,
-			&task.GenerateTemplateCommons,
-			&task.CommonsTemplateName,
-			&task.CommonsTemplateNameFormat,
-			&task.ChartParameters,
-			&task.LastOperationAt,
-			&task.CreatedAt,
-		)
-	} else {
-		return nil, nil
+	if !rows.Next() {
+		return nil, rows.Err()
 	}
-
+	var task Task
+	if err := rows.Scan(
+		&task.ID,
+		&task.UserId,
+		&task.URL,
+		&task.FileName,
+		&task.Description,
+		&task.DescriptionOverwriteBehaviour,
+		&task.ChartName,
+		&task.Status,
+		&task.Type,
+		&task.ImportCountries,
+		&task.CountryFileName,
+		&task.CountryDescription,
+		&task.CountryDescriptionOverwriteBehaviour,
+		&task.GenerateTemplateCommons,
+		&task.CommonsTemplateName,
+		&task.CommonsTemplateNameFormat,
+		&task.ChartParameters,
+		&task.LastOperationAt,
+		&task.CreatedAt,
+	); err != nil {
+		return nil, err
+	}
 	return &task, nil
+}
+
+// ClaimQueuedTask moves a task from queued to processing in one statement. It returns false
+// when the task is no longer queued (cancelled, or claimed already), so it never runs twice.
+func ClaimQueuedTask(id string) (bool, error) {
+	res, err := db.Exec("UPDATE task SET status=?, last_operation_at=? WHERE id=? AND status=?", TaskStatusProcessing, time.Now().Unix(), id, TaskStatusQueued)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
 }
 
 func initTaskTable() {

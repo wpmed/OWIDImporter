@@ -20,7 +20,11 @@ type EnvVariables struct {
 	OWID_ROD_BROWSER_DIR   string
 	OWID_CLIENT_BUILD_PATH string
 	OWID_DB_DIR            string
+	// How many iframe imports run at the same time (default 3)
+	OWID_IFRAME_CONCURRENCY int
 }
+
+const defaultIframeConcurrency = 3
 
 func GetEnv() EnvVariables {
 	userAgent := os.Getenv("OWID_UA")
@@ -88,19 +92,29 @@ func GetEnv() EnvVariables {
 		owidDBDir = "."
 	}
 
+	iframeConcurrency := defaultIframeConcurrency
+	if v := os.Getenv("OWID_IFRAME_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			iframeConcurrency = n
+		} else {
+			fmt.Println("OWID_IFRAME_CONCURRENCY must be a whole number of at least 1, using", defaultIframeConcurrency)
+		}
+	}
+
 	return EnvVariables{
-		OWID_UA:                userAgent,
-		OWID_OAUTH_TOKEN:       oauthToken,
-		OWID_OAUTH_SECRET:      oauthSecret,
-		OWID_OAUTH_INITIATE:    oauthInitiate,
-		OWID_OAUTH_AUTH:        oauthAuth,
-		OWID_OAUTH_TOKEN_URL:   oauthTokenUrl,
-		OWID_MW_API:            mwApi,
-		OWID_DEBUG:             OWID_DEBUG,
-		OWID_ENV:               owidEnv,
-		OWID_ENCRYPTION_KEY:    owidEncKey,
-		OWID_ROD_BROWSER_DIR:   rodBrowserDir,
-		OWID_CLIENT_BUILD_PATH: owidClientBuildPath,
-		OWID_DB_DIR:            owidDBDir,
+		OWID_UA:                 userAgent,
+		OWID_OAUTH_TOKEN:        oauthToken,
+		OWID_OAUTH_SECRET:       oauthSecret,
+		OWID_OAUTH_INITIATE:     oauthInitiate,
+		OWID_OAUTH_AUTH:         oauthAuth,
+		OWID_OAUTH_TOKEN_URL:    oauthTokenUrl,
+		OWID_MW_API:             mwApi,
+		OWID_DEBUG:              OWID_DEBUG,
+		OWID_ENV:                owidEnv,
+		OWID_ENCRYPTION_KEY:     owidEncKey,
+		OWID_ROD_BROWSER_DIR:    rodBrowserDir,
+		OWID_CLIENT_BUILD_PATH:  owidClientBuildPath,
+		OWID_DB_DIR:             owidDBDir,
+		OWID_IFRAME_CONCURRENCY: iframeConcurrency,
 	}
 }
