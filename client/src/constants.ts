@@ -175,3 +175,9 @@ export const COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS = [
     description: "Don't update the description, only upload the file.",
   }
 ]
+
+// Pause after typing before a chart URL is looked up (a paste is looked up at once)
+export const IFRAME_LOOKUP_DEBOUNCE_MS = 500;
+// Multi import lookups in flight at once. The server runs 3 lookups at a time; one more keeps it
+// busy without queueing requests long enough to hit the proxy's request timeout.
+export const IFRAME_LOOKUP_CONCURRENCY = 4;

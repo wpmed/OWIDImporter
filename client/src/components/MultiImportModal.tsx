@@ -1,6 +1,6 @@
 import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Link, Stack, TextField, Typography } from "@mui/material"
 import { useCallback, useMemo, useState } from "react";
-import { COMMONS_TEMPLATE_PREFIX, DESCRIPTION_OVERWRITE_OPTIONS, generateBlankIframeImport, generateBlankImport, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX } from "../constants";
+import { COMMONS_TEMPLATE_PREFIX, DESCRIPTION_OVERWRITE_OPTIONS, generateBlankIframeImport, generateBlankImport, IFRAME_LOOKUP_CONCURRENCY, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX } from "../constants";
 import { getChartParameters, getIframeInfo } from "../request/request";
 import pLimit from 'p-limit';
 import { CheckCircle, Close as CloseIcon } from "@mui/icons-material";
@@ -85,7 +85,7 @@ export function MultiImportModal({ variant = "map", onAdd = () => { }, onAddIfra
     }
 
     setLoading(true);
-    const limit = pLimit(2);
+    const limit = pLimit(IFRAME_LOOKUP_CONCURRENCY);
     setProcessedLinks(linksArray.map(url => ({ url, status: "pending" })));
     const input = linksArray.map(url =>
       limit(async () => {

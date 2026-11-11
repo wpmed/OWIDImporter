@@ -80,6 +80,20 @@ func findOrInstallBrave() string {
 }
 
 func GetBrowser() (*launcher.Launcher, *rod.Browser) {
+	l := newBrowserLauncher()
+
+	control := l.MustLaunch()
+
+	browser := rod.New().
+		ControlURL(control).
+		MustConnect()
+
+	return l, browser
+}
+
+// newBrowserLauncher finds the browser binary (Brave, else Rod-managed Chromium) and returns a
+// launcher with the flags every OWID browser uses. It panics when no browser can be obtained.
+func newBrowserLauncher() *launcher.Launcher {
 	e := env.GetEnv()
 
 	if e.OWID_ROD_BROWSER_DIR != "" {
@@ -118,16 +132,8 @@ func GetBrowser() (*launcher.Launcher, *rod.Browser) {
 
 	fmt.Printf("[browser] Launching browser: %s\n", binPath)
 
-	l := launcher.New().
+	return launcher.New().
 		Bin(binPath).
 		Set("--no-sandbox").
 		HeadlessNew(HEADLESS)
-
-	control := l.MustLaunch()
-
-	browser := rod.New().
-		ControlURL(control).
-		MustConnect()
-
-	return l, browser
 }

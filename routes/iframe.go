@@ -45,11 +45,15 @@ func GetIframeInfo(c *gin.Context) {
 		return
 	}
 
-	l, browser := services.GetBrowser()
-	defer l.Cleanup()
-	defer browser.Close()
-	info, err := services.GetIframeInfo(browser, data.Url)
+	// The shared lookup browser stays warm between requests (see services.LookupIframeInfo)
+	info, err := services.LookupIframeInfo(c.Request.Context(), data.Url)
 	if err != nil {
+		if c.Request.Context().Err() != nil {
+			// The client went away; rod's panic text in err would only flood the log
+			fmt.Println("Iframe info lookup cancelled by the client", data.Url)
+			c.JSON(http.StatusBadRequest, cannotImport)
+			return
+		}
 		fmt.Println("Error getting iframe info", data.Url, err)
 		c.JSON(http.StatusBadRequest, cannotImport)
 		return

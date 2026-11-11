@@ -7,7 +7,7 @@ import { CategoriesSearchInput } from "./CategoriesSearchInput";
 import { FieldLoading } from "./FieldLoader";
 import { OverwriteBehaviourField } from "./OverwriteBehaviourField";
 import { PlaceholderText } from "./ui/PlaceholderText";
-import { IFRAME_DESCRIPTION_OVERWRITE_OPTIONS, IFRAME_INFO, IFRAME_URL_PLACEHOLDER, INITIAL_CATEGORIES_IFRAME } from "../constants";
+import { IFRAME_DESCRIPTION_OVERWRITE_OPTIONS, IFRAME_INFO, IFRAME_LOOKUP_DEBOUNCE_MS, IFRAME_URL_PLACEHOLDER, INITIAL_CATEGORIES_IFRAME } from "../constants";
 import { getIframeInfo } from "../request/request";
 import { applyIframeLookupFailure, applyLatestTime, effectiveIframeUrl, applyIframeLookupInfo, editIframeUrl, IframeItemUpdate, normalizeIframeChartPath, resolveIframeFileName } from "../iframe";
 import { monoStack, serifStack } from "../theme";
@@ -45,7 +45,11 @@ function ChartDetailRow({ label, value }: { label: string; value: string }) {
 }
 
 export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfoLoadingChange, canRemove, submitButton }: IframeImporterFormProps) {
-  const [debouncedUrl] = useDebounce(value.url, 1000);
+  const [debouncedUrl, debouncedUrlControls] = useDebounce(value.url, IFRAME_LOOKUP_DEBOUNCE_MS);
+  // Set by a paste: the pasted URL is looked up without waiting for the typing pause.
+  const pastedRef = useRef(false);
+  // The running lookup's request, aborted when a newer lookup starts or the form unmounts.
+  const lookupAbortRef = useRef<AbortController | null>(null);
   const [lastCheckedUrl, setLastCheckedUrl] = useState(value.linkVerified ? value.url : "");
   const [infoLoading, setInfoLoading] = useState(false);
   // Source text of the previous chart when the user edited the description before changing the URL;
@@ -76,6 +80,15 @@ export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfo
   }
 
 
+  useEffect(() => {
+    if (pastedRef.current) {
+      pastedRef.current = false;
+      debouncedUrlControls.flush();
+    }
+  }, [value.url, debouncedUrlControls]);
+
+  useEffect(() => () => lookupAbortRef.current?.abort(), []);
+
   // The pending swap was consumed by the lookup that just succeeded.
   useEffect(() => {
     if (value.canImport) {
@@ -99,7 +112,11 @@ export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfo
     const lookupId = ++lookupIdRef.current;
     onInfoLoadingChange(true);
     setInfoLoading(true);
-    getIframeInfo(path)
+    // The previous lookup's URL is no longer current, so its result would be dropped anyway
+    lookupAbortRef.current?.abort();
+    const controller = new AbortController();
+    lookupAbortRef.current = controller;
+    getIframeInfo(path, controller.signal)
       .then(res => {
         if (res.error || !res.info) {
           onChange(prev => applyIframeLookupFailure(prev, debouncedUrl));
@@ -110,6 +127,9 @@ export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfo
         onChange(prev => applyIframeLookupInfo(prev, debouncedUrl, info, previousSource));
       })
       .catch(err => {
+        if (controller.signal.aborted) {
+          return;
+        }
         console.log("Error getting iframe info", err);
         onChange(prev => applyIframeLookupFailure(prev, debouncedUrl));
       })
@@ -155,6 +175,12 @@ export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfo
           label="Chart URL"
           value={value.url}
           onChange={e => onUrlChange(e.target.value)}
+          onPaste={() => {
+            pastedRef.current = true;
+            // A paste that leaves the URL unchanged runs no effect; don't let the next keystroke skip the debounce.
+            // The effect of a changing paste runs first (React flushes it before timers).
+            setTimeout(() => { pastedRef.current = false; }, 0);
+          }}
           placeholder={IFRAME_URL_PLACEHOLDER}
           helperText="A full ourworldindata.org URL or a path such as grapher/life-expectancy or explorers/minerals?tab=map"
           disabled={disabled}

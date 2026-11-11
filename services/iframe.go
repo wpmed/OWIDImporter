@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -289,9 +290,18 @@ func openIframeChartPage(browser *rod.Browser, url string) (*rod.Page, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := loadIframeChartPage(page, url); err != nil {
+		page.Close()
+		return nil, err
+	}
+	return page, nil
+}
+
+// loadIframeChartPage navigates page to url and waits until the chart's download button is present.
+func loadIframeChartPage(page *rod.Page, url string) error {
 	// A hung OWID page must not block the task or the /iframe/info request
 	timed := page.Timeout(iframePageLoadTimeout)
-	err = rod.Try(func() {
+	err := rod.Try(func() {
 		timed.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 		timed.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
 		timed.MustNavigate(url)
@@ -303,10 +313,9 @@ func openIframeChartPage(browser *rod.Browser, url string) (*rod.Page, error) {
 		err = utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, iframeModalTimeout)
 	}
 	if err != nil {
-		page.Close()
-		return nil, fmt.Errorf("cannot open chart page %s: %w", url, err)
+		return fmt.Errorf("cannot open chart page %s: %w", url, err)
 	}
-	return page, nil
+	return nil
 }
 
 func readIframePageDetails(page *rod.Page, path string) (string, string) {
@@ -335,15 +344,28 @@ func readIframePageDetails(page *rod.Page, path string) (string, string) {
 
 // GetIframeInfo looks up title and source of an OWID grapher/explorer page (read only).
 func GetIframeInfo(browser *rod.Browser, input string) (*IframeInfo, error) {
+	return getIframeInfo(context.Background(), browser, input)
+}
+
+// getIframeInfo is GetIframeInfo ended early when ctx ends (the /iframe/info client gave up).
+func getIframeInfo(ctx context.Context, browser *rod.Browser, input string) (*IframeInfo, error) {
 	path, err := utils.NormalizeIframeChartPath(input)
 	if err != nil {
 		return nil, err
 	}
-	page, err := openIframeChartPage(browser, utils.IframeChartURL(path))
+	tab, err := browser.Page(proto.TargetCreateTarget{URL: ""})
 	if err != nil {
 		return nil, err
 	}
-	defer page.Close()
+	// Closed through tab, whose context ctx does not end, so a cancelled lookup still closes it
+	defer tab.Close()
+	pageCtx, cancel := context.WithCancel(tab.GetContext())
+	defer cancel()
+	defer context.AfterFunc(ctx, cancel)()
+	page := tab.Context(pageCtx)
+	if err := loadIframeChartPage(page, utils.IframeChartURL(path)); err != nil {
+		return nil, err
+	}
 	title, source := readIframePageDetails(page, path)
 	info := &IframeInfo{Path: path, ChartName: iframeChartName(title, utils.IframeChartSlug(path)), Title: title, Source: source}
 	slugs := readIframeDisplaySlug(page)
@@ -354,17 +376,33 @@ func GetIframeInfo(browser *rod.Browser, input string) (*IframeInfo, error) {
 	return info, nil
 }
 
+// lookupDownloadSlot lets one lookup download at a time (see lookupIframeDownloadName).
+var lookupDownloadSlot = make(chan struct{}, 1)
+
 // lookupIframeDownloadName downloads the SVG once like the task does to learn OWID's file
 // name ($NAME). It gives up after iframeInfoDownloadTimeout; a failure or timeout returns "".
 // The caller closing page (and its browser) ends a download still running after the deadline.
 func lookupIframeDownloadName(page *rod.Page, path string) string {
+	// Lookups share a browser, and a browser's download path and download events are
+	// browser-wide: two downloads at once could each catch the other's file name. The wait
+	// comes before the download's own deadline; the downloads ahead can't take longer than this cap.
+	select {
+	case lookupDownloadSlot <- struct{}{}:
+	case <-page.GetContext().Done():
+		return ""
+	case <-time.After(lookupMaxConcurrent * (iframeInfoDownloadTimeout + time.Second)):
+		fmt.Println("Iframe info: gave up waiting for another SVG download", path)
+		return ""
+	}
 	dir, err := os.MkdirTemp("", "owid-iframe-info")
 	if err != nil {
+		<-lookupDownloadSlot
 		return ""
 	}
 	timed := page.Timeout(iframeInfoDownloadTimeout)
 	result := make(chan string, 1)
 	go func() {
+		defer func() { <-lookupDownloadSlot }()
 		defer os.RemoveAll(dir)
 		defer timed.CancelTimeout()
 		name, err := downloadOWIDSVG(timed, dir, true, false)

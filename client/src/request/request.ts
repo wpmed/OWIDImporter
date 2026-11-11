@@ -461,11 +461,12 @@ export interface GetIframeInfoResponse {
 }
 
 // 200 -> { info }, 400 -> { error: "This chart cannot be imported" }
-export async function getIframeInfo(url: string) {
+export async function getIframeInfo(url: string, signal?: AbortSignal) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
 
   const response = await fetch(`${API_BASE}/iframe/info`, {
     method: "POST",
+    signal,
     body: JSON.stringify({ url }),
     headers: {
       "Content-Type": "application/json",
