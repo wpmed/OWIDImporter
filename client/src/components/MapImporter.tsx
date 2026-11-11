@@ -303,6 +303,20 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList, onCreate
     }
   }, [incomingTaskId])
 
+  const submitButton = (
+    <Button
+      variant="contained"
+      color="primary"
+      onClick={submit}
+      disabled={submitDisabled}
+      loading={loading}
+    >
+      Submit
+    </Button>
+  )
+  // One import: Submit sits under its chart URL. Several: it submits them all, so it stays below the list.
+  const submitUnderUrl = canControl && imports.length === 1
+
   return (
     <Stack spacing={3}>
       <PageHeader
@@ -364,6 +378,7 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList, onCreate
                       newImports.splice(index, 1);
                       setImports(newImports);
                     }}
+                    submitButton={submitUnderUrl ? submitButton : undefined}
                   />
 
                   return (
@@ -437,15 +452,7 @@ export function MapImporter({ taskId: incomingTaskId, onNavigateToList, onCreate
                   >
                     Cancel
                   </Button>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={submit}
-                    disabled={submitDisabled}
-                    loading={loading}
-                  >
-                    Submit
-                  </Button>
+                  {!submitUnderUrl && submitButton}
                 </Stack>
               )}
 

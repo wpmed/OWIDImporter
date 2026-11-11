@@ -2,7 +2,7 @@ import { Alert, Box, Button, Checkbox, FormControlLabel, InputAdornment, Link, P
 import { DescriptionOverwriteBehaviour, MapImporterFormItem, SelectedParameter } from "../types"
 import { CategoriesSearchInput } from "./CategoriesSearchInput";
 import { useDebounce } from "use-debounce";
-import { useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
 import { ChartInfo, getChartParameters } from "../request/request";
 import { Delete } from "@mui/icons-material";
 import { CHART_INFO_CHART, CHART_INFO_MAP, COMMONS_TEMPLATE_PREFIX, COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS, DESCRIPTION_OVERWRITE_OPTIONS, INITIAL_CATEGORIES_CHART, INITIAL_CATEGORIES_MAP, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX, URL_PLACEHOLDER } from "../constants";
@@ -20,6 +20,8 @@ export interface MapImporterFormProps {
   onParamtersLoadingChange: (val: boolean) => void
   onDelete: () => void,
   canRemove: boolean
+  // Shown on the right, under the chart URL
+  submitButton?: ReactNode
 }
 
 const monoInputSx = {
@@ -42,7 +44,7 @@ function ChartDetailRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function MapImporterForm({ value, onChange, onDelete, disabled, onParamtersLoadingChange, canRemove }: MapImporterFormProps) {
+export function MapImporterForm({ value, onChange, onDelete, disabled, onParamtersLoadingChange, canRemove, submitButton }: MapImporterFormProps) {
   const [debouncedUrl] = useDebounce(value.url, 1000);
   const [debouncedTemplateName] = useDebounce(value.templateNameFormat, 1000);
   const [lastCheckedUrl, setLastCheckeUrl] = useState(value.url);
@@ -199,11 +201,15 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
           placeholder={URL_PLACEHOLDER}
           disabled={disabled}
           sx={monoInputSx}
+          slotProps={{ input: { endAdornment: parametersLoading ? <FieldLoading /> : undefined } }}
         />
-        {parametersLoading && (
-          <FieldLoading />
-        )}
       </Box>
+
+      {submitButton && (
+        <Stack direction="row" justifyContent="flex-end" sx={{ mt: "12px !important" }}>
+          {submitButton}
+        </Stack>
+      )}
 
       {chartInfo?.singleImage && (
         <Alert severity="warning" variant="outlined">
@@ -312,12 +318,10 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
                   slotProps={{
                     input: {
                       startAdornment: <InputAdornment position="start">Template:OWID/</InputAdornment>,
+                      endAdornment: templateExistsLoading ? <FieldLoading /> : undefined,
                     },
                   }}
                 />
-                {templateExistsLoading && (
-                  <FieldLoading />
-                )}
               </Box>
               {templateExists && lastCheckedTemplateName && (
                 <Alert severity="warning" variant="outlined">

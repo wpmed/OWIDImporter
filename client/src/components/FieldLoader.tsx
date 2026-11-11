@@ -1,9 +1,10 @@
-import { Box, CircularProgress } from "@mui/material";
+import { CircularProgress, InputAdornment } from "@mui/material";
 
+// Spinner for a TextField's endAdornment, so the input keeps it vertically centred
 export function FieldLoading() {
   return (
-    <Box sx={{ position: "absolute", right: "1%", top: "10%", height: "80%", paddingRight: 1, paddingLeft: 1, display: "flex", alignItems: "center" }}>
-      <CircularProgress size={20} />
-    </Box>
+    <InputAdornment position="end">
+      <CircularProgress size={18} />
+    </InputAdornment>
   )
 }

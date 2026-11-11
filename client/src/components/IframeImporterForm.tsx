@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Checkbox, FormControlLabel, Paper, Stack, TextField, Typography } from "@mui/material";
 import { Delete } from "@mui/icons-material";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useDebounce } from "use-debounce";
 import { DescriptionOverwriteBehaviour, IframeImporterFormItem } from "../types";
 import { CategoriesSearchInput } from "./CategoriesSearchInput";
@@ -20,6 +20,8 @@ export interface IframeImporterFormProps {
   onInfoLoadingChange: (val: boolean) => void
   onDelete: () => void
   canRemove: boolean
+  // Shown on the right, under the chart URL
+  submitButton?: ReactNode
 }
 
 const monoInputSx = {
@@ -42,7 +44,7 @@ function ChartDetailRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfoLoadingChange, canRemove }: IframeImporterFormProps) {
+export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfoLoadingChange, canRemove, submitButton }: IframeImporterFormProps) {
   const [debouncedUrl] = useDebounce(value.url, 1000);
   const [lastCheckedUrl, setLastCheckedUrl] = useState(value.linkVerified ? value.url : "");
   const [infoLoading, setInfoLoading] = useState(false);
@@ -157,30 +159,33 @@ export function IframeImporterForm({ value, onChange, onDelete, disabled, onInfo
           helperText="A full ourworldindata.org URL or a path such as grapher/life-expectancy or explorers/minerals?tab=map"
           disabled={disabled}
           sx={monoInputSx}
+          slotProps={{ input: { endAdornment: infoLoading ? <FieldLoading /> : undefined } }}
         />
-        {infoLoading && (
-          <FieldLoading />
-        )}
       </Box>
 
-      <Box sx={{ mt: "-12px !important" }}>
-        <FormControlLabel
-          control={
-            <Checkbox
-              size="small"
-              checked={value.useLatestTime}
-              onChange={e => handleChange("useLatestTime", e.target.checked)}
-              disabled={disabled}
-            />
-          }
-          label={<Typography variant="body2">Use the latest year (time=latest)</Typography>}
-        />
-        {showEffectivePath && (
-          <Typography variant="caption" sx={{ display: "block", color: "text.secondary", fontFamily: monoStack, wordBreak: "break-all" }}>
-            Will import: {effectivePath}
-          </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ mt: "-12px !important" }}>
+        <Box sx={{ minWidth: 0 }}>
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small"
+                checked={value.useLatestTime}
+                onChange={e => handleChange("useLatestTime", e.target.checked)}
+                disabled={disabled}
+              />
+            }
+            label={<Typography variant="body2">Use the latest year (time=latest)</Typography>}
+          />
+          {showEffectivePath && (
+            <Typography variant="caption" sx={{ display: "block", color: "text.secondary", fontFamily: monoStack, wordBreak: "break-all" }}>
+              Will import: {effectivePath}
+            </Typography>
+          )}
+        </Box>
+        {submitButton && (
+          <Box sx={{ flexShrink: 0 }}>{submitButton}</Box>
         )}
-      </Box>
+      </Stack>
 
       {info && (info.chartName || info.title || info.source || resolvedFileName) && (
         <Paper variant="outlined" sx={{ p: 2 }}>

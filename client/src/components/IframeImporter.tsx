@@ -99,6 +99,20 @@ export function IframeImporter({ onCreated }: IframeImporterProps) {
     return loading || infoLoading || validImports.length == 0;
   }, [imports, loading, infoLoading])
 
+  const submitButton = (
+    <Button
+      variant="contained"
+      color="primary"
+      onClick={submit}
+      disabled={submitDisabled}
+      loading={loading}
+    >
+      Submit
+    </Button>
+  )
+  // One import: Submit sits under its chart URL. Several: it submits them all, so it stays below the list.
+  const submitUnderUrl = imports.length === 1
+
   return (
     <Stack spacing={3}>
       <PageHeader
@@ -129,6 +143,7 @@ export function IframeImporter({ onCreated }: IframeImporterProps) {
                 onChange={onFormChange(i.id)}
                 onInfoLoadingChange={setInfoLoading}
                 onDelete={() => setImports(old => old.filter(item => item.id !== i.id))}
+                submitButton={submitUnderUrl ? submitButton : undefined}
               />
 
               return (
@@ -195,17 +210,11 @@ export function IframeImporter({ onCreated }: IframeImporterProps) {
             </Stack>
           )}
 
-          <Stack direction="row" justifyContent="flex-end" spacing={2}>
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={submit}
-              disabled={submitDisabled}
-              loading={loading}
-            >
-              Submit
-            </Button>
-          </Stack>
+          {!submitUnderUrl && (
+            <Stack direction="row" justifyContent="flex-end" spacing={2}>
+              {submitButton}
+            </Stack>
+          )}
         </Stack>
       )}
     </Stack>
