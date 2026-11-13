@@ -13,6 +13,7 @@ import { ShareLinkButton } from "./components/ShareLinkButton";
 import { PageHeader } from "./components/ui/PageHeader";
 import { EmptyState } from "./components/ui/EmptyState";
 import { iframePath, mapPath, operationPath, PATHS } from "./routing";
+import { readChartParam } from "./iframe";
 
 const scrollTop = () => window.scrollTo({ left: 0, top: 0 });
 
@@ -71,8 +72,9 @@ export function IframeListPage() {
 
 export function NewIframePage() {
   const navigate = useNavigate();
-  const { key } = useLocation();
-  return <IframeImporter key={key} onCreated={(id) => navigate(iframePath(id))} />
+  // A new location key (e.g. the sidebar's "New iframe") remounts the form, so ?chart= only prefills its own visit
+  const { key, search } = useLocation();
+  return <IframeImporter key={key} initialUrl={readChartParam(search)} onCreated={(id) => navigate(iframePath(id))} />
 }
 
 // Public: anyone with the link sees the import; only its creator gets controls

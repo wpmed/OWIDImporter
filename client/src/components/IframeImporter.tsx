@@ -15,13 +15,15 @@ import { MultiImportModal } from "./MultiImportModal";
 export interface IframeImporterProps {
   // Called when a single submitted item created its task, so its own page can open
   onCreated?: (taskId: string) => void
+  // Chart URL for the first import (from /iframes/new?chart=); only read when the form mounts
+  initialUrl?: string
 }
 
 // The new-import form; after a batch submit it shows the batch's results here.
 // An existing task opens on its own page (IframeTaskPage).
-export function IframeImporter({ onCreated }: IframeImporterProps) {
+export function IframeImporter({ onCreated, initialUrl }: IframeImporterProps) {
   const { showToast } = useToast();
-  const [imports, setImports] = useState([generateBlankIframeImport()]);
+  const [imports, setImports] = useState(() => [generateBlankIframeImport(initialUrl)]);
   const [expanded, setExpanded] = useState<string | false>(imports[0].id);
   const [loading, setLoading] = useState(false);
   const [infoLoading, setInfoLoading] = useState(false);

@@ -113,10 +113,11 @@ export function generateBlankImport(): MapImporterFormItem {
   }
 }
 
-export function generateBlankIframeImport(): IframeImporterFormItem {
+// `url` prefills the Chart URL only (e.g. from /iframes/new?chart=); everything else stays at the defaults.
+export function generateBlankIframeImport(url = ""): IframeImporterFormItem {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    url: "",
+    url,
     fileName: INITIAL_FILENAME_IFRAME,
     description: INITIAL_DESCRIPTION_IFRAME,
     categories: INITIAL_CATEGORIES_IFRAME,

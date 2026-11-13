@@ -28,6 +28,43 @@ export function normalizeIframeChartPath(input: string): string | null {
   return path;
 }
 
+// Longest `?chart=` value prefilled into the form; anything longer leaves the form blank.
+export const CHART_PARAM_MAX_LENGTH = 2048;
+
+// `chart=` as a whole parameter name (at the start of the query or after `&`).
+const CHART_PARAM_REGEX = /(?:^|&)chart=/;
+
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS_REGEX = /[\u0000-\u001f\u007f-\u009f]/g;
+
+/**
+ * The chart URL or path to prefill from a page's query string (`?chart=...`), or "" for a blank form.
+ * Everything after the first `chart=` is taken, so an unencoded nested query
+ * (`?chart=https://ourworldindata.org/grapher/x?tab=map&time=2020`) stays whole. A value whose first `&`-segment has no
+ * literal `/` was percent-encoded as a whole (encodeURIComponent turns `/` into %2F): it ends at the
+ * next `&` and is decoded. Control characters are dropped and the value is trimmed; malformed escapes
+ * and values over CHART_PARAM_MAX_LENGTH give "". The result is untrusted text: it is only shown as the
+ * Chart URL value and looked up when normalizeIframeChartPath accepts it.
+ */
+export function readChartParam(search: string): string {
+  const query = search.replace(/^\?/, "");
+  const match = CHART_PARAM_REGEX.exec(query);
+  if (!match) return "";
+  let value = query.slice(match.index + match[0].length);
+  if (value.length > CHART_PARAM_MAX_LENGTH * 3) return "";
+  const firstSegment = value.split("&", 1)[0];
+  if (!firstSegment.includes("/")) {
+    value = firstSegment;
+    try {
+      value = decodeURIComponent(value);
+    } catch {
+      return "";
+    }
+  }
+  value = value.replace(CONTROL_CHARS_REGEX, "").trim();
+  return value.length > CHART_PARAM_MAX_LENGTH ? "" : value;
+}
+
 /**
  * Removes every `overlay` query parameter (`overlay=download-vis` opens OWID's download modal on load,
  * for readers too); mirrors the server. Everything else is kept byte-for-byte; a bare `?` is dropped.
