@@ -60,12 +60,12 @@ export const INITIAL_CATEGORIES_MAP_SINGLE_IMAGE = [
 
 // IFRAME
 export const IFRAME_URL_PLACEHOLDER = `https://ourworldindata.org/grapher/<NAME OF GRAPH>`;
-export const INITIAL_FILENAME_IFRAME = `$NAME.svg`;
+export const INITIAL_FILENAME_IFRAME = `$NAME_$TAB.svg`;
 export const INITIAL_DESCRIPTION_IFRAME = INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE;
 export const INITIAL_CATEGORIES_IFRAME = [
   "Uploaded by OWID importer tool"
 ]
-export const IFRAME_INFO = `$NAME is the filename OWID gives its Wikipedia-optimized SVG download, without the extension. $TITLE is the title of the graph, $SOURCE the data source credited by OWID, and $URL the chart address. They can be used in the file name and the description.`;
+export const IFRAME_INFO = `$NAME is the filename OWID gives its Wikipedia-optimized SVG download, without the extension. $TAB is the view the chart shows (Map, Line, Table, Bar, Slope, ...); when it can't be found, $TAB is left out together with the spaces, "_" or "-" before it and any brackets around it. $TITLE is the title of the graph, $SOURCE the data source credited by OWID, and $URL the chart address. They can be used in the file name and the description.`;
 
 // CHART
 export const INITIAL_DESCRIPTION_CHART = `=={{int:filedesc}}==

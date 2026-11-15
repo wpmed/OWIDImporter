@@ -193,7 +193,7 @@ export function applyIframeLookupFailure(prev: IframeImporterFormItem, requested
   return { ...prev, info: null, canImport: false, linkVerified: true };
 }
 
-/** The Commons file name an iframe task ended up with (the task's filename is only the `$NAME.svg` template). */
+/** The Commons file name an iframe task ended up with (the task's filename is only the `$NAME_$TAB.svg` template). */
 export function iframeFinalFileName(processes: Pick<TaskProcess, "filename" | "status">[]): string | undefined {
   const done = processes.find(p => p.filename && p.status !== TaskProcessStatusEnum.Failed);
   return done?.filename.replace(/^File:/, "");
@@ -222,14 +222,14 @@ export function commonsFileName(name: string): string {
 /**
  * The Commons file name an import's file name template resolves to with a lookup of `path`
  * (mirrors the server's ProvisionalIframeFileName). Undefined when the template needs a value
- * the lookup does not have ($NAME without a download name, $TITLE/$SOURCE without a lookup).
+ * the lookup does not have ($NAME without a download name, $TITLE/$SOURCE/$TAB without a lookup).
  */
-export function resolveIframeFileName(template: string, path: string, info?: Pick<IframeInfo, "path" | "downloadName" | "title" | "source"> | null): string | undefined {
+export function resolveIframeFileName(template: string, path: string, info?: Pick<IframeInfo, "path" | "downloadName" | "title" | "source" | "tab"> | null): string | undefined {
   const lookedUp = !!info && info.path === path;
   const name = lookedUp ? (info.downloadName ?? "").replace(/\.svg$/i, "") : "";
   if (template.includes("$NAME") && !name) return undefined;
-  if (!lookedUp && (template.includes("$TITLE") || template.includes("$SOURCE"))) return undefined;
-  let value = template;
+  if (!lookedUp && (template.includes("$TITLE") || template.includes("$SOURCE") || template.includes("$TAB"))) return undefined;
+  let value = resolveIframeTab(template, lookedUp ? info.tab : "");
   if (lookedUp && info.source) value = value.replaceAll("$SOURCE", () => info.source);
   value = value.replaceAll("$URL", () => iframeChartUrl(path)).replaceAll("$NAME", () => name);
   if (lookedUp && info.title) value = value.replaceAll("$TITLE", () => info.title);
@@ -237,11 +237,23 @@ export function resolveIframeFileName(template: string, path: string, info?: Pic
   return commonsFileName(value) || undefined;
 }
 
+/**
+ * Substitutes $TAB (mirrors the server's resolveIframeVars). An unknown tab is removed with the
+ * brackets around it ("($TAB)", "[$TAB]") and the run of spaces, "_" and "-" before it, or after
+ * it when it starts the line: "$NAME - $TAB" and "$TAB - $NAME" both give "$NAME".
+ */
+export function resolveIframeTab(value: string, tab?: string): string {
+  if (tab) return value.replaceAll("$TAB", () => tab);
+  return value
+    .replace(/^(?:\(\$TAB\)|\[\$TAB\]|\$TAB)[ _-]*/gm, "")
+    .replace(/[ _-]*(?:\(\$TAB\)|\[\$TAB\]|\$TAB)/g, "");
+}
+
 /** The lookup values sent with a new task for its provisional file name; only when they are for the URL being imported. */
 export function iframeNameHints(item: Pick<IframeImporterFormItem, "url" | "useLatestTime" | "info">): IframeNameHints | undefined {
   const { info } = item;
   if (!info || info.path !== normalizeIframeChartPath(effectiveIframeUrl(item))) return undefined;
-  return { path: info.path, downloadName: info.downloadName ?? "", title: info.title, source: info.source };
+  return { path: info.path, downloadName: info.downloadName ?? "", title: info.title, source: info.source, tab: info.tab };
 }
 
 /** True once the process's file is on Commons (before that its File: page may not exist). */

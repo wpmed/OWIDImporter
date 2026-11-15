@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,6 +50,8 @@ type IframeInfo struct {
 	// OWID's SVG download name (e.g. mica-production.svg), the value of $NAME; empty when the
 	// lookup could neither read the displaySlug nor download the SVG
 	DownloadName string `json:"downloadName"`
+	// The view the chart shows, e.g. "Map" or "Line" (the value of $TAB); empty when unknown
+	Tab string `json:"tab"`
 	// Where DownloadName came from: iframeNameFromSlug or iframeNameFromDownload ("" when unknown)
 	downloadNameSource string
 }
@@ -65,20 +68,108 @@ var iframeSlugTimeout = 5 * time.Second
 // chart's slug or slugify(title). window.grapher is whichever Grapher mounted last (on data
 // pages often a related chart), so it is not trusted on its own: grapher pages use the page's
 // own chart config slug, explorer pages the explorer's grapher state (one per page).
+// activeTab is the view the chart shows (GrapherTabName, e.g. "WorldMap", "LineChart", "Table").
+// mainConfig is the page's own chart config fields that set its initial view (null when the
+// page has no config); OWID omits fields that have their default value.
 const iframeDisplaySlugJS = `() => {
 	const read = f => { try { const v = f(); return typeof v === "string" ? v : ""; } catch (e) { return ""; } };
+	const mainConfig = () => {
+		try {
+			const c = window._OWID_GRAPHER_CONFIG;
+			if (!c || typeof c !== "object") return null;
+			return {
+				tab: typeof c.tab === "string" ? c.tab : "",
+				hasMapTab: c.hasMapTab === true,
+				chartTypes: Array.isArray(c.chartTypes) ? c.chartTypes.filter(t => typeof t === "string") : null,
+			};
+		} catch (e) { return null; }
+	};
 	return {
 		config: read(() => window._OWID_GRAPHER_CONFIG.slug),
 		grapher: read(() => window.grapher.grapherState.displaySlug),
 		explorer: read(() => window.explorer.grapherState.displaySlug),
+		grapherTab: read(() => window.grapher.grapherState.activeTab),
+		explorerTab: read(() => window.explorer.grapherState.activeTab),
+		mainConfig: mainConfig(),
 	};
 }`
 
-// iframeSlugCandidates are the displaySlug values read from the chart page.
+// iframeSlugCandidates are the displaySlug and active tab values read from the chart page.
 type iframeSlugCandidates struct {
-	Config   string // window._OWID_GRAPHER_CONFIG.slug (grapher pages)
-	Grapher  string // window.grapher.grapherState.displaySlug (last mounted Grapher)
-	Explorer string // window.explorer.grapherState.displaySlug (explorer pages)
+	Config      string // window._OWID_GRAPHER_CONFIG.slug (grapher pages)
+	Grapher     string // window.grapher.grapherState.displaySlug (last mounted Grapher)
+	Explorer    string // window.explorer.grapherState.displaySlug (explorer pages)
+	GrapherTab  string // window.grapher.grapherState.activeTab
+	ExplorerTab string // window.explorer.grapherState.activeTab
+	MainConfig  iframeMainConfig
+}
+
+// iframeMainConfig is the view part of window._OWID_GRAPHER_CONFIG, the grapher page's own
+// chart (not a related chart).
+type iframeMainConfig struct {
+	Found      bool     // the page has a config object
+	Tab        string   // config.tab; "" when not set (OWID's default "chart")
+	HasMapTab  bool     // config.hasMapTab (default false)
+	ChartTypes []string // config.chartTypes; nil when not set (OWID's default applies)
+}
+
+// iframeDefaultChartTypes is OWID's default config.chartTypes (grapher schema 012 and
+// defaultGrapherConfig.ts: ["LineChart", "DiscreteBar"]).
+var iframeDefaultChartTypes = []string{"LineChart", "DiscreteBar"}
+
+// chartTypes are the config's chart types without duplicates, or OWID's default when unset.
+// (OWID also drops invalid combinations; this keeps the given order.)
+func (m iframeMainConfig) chartTypes() []string {
+	if m.ChartTypes == nil {
+		return iframeDefaultChartTypes
+	}
+	var types []string
+	seen := map[string]bool{}
+	for _, t := range m.ChartTypes {
+		if !seen[t] {
+			seen[t] = true
+			types = append(types, t)
+		}
+	}
+	return types
+}
+
+// defaultTabWord is the $TAB word of OWID's default tab: the first chart type, else the map
+// when there is one, else the table (GrapherState.defaultTab).
+func (m iframeMainConfig) defaultTabWord() string {
+	if types := m.chartTypes(); len(types) > 0 {
+		return iframeTabWord(types[0])
+	}
+	if m.HasMapTab {
+		return "Map"
+	}
+	return "Table"
+}
+
+// tabWord is the $TAB word of the view OWID opens for a tab option (a ?tab= value or
+// config.tab, e.g. "chart", "map", "line"), following GrapherState.mapTabConfigOptionToTabName:
+// "chart" (or unset) is the default tab, "map" needs a map tab, a chart option needs that
+// chart type, and anything else falls back to the default tab.
+func (m iframeMainConfig) tabWord(option string) string {
+	switch option {
+	case "table":
+		return "Table"
+	case "map":
+		if m.HasMapTab {
+			return "Map"
+		}
+		return m.defaultTabWord()
+	case "", "chart":
+		return m.defaultTabWord()
+	}
+	if word := iframeTabWord(option); word != "" {
+		for _, t := range m.chartTypes() {
+			if iframeTabWord(t) == word {
+				return word
+			}
+		}
+	}
+	return m.defaultTabWord()
 }
 
 // slugify output: ASCII letters, digits, "_" and "-"
@@ -92,7 +183,23 @@ func readIframeDisplaySlug(page *rod.Page) iframeSlugCandidates {
 	if err != nil || res == nil {
 		return iframeSlugCandidates{}
 	}
-	return iframeSlugCandidates{Config: res.Value.Get("config").Str(), Grapher: res.Value.Get("grapher").Str(), Explorer: res.Value.Get("explorer").Str()}
+	c := iframeSlugCandidates{
+		Config:      res.Value.Get("config").Str(),
+		Grapher:     res.Value.Get("grapher").Str(),
+		Explorer:    res.Value.Get("explorer").Str(),
+		GrapherTab:  res.Value.Get("grapherTab").Str(),
+		ExplorerTab: res.Value.Get("explorerTab").Str(),
+	}
+	if cfg := res.Value.Get("mainConfig"); !cfg.Nil() {
+		c.MainConfig = iframeMainConfig{Found: true, Tab: cfg.Get("tab").Str(), HasMapTab: cfg.Get("hasMapTab").Bool()}
+		if types := cfg.Get("chartTypes"); !types.Nil() {
+			c.MainConfig.ChartTypes = []string{}
+			for _, t := range types.Arr() {
+				c.MainConfig.ChartTypes = append(c.MainConfig.ChartTypes, t.Str())
+			}
+		}
+	}
+	return c
 }
 
 // pickIframeDisplaySlug is the main chart's displaySlug for path, or "" when it is not
@@ -106,6 +213,102 @@ func pickIframeDisplaySlug(path string, c iframeSlugCandidates) string {
 		return ""
 	}
 	return slug
+}
+
+// iframeTabWords are the $TAB words for OWID's tab query values (?tab=...); other values are
+// title-cased.
+var iframeTabWords = map[string]string{
+	"map":          "Map",
+	"table":        "Table",
+	"line":         "Line",
+	"discrete-bar": "Bar",
+	"slope":        "Slope",
+	"stacked-area": "Stacked-area",
+	"scatter":      "Scatter",
+	"marimekko":    "Marimekko",
+	"stacked-bar":  "Stacked-bar",
+}
+
+// iframeTabNameAliases are the GrapherTabName forms (activeTab, kebab-cased) whose tab query
+// value differs.
+var iframeTabNameAliases = map[string]string{
+	"world-map":    "map",
+	"line-chart":   "line",
+	"slope-chart":  "slope",
+	"scatter-plot": "scatter",
+}
+
+var (
+	iframeTabCamelBoundary = regexp.MustCompile(`([a-z0-9])([A-Z])`)
+	iframeTabValue         = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+)
+
+// iframeTabWord is the $TAB word for a tab value: a page's activeTab ("WorldMap") or a ?tab=
+// query value ("map"), e.g. "Map". It returns "" for an empty or unusable value.
+func iframeTabWord(value string) string {
+	v := strings.TrimSpace(value)
+	v = strings.ToLower(iframeTabCamelBoundary.ReplaceAllString(v, "$1-$2"))
+	v = strings.ReplaceAll(v, "_", "-")
+	if alias, ok := iframeTabNameAliases[v]; ok {
+		v = alias
+	}
+	if !iframeTabValue.MatchString(v) {
+		return ""
+	}
+	if word, ok := iframeTabWords[v]; ok {
+		return word
+	}
+	return strings.ToUpper(v[:1]) + v[1:]
+}
+
+// iframeURLTabValue is the raw ?tab= query value of path, or "".
+func iframeURLTabValue(path string) string {
+	parts := strings.SplitN(path, "?", 2)
+	if len(parts) < 2 {
+		return ""
+	}
+	query, err := url.ParseQuery(parts[1])
+	if err != nil {
+		return ""
+	}
+	return query.Get("tab")
+}
+
+// iframeURLTab is the $TAB word for the ?tab= query value of path, or "".
+func iframeURLTab(path string) string {
+	return iframeTabWord(iframeURLTabValue(path))
+}
+
+// pickIframeTab is the $TAB word for the view the main chart shows, or "" when unknown.
+// Precedence, most direct evidence of what the reader sees first:
+//  1. The page's live activeTab. On grapher pages window.grapher may be a related chart (data
+//     pages), so its tab is used only when its displaySlug is the URL's chart slug.
+//  2. Grapher pages with the page's own config (window._OWID_GRAPHER_CONFIG): the tab OWID
+//     opens for the URL's ?tab= value, or for config.tab when the URL has none. OWID applies a
+//     ?tab= over the config's default tab, so an explicit URL tab wins over config.tab; the
+//     config is still needed to resolve "chart" (its first chart type) and options the
+//     chart does not have (OWID falls back to the default tab).
+//  3. Otherwise (explorers, or no config) the URL's ?tab= value on its own.
+func pickIframeTab(path string, c iframeSlugCandidates) string {
+	explorer := strings.HasPrefix(path, "explorers/")
+	pageTab := c.ExplorerTab
+	if !explorer {
+		pageTab = ""
+		if c.Grapher != "" && c.Grapher == utils.IframeChartSlug(path) {
+			pageTab = c.GrapherTab
+		}
+	}
+	if word := iframeTabWord(pageTab); word != "" {
+		return word
+	}
+	urlTab := iframeURLTabValue(path)
+	if !explorer && c.MainConfig.Found {
+		if urlTab == "" {
+			return c.MainConfig.tabWord(c.MainConfig.Tab)
+		}
+		return c.MainConfig.tabWord(urlTab)
+	}
+	return iframeTabWord(urlTab)
 }
 
 // chooseIframeDownloadName is OWID's download name from a valid displaySlug, else from
@@ -127,6 +330,8 @@ type IframeNameHints struct {
 	DownloadName string `json:"downloadName"`
 	Title        string `json:"title"`
 	Source       string `json:"source"`
+	// The lookup's $TAB word ("" when unknown)
+	Tab string `json:"tab"`
 }
 
 // iframeVars are the placeholder values available to iframe file names and descriptions.
@@ -135,10 +340,26 @@ type iframeVars struct {
 	Title  string
 	Source string
 	Url    string
+	Tab    string // the view the chart shows, e.g. "Map"; "" when unknown
 }
 
-// resolveIframeVars substitutes $NAME, $TITLE, $SOURCE and $URL.
+// An unknown $TAB is removed with the brackets around it ("($TAB)", "[$TAB]") and the run of
+// spaces, "_" and "-" before it ("$NAME - $TAB" -> "$NAME"), or after it when it starts the
+// line ("$TAB - $NAME" -> "$NAME"). Newlines are kept.
+var (
+	iframeEmptyTabLeading = regexp.MustCompile(`(?m)^(?:\(\$TAB\)|\[\$TAB\]|\$TAB)[ _-]*`)
+	iframeEmptyTab        = regexp.MustCompile(`[ _-]*(?:\(\$TAB\)|\[\$TAB\]|\$TAB)`)
+)
+
+// resolveIframeVars substitutes $TAB, $NAME, $TITLE, $SOURCE and $URL. An unknown $TAB is
+// removed with its separators and brackets (iframeEmptyTab).
 func resolveIframeVars(value string, v iframeVars) string {
+	if v.Tab != "" {
+		value = strings.ReplaceAll(value, "$TAB", v.Tab)
+	} else {
+		value = iframeEmptyTabLeading.ReplaceAllString(value, "")
+		value = iframeEmptyTab.ReplaceAllString(value, "")
+	}
 	if v.Source != "" {
 		value = strings.ReplaceAll(value, "$SOURCE", v.Source)
 	}
@@ -183,8 +404,8 @@ func iframeFileName(template string, v iframeVars) string {
 
 // ProvisionalIframeFileName resolves a new task's file name template from the lookup hints,
 // so the {{OWID}} block can be shown before the task runs. It returns "" when the template
-// needs a value the hints do not give ($NAME without a download name, $TITLE/$SOURCE without
-// a lookup of this exact path).
+// needs a value the hints do not give ($NAME without a download name, $TITLE/$SOURCE/$TAB
+// without a lookup of this exact path). Hints without a tab fall back to the URL's ?tab=.
 func ProvisionalIframeFileName(template, path string, hints *IframeNameHints) string {
 	v := iframeVars{Url: utils.IframeChartURL(path)}
 	lookedUp := hints != nil && hints.Path == path
@@ -192,11 +413,15 @@ func ProvisionalIframeFileName(template, path string, hints *IframeNameHints) st
 		v.Name = trimSVGExtension(hints.DownloadName)
 		v.Title = hints.Title
 		v.Source = hints.Source
+		v.Tab = iframeTabWord(hints.Tab)
+		if v.Tab == "" {
+			v.Tab = iframeURLTab(path)
+		}
 	}
 	if strings.Contains(template, "$NAME") && v.Name == "" {
 		return ""
 	}
-	if !lookedUp && (strings.Contains(template, "$TITLE") || strings.Contains(template, "$SOURCE")) {
+	if !lookedUp && (strings.Contains(template, "$TITLE") || strings.Contains(template, "$SOURCE") || strings.Contains(template, "$TAB")) {
 		return ""
 	}
 	return iframeFileName(template, v)
@@ -369,10 +594,11 @@ func getIframeInfo(ctx context.Context, browser *rod.Browser, input string) (*If
 	title, source := readIframePageDetails(page, path)
 	info := &IframeInfo{Path: path, ChartName: iframeChartName(title, utils.IframeChartSlug(path)), Title: title, Source: source}
 	slugs := readIframeDisplaySlug(page)
+	info.Tab = pickIframeTab(path, slugs)
 	info.DownloadName, info.downloadNameSource = chooseIframeDownloadName(pickIframeDisplaySlug(path, slugs), func() string {
 		return lookupIframeDownloadName(page, path)
 	})
-	fmt.Printf("Iframe info: download name %q for %s from %q (slugs %+v)\n", info.DownloadName, path, info.downloadNameSource, slugs)
+	fmt.Printf("Iframe info: download name %q tab %q for %s from %q (slugs %+v)\n", info.DownloadName, info.Tab, path, info.downloadNameSource, slugs)
 	return info, nil
 }
 
@@ -850,7 +1076,7 @@ func StartIframe(taskId string, user *models.User) error {
 	// LastOperationAt is refreshed between them, so the 5-minute stalled-task monitor
 	// does not fail a task that is still working.
 	touch := func() { models.UpdateTaskLastOperationAt(task.ID) }
-	downloadName, title, source, err := downloadIframeSVG(chartURL, path, tmpDir, touch)
+	downloadName, title, source, tab, err := downloadIframeSVG(chartURL, path, tmpDir, touch)
 	if err != nil {
 		return failIframeTask(task, taskProcess, err)
 	}
@@ -866,7 +1092,7 @@ func StartIframe(taskId string, user *models.User) error {
 	// Same name as the chart details box; saved with the task's next update
 	task.ChartName = iframeChartName(title, utils.IframeChartSlug(path))
 
-	vars := iframeVars{Name: trimSVGExtension(downloadName), Title: title, Source: source, Url: chartURL}
+	vars := iframeVars{Name: trimSVGExtension(downloadName), Title: title, Source: source, Url: chartURL, Tab: tab}
 	// The name is known now: publish it before the upload so the {{OWID}} block shows at once
 	if provisional := iframeFileName(task.FileName, vars); provisional != "" && provisional != taskProcess.FileName {
 		taskProcess.FileName = provisional
@@ -924,9 +1150,9 @@ func ClaimIframeTaskProcess(taskId string) (*models.TaskProcess, error) {
 }
 
 // downloadIframeSVG downloads the Wikipedia-optimized SVG (terminology definitions off)
-// into dir and returns OWID's file name plus the page's title and source.
+// into dir and returns OWID's file name plus the page's title, source and $TAB word.
 // touch is called before each bounded step to mark the task as alive.
-func downloadIframeSVG(chartURL, path, dir string, touch func()) (string, string, string, error) {
+func downloadIframeSVG(chartURL, path, dir string, touch func()) (string, string, string, string, error) {
 	l, browser := GetBrowser()
 	defer l.Cleanup()
 	defer browser.Close()
@@ -941,13 +1167,15 @@ func downloadIframeSVG(chartURL, path, dir string, touch func()) (string, string
 		}
 		touch()
 		title, source := readIframePageDetails(page, path)
+		// Read before the download modal opens, from the same eval as the lookup's
+		tab := pickIframeTab(path, readIframeDisplaySlug(page))
 		name, err := downloadOWIDSVG(page, dir, true, false)
 		page.Close()
 		if err == nil {
-			return name, title, source, nil
+			return name, title, source, tab, nil
 		}
 		fmt.Println("Iframe SVG download attempt failed", attempt, err)
 		lastErr = err
 	}
-	return "", "", "", lastErr
+	return "", "", "", "", lastErr
 }

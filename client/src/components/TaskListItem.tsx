@@ -59,7 +59,7 @@ function loadIframeFinalFileName(taskId: string) {
   return lookup;
 }
 
-/** The final Commons file name of a done iframe task (its list row only carries the `$NAME.svg` template). */
+/** The final Commons file name of a done iframe task (its list row only carries the file name template, e.g. `$NAME_$TAB.svg`). */
 function useIframeFinalFileName(task: Task) {
   const enabled = task.type === TaskTypeEnum.IFRAME && task.status === TaskStatusEnum.Done;
   const [fetched, setFetched] = useState<{ id: string, name: string } | null>(null);

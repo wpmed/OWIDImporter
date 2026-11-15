@@ -141,6 +141,8 @@ export interface IframeInfo {
   source: string
   // OWID's SVG download name ($NAME), empty when the lookup could not download it
   downloadName?: string
+  // The view the chart shows, e.g. "Map" or "Line" ($TAB), empty when unknown
+  tab?: string
 }
 
 // A lookup's values sent with a new iframe task, used only for its provisional file name
@@ -149,6 +151,7 @@ export interface IframeNameHints {
   downloadName: string
   title: string
   source: string
+  tab?: string
 }
 
 export interface IframeImporterFormItem {
