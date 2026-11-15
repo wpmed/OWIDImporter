@@ -19,6 +19,7 @@ import (
 	"github.com/wpmed-videowiki/OWIDImporter/constants"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/owidparser"
+	"github.com/wpmed-videowiki/OWIDImporter/svgtranslations"
 	"github.com/wpmed-videowiki/OWIDImporter/utils"
 )
 
@@ -766,6 +767,10 @@ func getFileInfo(fileDirectory string) (*FileInfo, error) {
 	// Remove external font imports that Commons doesn't allow
 	re := regexp.MustCompile(`<style>@impo[^<]*</style>`)
 	fileContents = re.ReplaceAll(fileContents, []byte(""))
+
+	// Commons' SVG Translate rejects "$" followed by a digit in <text>; every upload
+	// path (map, country chart, iframe, translation-merged) reads its file here.
+	fileContents = svgtranslations.InsertDollarJoiner(fileContents)
 
 	// Get just the filename without path or extension
 	name := filepath.Base(files[0])

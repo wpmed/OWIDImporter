@@ -41,6 +41,12 @@ func pathGeometry(svg []byte) []string {
 // a translated Commons file compares equal to a fresh OWID download of
 // unchanged data.
 func svgVisiblySame(existing, incoming []byte) bool {
+	// A Commons file still holding "$<digit>" text (uploaded before the joiner
+	// fix) breaks SVG Translate: not "same", so it is re-uploaded once. The text
+	// comparison below ignores joiners, so afterwards it compares equal again.
+	if svgtranslations.NeedsDollarJoiner(existing) {
+		return false
+	}
 	if !reflect.DeepEqual(svgtranslations.DefaultTexts(existing), svgtranslations.DefaultTexts(incoming)) {
 		return false
 	}

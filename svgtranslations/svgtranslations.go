@@ -42,10 +42,12 @@ func HasSwitch(svg []byte) bool {
 }
 
 // NormalizeText strips tags, decodes HTML entities and collapses whitespace so
-// that text from two differently formatted SVG files can be compared.
+// that text from two differently formatted SVG files can be compared. WordJoiners
+// (see InsertDollarJoiner) are dropped so a file with and without them matches.
 func NormalizeText(markup string) string {
 	text := tagRe.ReplaceAllString(markup, " ")
 	text = html.UnescapeString(text)
+	text = strings.ReplaceAll(text, WordJoiner, "")
 	return strings.TrimSpace(spaceRe.ReplaceAllString(text, " "))
 }
 
