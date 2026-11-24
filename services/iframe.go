@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -441,10 +442,53 @@ func CreateIframeTaskProcess(task *models.Task, hints *IframeNameHints) (*models
 	return models.NewTaskProcess("ALL", "", filename, models.TaskProcessStatusProcessing, models.TaskProcessTypeIframe, task.ID)
 }
 
-// IframeCaption is the caption for a final Commons file name: the name without
-// .svg, with "-" and "_" turned into spaces.
+// iframeCaptionTab matches, in the Commons-stored name (CommonsFileName), the $TAB view word
+// the file name carries for uniqueness (see iframeTabWords) at the end, after spaces, "_" or
+// "-": "$NAME_$TAB", "$NAME - $TAB", "$NAME ($TAB)" and "$NAME [$TAB]", whose brackets Commons
+// stores as "-" ("Name -Map-"). The bracket forms are derived through the storage rule
+// (commonsIllegalFileChars), not spelled out by hand. The word matches case-sensitively as
+// $TAB writes it, and a bare word needs a separator, so "Poverty line" and "Sitemap" stay.
+// A leading word is never removed: Commons capitalizes the first letter, so a slug such as
+// "table-salt" stored as "Table-salt" would lose a real word.
+var iframeCaptionTab = iframeCaptionTabPattern()
+
+func iframeCaptionTabPattern() *regexp.Regexp {
+	words := make([]string, 0, len(iframeTabWords))
+	for _, w := range iframeTabWords {
+		words = append(words, regexp.QuoteMeta(w))
+	}
+	// Longest first, so "Stacked-bar" wins over "Bar"
+	sort.Slice(words, func(i, j int) bool {
+		if len(words[i]) != len(words[j]) {
+			return len(words[i]) > len(words[j])
+		}
+		return words[i] < words[j]
+	})
+	w := "(?:" + strings.Join(words, "|") + ")"
+	// The bracket pairs the empty-$TAB removal knows, as Commons stores them
+	var wrapped []string
+	for _, pair := range [][2]string{{"(", ")"}, {"[", "]"}} {
+		open := commonsIllegalFileChars.ReplaceAllString(pair[0], "-")
+		closing := commonsIllegalFileChars.ReplaceAllString(pair[1], "-")
+		wrapped = append(wrapped, regexp.QuoteMeta(open)+w+regexp.QuoteMeta(closing))
+	}
+	bracketed := "(?:" + strings.Join(wrapped, "|") + ")"
+	return regexp.MustCompile(`(?:[ _-]*` + bracketed + `|[ _-]+` + w + `)$`)
+}
+
+// iframeCaptionName is the file name without its trailing $TAB view word. A name that would
+// be left empty is kept whole.
+func iframeCaptionName(name string) string {
+	if loc := iframeCaptionTab.FindStringIndex(name); loc != nil && loc[0] > 0 {
+		return name[:loc[0]]
+	}
+	return name
+}
+
+// IframeCaption is the caption for a final Commons file name: the name without .svg and
+// without the $TAB view word (iframeCaptionName), with "-" and "_" turned into spaces.
 func IframeCaption(filename string) string {
-	caption := trimSVGExtension(strings.TrimPrefix(filename, "File:"))
+	caption := iframeCaptionName(trimSVGExtension(strings.TrimPrefix(filename, "File:")))
 	caption = strings.ReplaceAll(caption, "-", " ")
 	return strings.ReplaceAll(caption, "_", " ")
 }
