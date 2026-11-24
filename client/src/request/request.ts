@@ -417,11 +417,12 @@ export interface ChartParamteresChoice {
   slug: string
 }
 
-export async function getChartParameters(url: string) {
+export async function getChartParameters(url: string, signal?: AbortSignal) {
   const sessionId = window.localStorage.getItem(SESSION_ID_KEY)!;
 
   const response = await fetch(`${API_BASE}/chart/parameters`, {
     method: "POST",
+    signal,
     body: JSON.stringify({ url }),
     headers: {
       "Content-Type": "application/json",

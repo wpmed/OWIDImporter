@@ -10,6 +10,7 @@ const (
 	TITLE_SELECTOR                  = "h1 .markdown-text-wrap__line > span:first-child, h1.header__title, .HeaderHTML h1"
 	END_MARKER_SELECTOR             = ".endMarker"
 	DOWNLOAD_POPUP_CLOSE_BUTTON     = "div.download-modal-content button.close-button"
+	DOWNLOAD_POPUP_SELECTOR         = "div.download-modal-content"
 	COUNTRY_SELECTED_OPTIONS_LIST   = ".entity-selector__content .entity-section ul li[data-flip-id^=\"selected_\"] .label, .EntityList label.EntityPickerOption.selected .name"
 	COUNTRY_SEARCH_INPUT            = ".entity-selector__search-bar input, .EntityPicker .EntityPickerSearchInput input"
 	COUNTRY_SEARCH_RESULT_LIST      = ".entity-selector__content ul li label .label, .entity-selector__content ul li > .label, .EntityPicker .EntityList label.EntityPickerOption .name"

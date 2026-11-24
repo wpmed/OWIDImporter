@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -509,14 +508,15 @@ func iframeTitleFallback(path string) string {
 	return utils.ToTitle(slug)
 }
 
-// openIframeChartPage opens the exact OWID URL and waits until the chart's download button is present.
+// openIframeChartPage opens the exact OWID URL in its own window (SVG capture installed) and
+// waits until the chart's download button is present. Close it with closeWindowPage.
 func openIframeChartPage(browser *rod.Browser, url string) (*rod.Page, error) {
-	page, err := browser.Page(proto.TargetCreateTarget{URL: ""})
+	page, err := openWindowPage(browser)
 	if err != nil {
 		return nil, err
 	}
 	if err := loadIframeChartPage(page, url); err != nil {
-		page.Close()
+		closeWindowPage(browser, page)
 		return nil, err
 	}
 	return page, nil
@@ -578,12 +578,12 @@ func getIframeInfo(ctx context.Context, browser *rod.Browser, input string) (*If
 	if err != nil {
 		return nil, err
 	}
-	tab, err := browser.Page(proto.TargetCreateTarget{URL: ""})
+	tab, err := openWindowPage(browser)
 	if err != nil {
 		return nil, err
 	}
 	// Closed through tab, whose context ctx does not end, so a cancelled lookup still closes it
-	defer tab.Close()
+	defer closeWindowPage(browser, tab)
 	pageCtx, cancel := context.WithCancel(tab.GetContext())
 	defer cancel()
 	defer context.AfterFunc(ctx, cancel)()
@@ -602,33 +602,18 @@ func getIframeInfo(ctx context.Context, browser *rod.Browser, input string) (*If
 	return info, nil
 }
 
-// lookupDownloadSlot lets one lookup download at a time (see lookupIframeDownloadName).
-var lookupDownloadSlot = make(chan struct{}, 1)
-
 // lookupIframeDownloadName downloads the SVG once like the task does to learn OWID's file
 // name ($NAME). It gives up after iframeInfoDownloadTimeout; a failure or timeout returns "".
-// The caller closing page (and its browser) ends a download still running after the deadline.
+// The caller closing page ends a download still running after the deadline. The SVG is
+// captured inside the page, so lookups in other windows of the browser can't catch it.
 func lookupIframeDownloadName(page *rod.Page, path string) string {
-	// Lookups share a browser, and a browser's download path and download events are
-	// browser-wide: two downloads at once could each catch the other's file name. The wait
-	// comes before the download's own deadline; the downloads ahead can't take longer than this cap.
-	select {
-	case lookupDownloadSlot <- struct{}{}:
-	case <-page.GetContext().Done():
-		return ""
-	case <-time.After(lookupMaxConcurrent * (iframeInfoDownloadTimeout + time.Second)):
-		fmt.Println("Iframe info: gave up waiting for another SVG download", path)
-		return ""
-	}
 	dir, err := os.MkdirTemp("", "owid-iframe-info")
 	if err != nil {
-		<-lookupDownloadSlot
 		return ""
 	}
 	timed := page.Timeout(iframeInfoDownloadTimeout)
 	result := make(chan string, 1)
 	go func() {
-		defer func() { <-lookupDownloadSlot }()
 		defer os.RemoveAll(dir)
 		defer timed.CancelTimeout()
 		name, err := downloadOWIDSVG(timed, dir, true, false)
@@ -776,8 +761,8 @@ func waitSVGButtonEnabled(page *rod.Page) (*rod.Element, error) {
 	return nil, fmt.Errorf("SVG download button not enabled")
 }
 
-// downloadOWIDSVG opens url, opens the Download modal, sets the two SVG options,
-// verifies them, downloads the SVG into dir and returns OWID's download file name.
+// downloadOWIDSVG opens the Download modal of a page with SVG capture installed, sets the two
+// SVG options, verifies them, saves the SVG into dir and returns OWID's download file name.
 // The whole step is bounded by 2*iframeDownloadTimeout.
 func downloadOWIDSVG(page *rod.Page, dir string, optimize, terminology bool) (string, error) {
 	page = page.Timeout(2 * iframeDownloadTimeout)
@@ -822,48 +807,16 @@ func downloadOWIDSVG(page *rod.Page, dir string, optimize, terminology bool) (st
 		return "", err
 	}
 
-	wait := page.Browser().WaitDownload(dir)
-	if err := svgBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
-		return "", fmt.Errorf("error clicking SVG download button: %w", err)
+	// Ended early by the overall step deadline, so one attempt stays well inside the stalled-task window
+	name, content, err := captureOWIDSVG(page, iframeDownloadTimeout, clickElement(svgBtn))
+	if err != nil {
+		return "", err
 	}
-
-	done := make(chan *proto.PageDownloadWillBegin, 1)
-	go func() { done <- wait() }()
-	var info *proto.PageDownloadWillBegin
-	select {
-	case info = <-done:
-	case <-time.After(iframeDownloadTimeout):
-		return "", fmt.Errorf("timeout waiting for SVG download")
-	case <-page.GetContext().Done():
-		// Overall step deadline, so one attempt stays well inside the stalled-task window
-		return "", fmt.Errorf("timeout waiting for SVG download: %w", page.GetContext().Err())
+	// The Wikipedia-optimized export drops the external font @import
+	if optimize && strings.Contains(string(content), "@import url(") {
+		return "", fmt.Errorf("downloaded SVG is not the Wikipedia-optimized export")
 	}
-	if info == nil {
-		return "", fmt.Errorf("SVG download did not start")
-	}
-
-	downloaded := filepath.Join(dir, info.GUID)
-	if optimize {
-		// The Wikipedia-optimized export drops the external font @import
-		content, err := os.ReadFile(downloaded)
-		if err != nil {
-			return "", fmt.Errorf("downloaded file not found: %w", err)
-		}
-		if strings.Contains(string(content), "@import url(") {
-			os.Remove(downloaded)
-			return "", fmt.Errorf("downloaded SVG is not the Wikipedia-optimized export")
-		}
-	}
-
-	name := filepath.Base(info.SuggestedFilename)
-	if name == "" || name == "." || name == "/" {
-		name = info.GUID + ".svg"
-	}
-	// Downloads are saved under the GUID; keep OWID's name on disk
-	if err := os.Rename(downloaded, filepath.Join(dir, name)); err != nil {
-		return "", fmt.Errorf("downloaded file not found: %w", err)
-	}
-	return name, nil
+	return writeCapturedSVG(dir, name, content)
 }
 
 // iframeUploadInput holds already-resolved values for uploadIframeFile.
@@ -1153,29 +1106,46 @@ func ClaimIframeTaskProcess(taskId string) (*models.TaskProcess, error) {
 // into dir and returns OWID's file name plus the page's title, source and $TAB word.
 // touch is called before each bounded step to mark the task as alive.
 func downloadIframeSVG(chartURL, path, dir string, touch func()) (string, string, string, string, error) {
-	l, browser := GetBrowser()
-	defer l.Cleanup()
-	defer browser.Close()
-
-	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
-		touch()
-		page, err := openIframeChartPage(browser, chartURL)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		touch()
-		title, source := readIframePageDetails(page, path)
-		// Read before the download modal opens, from the same eval as the lookup's
-		tab := pickIframeTab(path, readIframeDisplaySlug(page))
-		name, err := downloadOWIDSVG(page, dir, true, false)
-		page.Close()
-		if err == nil {
-			return name, title, source, tab, nil
-		}
-		fmt.Println("Iframe SVG download attempt failed", attempt, err)
-		lastErr = err
+	// The task's own window in the shared browser
+	w, err := openBrowserWindow()
+	if err != nil {
+		return "", "", "", "", err
 	}
-	return "", "", "", "", lastErr
+	defer w.Close()
+
+	var name, title, source, tab string
+	// The two attempts run again in a relaunched browser when the browser dies under them
+	err = w.runWithCrashRetry("iframe download "+chartURL, func(*rod.Page) error {
+		var lastErr error
+		for attempt := 0; attempt < 2; attempt++ {
+			if attempt > 0 {
+				// A fresh window for the retry; a dead browser is replaced, other windows are left alone
+				if err := w.Reopen(); err != nil {
+					return err
+				}
+			}
+			touch()
+			page := w.Page
+			if err := loadIframeChartPage(page, chartURL); err != nil {
+				lastErr = err
+				continue
+			}
+			touch()
+			pageTitle, pageSource := readIframePageDetails(page, path)
+			// Read before the download modal opens, from the same eval as the lookup's
+			pageTab := pickIframeTab(path, readIframeDisplaySlug(page))
+			downloaded, err := downloadOWIDSVG(page, dir, true, false)
+			if err == nil {
+				name, title, source, tab = downloaded, pageTitle, pageSource, pageTab
+				return nil
+			}
+			fmt.Println("Iframe SVG download attempt failed", attempt, err)
+			lastErr = err
+		}
+		return lastErr
+	}, nil)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	return name, title, source, tab, nil
 }

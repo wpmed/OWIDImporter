@@ -1,5 +1,5 @@
 import { OWID_CHART_URL_PREFIX } from "./constants";
-import { applyChartSourceToDescription } from "./utils";
+import { applyChartSourceToDescription, DEFAULT_DATA_SOURCE } from "./utils";
 import { IframeImporterFormItem, IframeInfo, IframeNameHints, TaskProcess, TaskProcessStatusEnum } from "./types";
 
 // Mirrors the OWIDPopup gadget's accepted `data-chart` values and the server's NormalizeIframeChartPath.
@@ -118,12 +118,14 @@ export function chartSourceCredit(source?: string) {
 /**
  * Applies a lookup to a description the user may have edited: occurrences of the previous chart's
  * source text (when given and present) become the new chart's source, then any remaining `$SOURCE`
- * is filled in. Everything else in the text is left alone. `template` is the text with the
+ * is filled in (the default credit, used for a chart without a source, is never swapped). Everything else in the text is left alone. `template` is the text with the
  * previous source turned back into `$SOURCE`, so undoing this lookup on a later URL change works.
  */
 export function applySourceToEditedDescription(description: string, newSource?: string, previousCredit?: string) {
   const credit = chartSourceCredit(newSource);
-  const swap = !!previousCredit && previousCredit !== credit && description.includes(previousCredit);
+  // The default credit is never swapped: it is plain text of the templates too (Infographic, License,
+  // attribution lines), not only what a chart without a source put in place of `$SOURCE`.
+  const swap = !!previousCredit && previousCredit !== DEFAULT_DATA_SOURCE && previousCredit !== credit && description.includes(previousCredit);
   const template = swap ? description.replaceAll(previousCredit, () => "$SOURCE") : description;
   return { template, description: applyChartSourceToDescription(template, newSource) };
 }

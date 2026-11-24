@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -11,7 +13,6 @@ import (
 	"github.com/go-rod/rod/lib/input"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/wpmed-videowiki/OWIDImporter/constants"
-	"github.com/wpmed-videowiki/OWIDImporter/env"
 	"github.com/wpmed-videowiki/OWIDImporter/models"
 	"github.com/wpmed-videowiki/OWIDImporter/utils"
 )
@@ -123,7 +124,7 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 	}
 
 	models.UpdateTaskLastOperationAt(task.ID)
-	result := DownloadCountryGraphsFromPopover(url, downloadPath)
+	result, popoverErr := DownloadCountryGraphsFromPopover(url, downloadPath)
 	models.UpdateTaskLastOperationAt(task.ID)
 	countryCodeNameMap := constants.GetCountryCodeNameMap()
 
@@ -221,6 +222,10 @@ func ProcessCountriesFromPopover(user *models.User, task *models.Task, chartName
 
 	}
 
+	if popoverErr != nil {
+		// The countries it never reached have no rows; the task must not end looking complete
+		return fmt.Errorf("country popovers: %v: %w", popoverErr, errIncomplete)
+	}
 	return nil
 }
 
@@ -240,184 +245,233 @@ func TraverseDownloadCountriesList(user *models.User, task *models.Task, token *
 
 	fmt.Println("================== Processing country: ", url)
 
-	l, browser := GetBrowser()
-	blankPage := browser.MustPage("")
-
-	defer blankPage.Close()
-	defer l.Cleanup()
-	defer browser.Close()
-
-	page := browser.MustPage("")
-	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-	page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
-	page.MustNavigate(url)
-	// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
-	page.MustWaitLoad()
-	page.MustWaitIdle()
-	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
-		return fmt.Errorf("cannot find download button: %w", err)
+	// The worker's own window in the shared browser, released on every path
+	w, err := openBrowserWindow()
+	if err != nil {
+		return err
 	}
+	defer w.Close()
 
-	lineTab, _ := GetTabByLabel(page, "line")
-	chartTab, _ := GetTabByLabel(page, "chart")
-
-	if lineTab != nil {
-		lineTab.Click(proto.InputMouseButtonLeft, 1)
-		time.Sleep(time.Second)
-	} else if chartTab != nil {
-		chartTab.Click(proto.InputMouseButtonLeft, 1)
-		time.Sleep(time.Second)
-	} else {
-		return fmt.Errorf("Cannot find line/chart tabs")
-	}
-
-	countriesCodeNameMap := constants.GetCountryCodeNameMap()
-
-	for _, code := range countriesCodes {
-		if task.Status != models.TaskStatusProcessing {
-			break
+	// The country being downloaded (a browser crash puts it back, failed, so the rerun retries
+	// it) and the countries given up after their retry, which later passes skip
+	items := newPassItems("country", func(p *models.TaskProcess) string { return p.Region })
+	// Countries already done are skipped, so a rerun in a relaunched browser neither redoes nor re-uploads them
+	// onFail fails the country left "processing" by a crash, a stuck window, an error or an early stop
+	err = w.runItems("countries from "+countriesCodes[0], func(p *rod.Page) error {
+		page := p
+		// Not ready (load timeout, controls missing): retried in a fresh window, never a silent stop
+		if err := loadChartPage(page, url); err != nil {
+			return fmt.Errorf("loading %s: %v: %w", url, err, errPageNotReady)
+		}
+		// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
+		if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
+			return fmt.Errorf("cannot find download button: %w", errPageNotReady)
 		}
 
-		name, found := countriesCodeNameMap[code]
-		if !found {
-			fmt.Println("Not found")
-			continue
+		lineTab, _ := GetTabByLabel(page, "line")
+		chartTab, _ := GetTabByLabel(page, "chart")
+
+		if lineTab != nil {
+			lineTab.Click(proto.InputMouseButtonLeft, 1)
+			time.Sleep(time.Second)
+		} else if chartTab != nil {
+			chartTab.Click(proto.InputMouseButtonLeft, 1)
+			time.Sleep(time.Second)
+		} else {
+			return fmt.Errorf("Cannot find line/chart tabs: %w", errPageNotReady)
 		}
-		fmt.Println("Processing code: ", code, name)
-		var taskProcess *models.TaskProcess
-		// Try to find existing process, otherwise create one
-		existingTB, err := models.FindTaskProcessByTaskRegionDate(code, "", task.ID)
-		if existingTB != nil {
-			if existingTB.Status != models.TaskProcessStatusFailed {
+
+		countriesCodeNameMap := constants.GetCountryCodeNameMap()
+
+		for _, code := range countriesCodes {
+			if task.Status != models.TaskStatusProcessing {
+				break
+			}
+
+			name, found := countriesCodeNameMap[code]
+			if !found {
+				fmt.Println("Not found")
 				continue
 			}
-			existingTB.Status = models.TaskProcessStatusProcessing
-			if err := existingTB.Update(); err != nil {
-				fmt.Println("Error updating task process to processing")
+			if items.skip(code) {
+				continue // failed after its retry
 			}
-			taskProcess = existingTB
-		} else {
-			taskProcess, err = models.NewTaskProcess(code, "", "", models.TaskProcessStatusProcessing, models.TaskProcessTypeCountry, task.ID)
+			// The previous country's download dialog must be gone: behind it the next country
+			// can't be picked, and its export could be the previous chart under this name. Checked
+			// before this country starts, so a stuck dialog is charged to the country that left it
+			// (still the one in progress) and that one is retried, then given up.
+			if err := CloseDownloadPopup(page); err != nil {
+				return fmt.Errorf("after the country before %s: %w", code, err)
+			}
+			fmt.Println("Processing code: ", code, name)
+			var taskProcess *models.TaskProcess
+			// Try to find existing process, otherwise create one
+			existingTB, err := models.FindTaskProcessByTaskRegionDate(code, "", task.ID)
+			if existingTB != nil {
+				// Done, or failed on its own attempt in this run: stepped past
+				if existingTB.Status != models.TaskProcessStatusFailed || !items.retryFailed(code) {
+					continue
+				}
+				existingTB.Status = models.TaskProcessStatusProcessing
+				if err := existingTB.Update(); err != nil {
+					fmt.Println("Error updating task process to processing")
+				}
+				taskProcess = existingTB
+			} else {
+				taskProcess, err = models.NewTaskProcess(code, "", "", models.TaskProcessStatusProcessing, models.TaskProcessTypeCountry, task.ID)
+				if err != nil {
+					fmt.Println("ERROR finding task process for country code", code, err)
+					continue
+				}
+			}
+
+			items.start(taskProcess)
+			utils.SendWSTaskProcess(task.ID, taskProcess)
+			models.UpdateTaskLastOperationAt(task.ID)
+
+			if err := selectCountryFromPage(page, countryNames[code]); err != nil {
+				FailTaskProcess(taskProcess)
+				return fmt.Errorf("selecting chart for %s: %v: %w", code, err, errPageNotReady)
+			}
+
+			countryDownloadPath := path.Join(downloadPath, code)
+
+			if _, err := os.Stat(countryDownloadPath); err == nil {
+				os.RemoveAll(countryDownloadPath)
+			}
+
+			if err := os.Mkdir(countryDownloadPath, 0755); err != nil {
+				fmt.Println("Error creating download directory: ", code, err)
+				FailTaskProcess(taskProcess)
+				continue
+			}
+			if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*5); err != nil {
+				fmt.Println(code, "Cannot find download button", err)
+				FailTaskProcess(taskProcess)
+				// Retried once in a fresh window, then failed while the rest go on
+				return fmt.Errorf("download button for %s: %w", code, errPageNotReady)
+			}
+
+			downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
+			downloadBtn.MustFocus()
+			time.Sleep(time.Millisecond * 200)
+
+			if err := page.Keyboard.Press(input.Enter); err != nil {
+				fmt.Println(code, "Error clicking download button", err)
+				FailTaskProcess(taskProcess)
+				return fmt.Errorf("opening the download dialog for %s: %v: %w", code, err, errPageNotReady)
+			}
+
+			fmt.Println("GOT DOWNLOAD BTN SELECTOR, WAITING FOR SVG")
+			if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
+				fmt.Println("Can't find DOWNLOAD_SVG_SELECTOR")
+				FailTaskProcess(taskProcess)
+				CloseDownloadPopup(page)
+				continue
+			}
+			fmt.Println("DONE WAITING FOR DOWNLOAD ICON")
+
+			elements := page.MustElements(DOWNLOAD_SVG_BUTTON_SELECTOR)
+
+			fmt.Println("GOT DOWNLOAD ICON")
+			if _, err := captureOWIDSVGToDir(page, countryDownloadPath, svgCaptureTimeout, clickElement(elements[0])); err != nil {
+				// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+				fmt.Println(code, "Error downloading svg", err)
+				FailTaskProcess(taskProcess)
+				if !windowResponds(page) {
+					// The window or the browser broke: runWithCrashRetry replaces it and reruns
+					// the pass, which retries this country (countries done are skipped)
+					return fmt.Errorf("downloading %s: %w", code, errWindowStuck)
+				}
+				CloseDownloadPopup(page)
+				continue
+			}
+			fmt.Println("============= DOWNLOAD DONE =============")
+
+			CloseDownloadPopup(page)
+
+			if _, err := os.Stat(countryDownloadPath); os.IsNotExist(err) {
+				// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+				FailTaskProcess(taskProcess)
+				fmt.Println(code, "File not found", err)
+				continue
+			}
+
+			replaceData := ReplaceVarsData{
+				Url:       data.Url,
+				Title:     title,
+				Region:    code,
+				StartYear: startYear,
+				EndYear:   endYear,
+				FileName:  GetFileNameFromChartName(chartName),
+				Comment:   "Importing from " + data.Url,
+				Params:    chartParams,
+			}
+
+			if name != "" {
+				replaceData.RegionName = name
+			} else {
+				replaceData.RegionName = code
+			}
+
+			filename, status, err := uploadCountryChart(user, token, replaceData, countryDownloadPath, data)
 			if err != nil {
-				fmt.Println("ERROR finding task process for country code", code, err)
+				FailTaskProcess(taskProcess)
 				continue
 			}
+
+			taskProcess.FileName = filename
+			switch status {
+			case "skipped":
+				taskProcess.Status = models.TaskProcessStatusSkipped
+			case "description_updated":
+				taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
+			case "overwritten":
+				taskProcess.Status = models.TaskProcessStatusOverwritten
+			case "uploaded":
+				taskProcess.Status = models.TaskProcessStatusUploaded
+			default:
+				taskProcess.Status = models.TaskProcessStatusFailed
+			}
+
+			taskProcess.Update()
+			utils.SendWSTaskProcess(task.ID, taskProcess)
+			if taskProcess.Status != models.TaskProcessStatusFailed {
+				// Only a country done in full resets the window's stuck-retry count
+				w.itemDone()
+			}
+
+			time.Sleep(time.Millisecond * 200)
 		}
+		fmt.Println("===================== COUNTRIES ALL DONE ==========================")
 
-		utils.SendWSTaskProcess(task.ID, taskProcess)
-		models.UpdateTaskLastOperationAt(task.ID)
-
-		if err := selectCountryFromPage(page, countryNames[code]); err != nil {
-			FailTaskProcess(taskProcess)
-			return fmt.Errorf("selecting chart for %s: %w", code, err)
-		}
-
-		countryDownloadPath := path.Join(downloadPath, code)
-
-		if _, err := os.Stat(countryDownloadPath); err == nil {
-			os.RemoveAll(countryDownloadPath)
-		}
-
-		if err := os.Mkdir(countryDownloadPath, 0755); err != nil {
-			fmt.Println("Error creating download directory: ", code, err)
-			FailTaskProcess(taskProcess)
-			continue
-		}
-		wait := page.Browser().WaitDownload(countryDownloadPath)
-
-		if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*5); err != nil {
-			fmt.Println(code, "Cannot find download button", err)
-			FailTaskProcess(taskProcess)
-			continue
-		}
-
-		downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
-		downloadBtn.MustFocus()
-		time.Sleep(time.Millisecond * 200)
-
-		if err := page.Keyboard.Press(input.Enter); err != nil {
-			fmt.Println(code, "Error clicking download button", err)
-			FailTaskProcess(taskProcess)
-			continue
-		}
-
-		fmt.Println("GOT DOWNLOAD BTN SELECTOR, WAITING FOR SVG")
-		if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
-			fmt.Println("Can't find DOWNLOAD_SVG_SELECTOR")
-			FailTaskProcess(taskProcess)
-			CloseDownloadPopup(page)
-			continue
-		}
-		fmt.Println("DONE WAITING FOR DOWNLOAD ICON")
-
-		elements := page.MustElements(DOWNLOAD_SVG_BUTTON_SELECTOR)
-
-		fmt.Println("GOT DOWNLOAD ICON")
-		if err := elements[0].Click(proto.InputMouseButtonLeft, 1); err != nil {
-			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
-			fmt.Println(code, "Error clicking download svg button", err)
-			FailTaskProcess(taskProcess)
-			CloseDownloadPopup(page)
-			continue
-		}
-
-		wait()
-		fmt.Println("============= DOWNLOAD DONE =============")
-
-		CloseDownloadPopup(page)
-
-		if _, err := os.Stat(countryDownloadPath); os.IsNotExist(err) {
-			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
-			FailTaskProcess(taskProcess)
-			fmt.Println(code, "File not found", err)
-			continue
-		}
-
-		replaceData := ReplaceVarsData{
-			Url:       data.Url,
-			Title:     title,
-			Region:    code,
-			StartYear: startYear,
-			EndYear:   endYear,
-			FileName:  GetFileNameFromChartName(chartName),
-			Comment:   "Importing from " + data.Url,
-			Params:    chartParams,
-		}
-
-		if name != "" {
-			replaceData.RegionName = name
-		} else {
-			replaceData.RegionName = code
-		}
-
-		filename, status, err := uploadCountryChart(user, token, replaceData, countryDownloadPath, data)
-		if err != nil {
-			FailTaskProcess(taskProcess)
-			continue
-		}
-
-		taskProcess.FileName = filename
-		switch status {
-		case "skipped":
-			taskProcess.Status = models.TaskProcessStatusSkipped
-		case "description_updated":
-			taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
-		case "overwritten":
-			taskProcess.Status = models.TaskProcessStatusOverwritten
-		case "uploaded":
-			taskProcess.Status = models.TaskProcessStatusUploaded
-		default:
-			taskProcess.Status = models.TaskProcessStatusFailed
-		}
-
-		taskProcess.Update()
-		utils.SendWSTaskProcess(task.ID, taskProcess)
-
-		time.Sleep(time.Millisecond * 200)
+		return nil
+	}, items.onFail, items.giveUp)
+	if err != nil {
+		// The page could not be worked at all: the countries not done yet get failed rows, which
+		// the task shows and can retry, and the other workers and the regions go on
+		fmt.Println("ERROR processing countries, failing the ones left: ", countriesCodes, err)
+		failUnfinishedCountries(task, countriesCodes)
 	}
-	fmt.Println("===================== COUNTRIES ALL DONE ==========================")
-
 	return nil
+}
+
+// failUnfinishedCountries gives every country of codes that is not done a failed row.
+func failUnfinishedCountries(task *models.Task, codes []string) {
+	for _, code := range codes {
+		existing, _ := models.FindTaskProcessByTaskRegionDate(code, "", task.ID)
+		if existing != nil {
+			if itemUnfinished(existing) {
+				FailTaskProcess(existing)
+			}
+			continue
+		}
+		if p, err := models.NewTaskProcess(code, "", "", models.TaskProcessStatusFailed, models.TaskProcessTypeCountry, task.ID); err == nil {
+			utils.SendWSTaskProcess(task.ID, p)
+		} else {
+			fmt.Println("ERROR recording failed country", code, err)
+		}
+	}
 }
 
 // getCountryNamesFromPage is the compatibility fallback when historical CSV
@@ -536,121 +590,154 @@ func selectCountryFromPage(page *rod.Page, name string) error {
 	return fmt.Errorf("could not confirm selection of %q", name)
 }
 
-func DownloadCountryGraphsFromPopover(url, outputDir string) map[string]string {
+// DownloadCountryGraphsFromPopover saves each country's popover chart and returns their dirs by
+// country code. The error is for a pass that could not go over the whole map (the countries it
+// reached are still returned).
+func DownloadCountryGraphsFromPopover(url, outputDir string) (map[string]string, error) {
 	fmt.Println("Downloading country graphs from popover", url)
 
-	l, browser := GetBrowser()
-	page := browser.MustPage("")
-	defer page.Close()
-	defer l.Cleanup()
-	defer browser.Close()
-
-	// Max 3 minutes for the process to complete
-	page = page.Timeout(time.Minute * 3)
-	page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
-	page.MustNavigate(url)
-	page.MustWaitLoad()
-	page.MustWaitIdle()
-	time.Sleep(time.Second * 2)
-	fmt.Println("Url", page.MustInfo().URL)
-
 	result := make(map[string]string, 0)
-	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*5); err != nil {
-		fmt.Println("Timeout waiting for download btn")
-		return result
+	// Its own window in the shared browser, released on every path
+	w, err := openBrowserWindow()
+	if err != nil {
+		fmt.Println("Error opening browser window: ", err)
+		return result, err
 	}
-
-	foundCountries := make([]string, 0)
-	notFoundCountries := make([]string, 0)
-	gotSvg := make([]string, 0)
-
-	for name, code := range constants.COUNTRY_CODES {
-		time.Sleep(time.Millisecond * 200)
-
-		id := strings.ReplaceAll(name, " ", "-")
-		has, _, err := page.Has(fmt.Sprintf("#%s", id))
-		if err != nil {
-			fmt.Println("Error finding: ", name, id)
-			continue
+	defer w.Close()
+	// A rerun in a relaunched browser when the browser dies, or in a fresh window when the page
+	// is not ready or the pass runs out of time; countries already saved are kept
+	if err := w.runWithCrashRetry("country popovers "+url, func(p *rod.Page) error {
+		var passErr error
+		err := rod.Try(func() { passErr = popoverPass(p, url, outputDir, result) })
+		if err == nil {
+			err = passErr
 		}
-
-		if !has {
-			notFoundCountries = append(notFoundCountries, name)
-			continue
-
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("country popovers: %v: %w", err, errPageNotReady)
 		}
-		foundCountries = append(foundCountries, name)
-
-		el, err := page.Element(fmt.Sprintf("#%s", id))
-		if err != nil {
-			fmt.Println("Error finding element: ", err)
-			continue
-		}
-		shape := el.MustShape()
-
-		if shape == nil {
-			fmt.Println("Doesn't have shape: ", name)
-			continue
-		}
-
-		pointInside := shape.OnePointInside()
-		if pointInside == nil {
-			fmt.Println("Doesn't have point inside: ", name)
-			continue
-		}
-
-		page.Mouse.MustMoveTo(pointInside.X, pointInside.Y)
-
-		if err := utils.WaitElementWithTimeout(page, MAP_TOOLTIP_SELECTOR, time.Millisecond*500); err != nil {
-			fmt.Println("Country doesn't have chart to download: ", name)
-			continue
-		}
-
-		countrySvg := page.MustElement(MAP_TOOLTIP_SELECTOR)
-		_, err = countrySvg.Eval(`(styles) => {
-			// Attach style
-			const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
-			styleEl.textContent = styles;
-			this.insertBefore(styleEl, this.firstChild);
-			// Add xmlns attribute for standalone SVG file compatibility
-			this.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-		}`, constants.COUNTRY_CHART_POPUP_STYLES)
-		if err != nil {
-			fmt.Println("Failed to inject styles: ", err)
-		}
-
-		html, err := countrySvg.HTML()
-		if err != nil {
-			fmt.Println("Error getting country svg html", name, err)
-			continue
-		}
-
-		countryDirPath := path.Join(outputDir, code)
-
-		if err := os.Mkdir(countryDirPath, 0755); err != nil {
-			fmt.Println("Error creating output country dir: ", err)
-			continue
-		}
-		outputPath := path.Join(countryDirPath, fmt.Sprintf("%s.svg", code))
-		err = os.WriteFile(outputPath, []byte(html), 0644)
-		if err != nil {
-			fmt.Println("Error writing file: ", name, err)
-			continue
-		}
-
-		gotSvg = append(gotSvg, name)
-		result[code] = countryDirPath
+		return err
+	}, nil); err != nil {
+		fmt.Println("Error downloading country graphs from popover: ", err)
+		return result, err
 	}
+	return result, nil
+}
 
-	fmt.Println("===========================")
-	fmt.Println("Found countries", len(foundCountries))
-	fmt.Println(foundCountries)
-	fmt.Println("===========================")
-	fmt.Println("Not Found countries", len(notFoundCountries))
-	fmt.Println(notFoundCountries)
-	fmt.Println("===========================")
-	fmt.Println("Got SVGs", len(gotSvg))
-	fmt.Println(gotSvg)
+// popoverPass is one pass of DownloadCountryGraphsFromPopover over the map, skipping the
+// countries in result already.
+func popoverPass(p *rod.Page, url, outputDir string, result map[string]string) error {
+	{
+		page := p
 
-	return result
+		// Max 3 minutes for the process to complete
+		page = page.Timeout(time.Minute * 3)
+		page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
+		page.MustNavigate(url)
+		page.MustWaitLoad()
+		page.MustWaitIdle()
+		time.Sleep(time.Second * 2)
+		fmt.Println("Url", page.MustInfo().URL)
+
+		if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*5); err != nil {
+			fmt.Println("Timeout waiting for download btn")
+			return fmt.Errorf("country popovers: no download button: %w", errPageNotReady)
+		}
+
+		foundCountries := make([]string, 0)
+		notFoundCountries := make([]string, 0)
+		gotSvg := make([]string, 0)
+
+		for name, code := range constants.COUNTRY_CODES {
+			if _, done := result[code]; done {
+				continue // saved by a pass before a browser crash
+			}
+			time.Sleep(time.Millisecond * 200)
+
+			id := strings.ReplaceAll(name, " ", "-")
+			has, _, err := page.Has(fmt.Sprintf("#%s", id))
+			if err != nil {
+				fmt.Println("Error finding: ", name, id)
+				continue
+			}
+
+			if !has {
+				notFoundCountries = append(notFoundCountries, name)
+				continue
+
+			}
+			foundCountries = append(foundCountries, name)
+
+			el, err := page.Element(fmt.Sprintf("#%s", id))
+			if err != nil {
+				fmt.Println("Error finding element: ", err)
+				continue
+			}
+			shape := el.MustShape()
+
+			if shape == nil {
+				fmt.Println("Doesn't have shape: ", name)
+				continue
+			}
+
+			pointInside := shape.OnePointInside()
+			if pointInside == nil {
+				fmt.Println("Doesn't have point inside: ", name)
+				continue
+			}
+
+			page.Mouse.MustMoveTo(pointInside.X, pointInside.Y)
+
+			if err := utils.WaitElementWithTimeout(page, MAP_TOOLTIP_SELECTOR, time.Millisecond*500); err != nil {
+				fmt.Println("Country doesn't have chart to download: ", name)
+				continue
+			}
+
+			countrySvg := page.MustElement(MAP_TOOLTIP_SELECTOR)
+			_, err = countrySvg.Eval(`(styles) => {
+				// Attach style
+				const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+				styleEl.textContent = styles;
+				this.insertBefore(styleEl, this.firstChild);
+				// Add xmlns attribute for standalone SVG file compatibility
+				this.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+			}`, constants.COUNTRY_CHART_POPUP_STYLES)
+			if err != nil {
+				fmt.Println("Failed to inject styles: ", err)
+			}
+
+			html, err := countrySvg.HTML()
+			if err != nil {
+				fmt.Println("Error getting country svg html", name, err)
+				continue
+			}
+
+			countryDirPath := path.Join(outputDir, code)
+
+			if err := os.MkdirAll(countryDirPath, 0755); err != nil {
+				fmt.Println("Error creating output country dir: ", err)
+				continue
+			}
+			outputPath := path.Join(countryDirPath, fmt.Sprintf("%s.svg", code))
+			err = os.WriteFile(outputPath, []byte(html), 0644)
+			if err != nil {
+				fmt.Println("Error writing file: ", name, err)
+				continue
+			}
+
+			gotSvg = append(gotSvg, name)
+			result[code] = countryDirPath
+		}
+
+		fmt.Println("===========================")
+		fmt.Println("Found countries", len(foundCountries))
+		fmt.Println(foundCountries)
+		fmt.Println("===========================")
+		fmt.Println("Not Found countries", len(notFoundCountries))
+		fmt.Println(notFoundCountries)
+		fmt.Println("===========================")
+		fmt.Println("Got SVGs", len(gotSvg))
+		fmt.Println(gotSvg)
+
+		return nil
+	}
 }

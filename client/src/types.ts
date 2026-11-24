@@ -59,6 +59,8 @@ export interface Task {
   type: TaskTypeEnum,
   lastOperationAt: number,
   createdAt: number,
+  // Failed items of a done task (task list and live updates only)
+  failedCount?: number,
 }
 
 
@@ -132,6 +134,15 @@ export interface MapImporterFormItem {
   linkVerified: boolean
   templateExists: boolean
   canImport: boolean
+  // Set when a lookup replaced $SOURCE in the descriptions: the credit used and each text before and
+  // after, so a URL change can undo it.
+  sourceApplied?: {
+    credit: string
+    description: { template: string, applied: string }
+    countryDescription: { template: string, applied: string }
+  }
+  // The previous chart's credit, left in a description the user edited, for the next lookup to swap.
+  previousSourceCredit?: string
 }
 
 export interface IframeInfo {

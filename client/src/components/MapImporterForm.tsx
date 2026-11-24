@@ -2,16 +2,17 @@ import { Alert, Box, Button, Checkbox, FormControlLabel, InputAdornment, Link, P
 import { DescriptionOverwriteBehaviour, MapImporterFormItem, SelectedParameter } from "../types"
 import { CategoriesSearchInput } from "./CategoriesSearchInput";
 import { useDebounce } from "use-debounce";
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { ChartInfo, getChartParameters } from "../request/request";
 import { Delete } from "@mui/icons-material";
 import { CHART_INFO_CHART, CHART_INFO_MAP, COMMONS_TEMPLATE_PREFIX, COUNTRY_DESCRIPTION_OVERWRITE_OPTIONS, DESCRIPTION_OVERWRITE_OPTIONS, INITIAL_CATEGORIES_CHART, INITIAL_CATEGORIES_MAP, INITIAL_CATEGORIES_MAP_SINGLE_IMAGE, INITIAL_DESCRIPTION_MAP, INITIAL_DESCRIPTION_MAP_SINGLE_IMAGE, INITIAL_FILENAME_MAP, INITIAL_FILENAME_MAP_SINGLE_IMAGE, OWID_CHART_URL_PREFIX, URL_PLACEHOLDER } from "../constants";
 import { searchPageExists } from "../request/commons";
 import { FieldLoading } from "./FieldLoader";
-import { applyChartSourceToDescription } from "../utils";
 import { PlaceholderText } from "./ui/PlaceholderText";
 import { OverwriteBehaviourField } from "./OverwriteBehaviourField";
 import { monoStack, serifStack } from "../theme";
+import { createLatestLookup } from "../latestLookup";
+import { applyMapSource, editMapUrl, mapLookupDescription } from "../mapImporterItem";
 
 export interface MapImporterFormProps {
   disabled: boolean
@@ -53,6 +54,14 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
   const [templateExistsLoading, setTemplateExistsLoading] = useState(false);
   const [templateExists, setTemplateExists] = useState(false);
   const [parametersLoading, setParametersLoading] = useState(false);
+  // Only the answer for the URL now in the field is applied: a slower answer for an earlier URL
+  // would replace this item with that URL's snapshot
+  const urlRef = useRef(value.url);
+  urlRef.current = value.url;
+  const lookupRef = useRef<ReturnType<typeof createLatestLookup> | null>(null);
+  if (!lookupRef.current) {
+    lookupRef.current = createLatestLookup(() => urlRef.current);
+  }
 
   const handleChange = useCallback(<K extends keyof MapImporterFormItem>(
     key: K,
@@ -61,15 +70,26 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
     onChange({ ...value, [key]: val });
   }, [value, onChange]);
 
+  // A different URL drops the previous chart's lookup, so the debounced lookup runs for the new one
+  const handleUrlChange = useCallback((url: string) => {
+    if (url === value.url) {
+      return;
+    }
+    setChartInfo(null);
+    // Going back to the URL that was last looked up must look it up again
+    setLastCheckeUrl("");
+    onChange(editMapUrl(value, url));
+  }, [value, onChange]);
+
   useEffect(() => {
-    if (!disabled && debouncedUrl && debouncedUrl != lastCheckedUrl && debouncedUrl.startsWith(OWID_CHART_URL_PREFIX) && !value.linkVerified) {
+    if (!disabled && debouncedUrl && debouncedUrl === value.url && debouncedUrl != lastCheckedUrl && debouncedUrl.startsWith(OWID_CHART_URL_PREFIX) && !value.linkVerified) {
       setLastCheckeUrl(debouncedUrl);
       setChartInfo(null);
 
       onParamtersLoadingChange(true);
       setParametersLoading(true);
-      getChartParameters(debouncedUrl)
-        .then(res => {
+      lookupRef.current!(debouncedUrl, signal => getChartParameters(debouncedUrl, signal), {
+        result: res => {
           if (res.error) {
             console.log("Chart info error: ", res);
             onChange({ ...value, canImport: false, linkVerified: true });
@@ -99,18 +119,16 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
             newInitialFilenameMap += ", $REGION, $YEAR.svg";
             newInitialFilenameChart += ", $REGION.svg";
 
-            onChange({
+            onChange(applyMapSource({
               ...value,
               singleImage: res.info.singleImage,
               fileName: newInitialFilenameMap,
               countryFileName: newInitialFilenameChart,
-              description: applyChartSourceToDescription(value.description, res.info.source),
-              countryDescription: applyChartSourceToDescription(value.countryDescription, res.info.source),
               selectedChartParameters: selectedParams,
               templateNameFormat: newTemplateName,
               linkVerified: true,
               canImport: true
-            });
+            }, res.info.source));
           } else {
             let fileName = INITIAL_FILENAME_MAP;
             let description = INITIAL_DESCRIPTION_MAP;
@@ -122,29 +140,35 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
               categories = INITIAL_CATEGORIES_MAP_SINGLE_IMAGE;
             }
 
-            onChange({
+            onChange(applyMapSource({
               ...value,
               fileName,
-              description: applyChartSourceToDescription(description, res.info.source),
-              countryDescription: applyChartSourceToDescription(value.countryDescription, res.info.source),
+              description: mapLookupDescription(value, description),
               categories,
               singleImage: res.info.singleImage,
               linkVerified: true,
               canImport: true
-            });
+            }, res.info.source));
           }
 
           if (res.info) {
             setChartInfo(res.info);
           }
-        })
-        .catch(err => {
+        },
+        error: err => {
           console.log("Error getting chart parameters", err)
-        })
-        .finally(() => {
-          onParamtersLoadingChange(false);
-          setParametersLoading(false);
-        })
+        },
+        settled: (newest, current) => {
+          // Dropped as stale: this URL may be looked up again if the user goes back to it
+          if (!current) {
+            setLastCheckeUrl(checked => checked === debouncedUrl ? "" : checked);
+          }
+          if (newest) {
+            onParamtersLoadingChange(false);
+            setParametersLoading(false);
+          }
+        },
+      })
     }
   }, [disabled, debouncedUrl, lastCheckedUrl, value, onChange, onParamtersLoadingChange, setChartInfo, setParametersLoading])
 
@@ -197,7 +221,7 @@ export function MapImporterForm({ value, onChange, onDelete, disabled, onParamte
           size="small"
           label="Chart URL"
           value={value.url}
-          onChange={e => handleChange("url", e.target.value)}
+          onChange={e => handleUrlChange(e.target.value)}
           placeholder={URL_PLACEHOLDER}
           disabled={disabled}
           sx={monoInputSx}

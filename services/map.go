@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -12,9 +13,11 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -62,21 +65,14 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		return err
 	}
 
-	l, browser := GetBrowser()
-	_ = browser.MustPage("")
-	chartInfo, err := GetChartInfo(browser, url, data.TemplateNameFormat, task.ChartParameters)
+	chartInfo, err := GetChartInfo(url, data.TemplateNameFormat, task.ChartParameters)
 	if err != nil {
 		fmt.Println("Error getting chart info: ", err)
 		task.Status = models.TaskStatusFailed
 		task.Update()
 		utils.SendWSTask(task)
-		browser.Close()
-		l.Cleanup()
 		return fmt.Errorf("Error getting chart info")
 	}
-
-	browser.Close()
-	l.Cleanup()
 
 	task.ChartName = chartInfo.ChartName
 	if task.ChartName == "" {
@@ -163,35 +159,54 @@ func StartMap(taskId string, user *models.User, data StartData) error {
 		}
 	}()
 
+	// Work that failed without failed item rows to show it (errIncomplete); the rest still runs
+	var incomplete []error
 	if task.ImportCountries == 1 && task.Status == models.TaskStatusProcessing {
 		fmt.Print("================= STARTED IMPORTING COUNTRIES")
 		if err := processCountries(chartInfo, user, task, data.Url, tmpDir, title, startYear, endYear, chartParamsMap); err != nil {
-			task.Status = models.TaskStatusFailed
-			task.Update()
-			utils.SendWSTask(task)
-			return err
+			if !errors.Is(err, errIncomplete) {
+				task.Status = models.TaskStatusFailed
+				task.Update()
+				utils.SendWSTask(task)
+				return err
+			}
+			incomplete = append(incomplete, err)
 		}
 	}
 
 	if task.Status == models.TaskStatusProcessing {
 		// Process regions
-		processRegions(task, user, tmpDir, title, chartParamsMap, data)
+		if err := processRegions(task, user, tmpDir, title, chartParamsMap, data); err != nil {
+			incomplete = append(incomplete, err)
+		}
 	}
 
+	finishMapTask(task, user, data, errors.Join(incomplete...))
+	return nil
+}
+
+// finishMapTask ends a map task that is still processing. Items (years, countries) that failed
+// keep their failed rows, which the task page counts and offers to retry, under a done task.
+// Work with no rows to show its failure (incomplete: a whole region or the popover pass) ends
+// the task failed instead, so it never looks fully successful; a retry redoes only what is
+// missing.
+func finishMapTask(task *models.Task, user *models.User, data StartData, incomplete error) {
 	if task.Status == models.TaskStatusProcessing {
 		if data.GenerateTemplateCommons {
 			processCommonsTemplate(task, user)
 		}
 
 		task.Status = models.TaskStatusDone
+		if incomplete != nil {
+			fmt.Printf("Task %s finished with work missing, marking it failed: %v\n", task.ID, incomplete)
+			task.Status = models.TaskStatusFailed
+		}
 		if err := task.Update(); err != nil {
 			fmt.Println("Error saving task staus to done: ", err)
 		}
 	}
 
 	utils.SendWSTask(task)
-
-	return nil
 }
 
 func processSingleImage(task *models.Task, user *models.User, chartInfo *ChartInfo, tmpDir string, data StartData) error {
@@ -233,54 +248,60 @@ func processSingleImage(task *models.Task, user *models.User, chartInfo *ChartIn
 		return fmt.Errorf("Error creating download directory")
 	}
 
-	l, browser := GetBrowser()
-	blankPage := browser.MustPage("")
-
-	defer blankPage.Close()
-	defer l.Cleanup()
-	defer browser.Close()
-
-	page := browser.MustPage("")
-	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-	page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
-	page.MustNavigate(task.URL)
-	// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
-	page.MustWaitLoad()
-	page.MustWaitIdle()
-	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
-		return fmt.Errorf("Cannot find download button in page")
-	}
-
-	wait := page.Browser().WaitDownload(downloadPath)
-	downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
-	downloadBtn.MustFocus()
-	time.Sleep(time.Millisecond * 200)
-
-	if err := page.Keyboard.Press(input.Enter); err != nil {
+	w, err := openBrowserWindow()
+	if err != nil {
 		FailTaskProcess(taskProcess)
-		return fmt.Errorf("Error clicking download button")
+		return err
 	}
+	defer w.Close()
 
-	fmt.Println("GOT DOWNLOAD BTN SELECTOR, WAITING FOR SVG")
-	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
-		FailTaskProcess(taskProcess)
+	// A rerun in a relaunched browser when the browser dies while downloading
+	if err := w.runWithCrashRetry("single image "+task.URL, func(p *rod.Page) error {
+		page := p
+		// Not ready (load timeout, controls missing): retried once in a fresh window
+		if err := loadChartPage(page, task.URL); err != nil {
+			return fmt.Errorf("loading %s: %v: %w", task.URL, err, errPageNotReady)
+		}
+		// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:processing", country))
+		if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
+			return fmt.Errorf("Cannot find download button in page: %w", errPageNotReady)
+		}
+
+		downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
+		downloadBtn.MustFocus()
+		time.Sleep(time.Millisecond * 200)
+
+		if err := page.Keyboard.Press(input.Enter); err != nil {
+			return fmt.Errorf("Error clicking download button: %w", errPageNotReady)
+		}
+
+		fmt.Println("GOT DOWNLOAD BTN SELECTOR, WAITING FOR SVG")
+		if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
+			CloseDownloadPopup(page)
+			return fmt.Errorf("Can't find DOWNLOAD_SVG_SELECTOR: %w", errPageNotReady)
+		}
+
+		elements := page.MustElements(DOWNLOAD_SVG_BUTTON_SELECTOR)
+
+		if _, err := captureOWIDSVGToDir(page, downloadPath, svgCaptureTimeout, clickElement(elements[0])); err != nil {
+			// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+			fmt.Println("Error downloading svg: ", err)
+			if !windowResponds(page) {
+				// Replaced and retried by runWithCrashRetry
+				return fmt.Errorf("downloading the SVG: %w", errWindowStuck)
+			}
+			CloseDownloadPopup(page)
+			return fmt.Errorf("Error clicking download svg button")
+		}
+		fmt.Println("============= DOWNLOAD DONE =============")
+
 		CloseDownloadPopup(page)
-		return fmt.Errorf("Can't find DOWNLOAD_SVG_SELECTOR")
-	}
-
-	elements := page.MustElements(DOWNLOAD_SVG_BUTTON_SELECTOR)
-
-	if err := elements[0].Click(proto.InputMouseButtonLeft, 1); err != nil {
-		// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
+		return nil
+	}, nil); err != nil {
+		fmt.Println("Error downloading single image: ", err)
 		FailTaskProcess(taskProcess)
-		CloseDownloadPopup(page)
-		return fmt.Errorf("Error clicking download svg button")
+		return err
 	}
-
-	wait()
-	fmt.Println("============= DOWNLOAD DONE =============")
-
-	CloseDownloadPopup(page)
 	if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
 		// utils.SendWSMessage(session, "progress", fmt.Sprintf("%s:failed", country))
 		FailTaskProcess(taskProcess)
@@ -352,9 +373,13 @@ func processCommonsTemplate(task *models.Task, user *models.User) {
 
 }
 
-func processRegions(task *models.Task, user *models.User, tmpDir, title string, chartParamsMap map[string]string, data StartData) {
+// processRegions runs every region. It returns an errIncomplete error naming the regions that
+// could not be gone through (they have no year rows to show it); the other regions still run.
+func processRegions(task *models.Task, user *models.User, tmpDir, title string, chartParamsMap map[string]string, data StartData) error {
 	regionGroup, _ := errgroup.WithContext(context.Background())
 	regionGroup.SetLimit(constants.CONCURRENT_REQUESTS)
+	var failedMu sync.Mutex
+	var failed []string
 
 	for index, region := range constants.REGIONS {
 		if task.Status != models.TaskStatusProcessing {
@@ -366,12 +391,14 @@ func processRegions(task *models.Task, user *models.User, tmpDir, title string, 
 				if task.Status != models.TaskStatusProcessing {
 					return nil
 				}
-				time.Sleep(time.Second * time.Duration(index*3))
-				err := processRegion(user, task, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, title, data)
-				fmt.Print("============= FINISHED PROCESSING REGION: ", region)
+				time.Sleep(regionStagger * time.Duration(index))
+				err := runRegion(user, task, task.ChartName, region, filepath.Join(tmpDir, region), chartParamsMap, title, data)
+				fmt.Println("============= FINISHED PROCESSING REGION: ", region)
 				if err != nil {
-					fmt.Println("Error in processing some of the region", region)
-					fmt.Println(err)
+					fmt.Printf("ERROR task %s: region %s failed: %v\n", task.ID, region, err)
+					failedMu.Lock()
+					failed = append(failed, region)
+					failedMu.Unlock()
 				}
 				return nil
 			}
@@ -380,7 +407,23 @@ func processRegions(task *models.Task, user *models.User, tmpDir, title string, 
 
 	regionGroup.Wait()
 	fmt.Println("================= FINISHED PROCESSING ALL REGIONS ==================")
+	if len(failed) > 0 {
+		return fmt.Errorf("regions %v: %w", failed, errIncomplete)
+	}
+	return nil
 }
+
+// runRegion processes one region and regionStagger spaces out the regions' starts (vars so
+// tests can substitute them).
+var (
+	runRegion     = processRegion
+	regionStagger = 3 * time.Second
+)
+
+// errIncomplete marks work that could not be done for part of a task and has no failed item
+// rows to show it (a region or popover pass that never got going), so the task must end failed
+// rather than done.
+var errIncomplete = errors.New("part of the task could not be done")
 
 func processCountries(chartInfo *ChartInfo, user *models.User, task *models.Task, url, tmpDir, title, startYear, endYear string, chartParamsMap map[string]string) error {
 	if chartInfo.HasCountries {
@@ -467,14 +510,19 @@ func processCountries(chartInfo *ChartInfo, user *models.User, task *models.Task
 		countriesDir := path.Join(tmpDir, "countries")
 		err := os.Mkdir(countriesDir, 0755)
 		if err == nil {
-			ProcessCountriesFromPopover(user, task, task.ChartName, title, startYear, endYear, countriesDir, StartData{
+			if err := ProcessCountriesFromPopover(user, task, task.ChartName, title, startYear, endYear, countriesDir, StartData{
 				Url:                           url,
 				FileName:                      task.CountryFileName,
 				Description:                   task.CountryDescription,
 				DescriptionOverwriteBehaviour: task.CountryDescriptionOverwriteBehaviour,
-			}, chartParamsMap)
+			}, chartParamsMap); err != nil {
+				// Regions still run; the task ends failed (errIncomplete)
+				fmt.Println("Error processing popover countries: ", err)
+				return err
+			}
 		} else {
 			fmt.Println("Error creating countries directory: ", err)
+			return fmt.Errorf("creating the countries dir: %v: %w", err, errIncomplete)
 		}
 	}
 
@@ -516,16 +564,21 @@ type ChartInfo struct {
 * HasCountries
  */
 
-func GetChartInfo(browser *rod.Browser, url, chartFormat, selectedParams string) (*ChartInfo, error) {
+// GetChartInfo reads a map chart's details in its own window of the shared browser.
+func GetChartInfo(url, chartFormat, selectedParams string) (*ChartInfo, error) {
 	chartInfo := ChartInfo{}
 	var err error
 
 	for i := 0; i < 2; i++ {
 		err = rod.Try(func() {
-			page := browser.MustPage("")
+			// A window per attempt; a browser that died is replaced when the next one opens
+			w, err := openBrowserWindow()
+			if err != nil {
+				panic(err)
+			}
+			defer w.Close()
+			page := w.Page
 			time.Sleep(time.Second * time.Duration(i*5))
-
-			defer page.Close()
 			page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 
@@ -772,8 +825,11 @@ func GetChartParameters(browser *rod.Browser, url string) *[]ChartParameter {
 
 	for trials := 0; trials < 2; trials++ {
 		err = rod.Try(func() {
-			page := browser.MustPage("")
-			defer page.Close()
+			page, err := openWindowPage(browser)
+			if err != nil {
+				panic(err)
+			}
+			defer closeWindowPage(browser, page)
 			page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
 			page = page.Timeout(constants.CHART_WAIT_TIME_SECONDS * time.Second)
 
@@ -808,7 +864,10 @@ func GetChartParameters(browser *rod.Browser, url string) *[]ChartParameter {
 	return &params
 }
 
-func traverseDownloadRegion(task *models.Task, data StartData, user *models.User, chartParams map[string]string, token *string, chartName, title, region, url, downloadPath string) {
+// traverseDownloadRegion downloads and uploads the region's years. A year that fails is marked
+// failed and the rest go on; the error is for a region it could not go through at all (or only
+// in part), which has no year rows to show it.
+func traverseDownloadRegion(task *models.Task, data StartData, user *models.User, chartParams map[string]string, token *string, chartName, title, region, url, downloadPath string) error {
 	regionStr := region
 	if regionStr == "NorthAmerica" {
 		regionStr = "North America"
@@ -817,343 +876,517 @@ func traverseDownloadRegion(task *models.Task, data StartData, user *models.User
 		regionStr = "South America"
 	}
 
-	l, browser := GetBrowser()
-	blankPage := browser.MustPage("")
-
-	page := browser.MustPage("")
-	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-	page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
-
-	fmt.Println("==================== Traversing to: ", url)
-	page.MustNavigate(url)
-	page.MustWaitLoad()
-	page.MustWaitIdle()
-
-	if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
-		fmt.Println("ERROR waiting for DOWNLOAD_BUTTON_SELECTOR for region: ", region)
-		return
+	// The worker's own window in the shared browser, released on every path
+	w, err := openBrowserWindow()
+	if err != nil {
+		fmt.Println("ERROR opening browser window for region: ", region, err)
+		return fmt.Errorf("region %s: %w", region, err)
 	}
-	if err := utils.WaitElementWithTimeout(page, PLAY_TIMELAPSE_BUTTON_SELECTOR, time.Second*5); err != nil {
-		fmt.Println("ERROR waiting for PLAY_TIMELAPSE_BUTTON_SELECTOR for region: ", region)
-		return
-	}
-	if err := utils.WaitElementWithTimeout(page, fmt.Sprintf("%s, %s", START_MARKER_SELECTOR, END_MARKER_SELECTOR), time.Second*5); err != nil {
-		fmt.Println("ERROR waiting for EITHER START_MARKER_SELECTOR or END_MARKER_SELECTOR for region: ", region)
-		return
-	}
+	defer w.Close()
 
-	startMarker := page.MustElement(START_MARKER_SELECTOR)
-	endMarker := page.MustElement(END_MARKER_SELECTOR)
-	if startMarker != nil || endMarker != nil {
-		startYear := ""
-		endYear := ""
-		if startMarker != nil {
-			if attr, err := startMarker.Attribute("aria-valuemin"); err == nil {
-				startYear = *attr
-			}
-			// TODO
-			if attr, err := startMarker.Attribute("aria-valuemax"); err == nil {
-				endYear = *attr
-			}
-			// if _, err := startMarker.Attribute("aria-valuemax"); err == nil {
-			// 	endYear = "2023"
-			// }
-		} else if endMarker != nil {
-			if attr, err := endMarker.Attribute("aria-valuemin"); err == nil {
-				startYear = *attr
-			}
-			// TODO
-			if attr, err := endMarker.Attribute("aria-valuemax"); err == nil {
-				endYear = *attr
-			}
-			// if _, err := endMarker.Attribute("aria-valuemax"); err == nil {
-			// 	endYear = "2023"
-			// }
+	// Survives a rerun after a browser crash, like the year processes it skips
+	triedUsingCommonsTemplate := false
+	// The year being downloaded (a browser crash puts it back, failed, so the rerun retries it)
+	// and the years given up after their retry, which later passes skip
+	items := newPassItems("region "+region+" year", func(p *models.TaskProcess) string { return p.Date })
+	// One pass walks the years from the latest; years already done are skipped, so a rerun in a
+	// relaunched browser picks up where the crash left off without redoing or re-uploading.
+	regionPass := func(p *rod.Page) error {
+		page := p
+		fmt.Println("==================== Traversing to: ", url)
+		// Not ready (load timeout, controls missing): retried in a fresh window, never a silent stop
+		if err := loadChartPage(page, url); err != nil {
+			return fmt.Errorf("loading %s: %v: %w", url, err, errPageNotReady)
+		}
+		if err := waitRegionControls(page, region); err != nil {
+			return err
 		}
 
-		fmt.Println("00000000000000000000000000 GOT START MARKER 00000000000000000000000000000", startYear, endYear)
-
-		counter := 0
-		owidEnv := env.GetEnv().OWID_ENV
-		sources, err := GetTemplateExistingSources(user, task.CommonsTemplateName)
-		regionExistingData := make(map[string]string, 0)
-		if err == nil && sources != nil {
-			data, exists := sources.Regions[region]
-			if exists {
-				regionExistingData = data
-			}
+		startMarker, endMarker := timelineMarkers(page)
+		if startMarker == nil && endMarker == nil {
+			return fmt.Errorf("timeline of %s: %w", region, errPageNotReady)
 		}
-
-		triedUsingCommonsTemplate := false
-
-		for task.Status == models.TaskStatusProcessing {
-			counter = counter + 1
-			if owidEnv == "development" && counter >= 5 {
-				// break
-			}
-
-			models.UpdateTaskLastOperationAt(task.ID)
-			if counter >= 50 {
-				currentUrl := page.MustInfo().URL
-
-				page.Close()
-				browser.Close()
-				l.Cleanup()
-
-				l, browser = GetBrowser()
-				blankPage = browser.MustPage("")
-
-				page = browser.MustPage("")
-				page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
-				page.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
-
-				page.MustNavigate(currentUrl)
-				page.MustWaitLoad()
-				page.MustWaitIdle()
-
-				if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*10); err != nil {
-					fmt.Println("ERROR waiting for DOWNLOAD_BUTTON_SELECTOR for region: ", region)
-					break
-				}
-				if err := utils.WaitElementWithTimeout(page, PLAY_TIMELAPSE_BUTTON_SELECTOR, time.Second*5); err != nil {
-					fmt.Println("ERROR waiting for PLAY_TIMELAPSE_BUTTON_SELECTOR for region: ", region)
-					break
-				}
-				counter = 0
-			}
-
-			if err := utils.WaitElementWithTimeout(page, fmt.Sprintf("%s, %s", START_MARKER_SELECTOR, END_MARKER_SELECTOR), time.Second*5); err != nil {
-				fmt.Println("ERROR waiting for EITHER START_MARKER_SELECTOR or END_MARKER_SELECTOR for region: ", region)
-				break
-
-			}
-			startMarker = page.MustElement(START_MARKER_SELECTOR)
-			endMarker = page.MustElement(END_MARKER_SELECTOR)
-
-			currentYear := ""
+		if startMarker != nil || endMarker != nil {
+			startYear := ""
+			endYear := ""
 			if startMarker != nil {
-				if attr, err := startMarker.Attribute("aria-valuenow"); err == nil && *attr != "" {
-					currentYear = *attr
+				if attr, err := startMarker.Attribute("aria-valuemin"); err == nil {
+					startYear = *attr
 				}
-			}
-
-			if endMarker != nil {
-				if attr, err := endMarker.Attribute("aria-valuenow"); err == nil && *attr != "" {
-					currentYear = *attr
+				// TODO
+				if attr, err := startMarker.Attribute("aria-valuemax"); err == nil {
+					endYear = *attr
 				}
+				// if _, err := startMarker.Attribute("aria-valuemax"); err == nil {
+				// 	endYear = "2023"
+				// }
+			} else if endMarker != nil {
+				if attr, err := endMarker.Attribute("aria-valuemin"); err == nil {
+					startYear = *attr
+				}
+				// TODO
+				if attr, err := endMarker.Attribute("aria-valuemax"); err == nil {
+					endYear = *attr
+				}
+				// if _, err := endMarker.Attribute("aria-valuemax"); err == nil {
+				// 	endYear = "2023"
+				// }
 			}
 
-			year := currentYear
+			fmt.Println("00000000000000000000000000 GOT START MARKER 00000000000000000000000000000", startYear, endYear)
 
-			replaceData := ReplaceVarsData{
-				Url:      data.Url,
-				Title:    title,
-				Region:   regionStr,
-				Year:     currentYear,
-				FileName: GetFileNameFromChartName(chartName),
-				Comment:  "Importing from " + data.Url,
-				Params:   chartParams,
-			}
-
-			if task.DescriptionOverwriteBehaviour == models.DescriptionOverwriteBehaviourSkip && !triedUsingCommonsTemplate {
-				fmt.Println("=============== HAS SKIP BEHAVIOUR")
-				filename, exists := regionExistingData[currentYear]
-				fmt.Println("EXISTS: ", regionStr, currentYear)
+			counter := 0
+			owidEnv := env.GetEnv().OWID_ENV
+			sources, err := GetTemplateExistingSources(user, task.CommonsTemplateName)
+			regionExistingData := make(map[string]string, 0)
+			if err == nil && sources != nil {
+				data, exists := sources.Regions[region]
 				if exists {
-					startYear, _, _ := getMapStartEndYearTitleFromPage(page)
-					fmt.Println("Start year: ", startYear, filename)
-					if startYear != "" {
-						// Update replacedata year to the startYear
-						err := handleExistingMetadataCommonsFile(replaceData, regionExistingData, startYear, data, downloadPath, user, task, region, token)
-						if err == nil {
-							break
-						} else {
-							fmt.Println("=============== Error reusing commons template: ", err)
+					regionExistingData = data
+				}
+			}
+
+			// restartWindow replaces the worker's window (not the browser, so the other workers keep
+			// going) and reopens the region's own URL in it; the loop then steps the timeline past
+			// the years already done. Never the page's current URL: while the download dialog is
+			// open it is ?overlay=download-vis, without the region (OWID drops region=World and
+			// time=latest as defaults), and loading it opens the dialog again.
+			restartWindow := func() bool {
+				if err := w.Reopen(); err != nil {
+					fmt.Println("ERROR reopening browser window for region: ", region, err)
+					return false
+				}
+				page = w.Page
+				if err := loadChartPage(page, url); err != nil {
+					fmt.Println("ERROR reloading page for region: ", region, err)
+					return false
+				}
+				return waitRegionControls(page, region) == nil
+			}
+			// The timeline values shown since the page was loaded. Each step moves the timeline,
+			// so a value seen again means the loop is not getting anywhere: it would spin on the
+			// same year for ever (values are compared as text; they need not be years).
+			seen := map[string]bool{}
+
+			for task.Status == models.TaskStatusProcessing {
+				if owidEnv == "development" && counter >= 5 {
+					// break
+				}
+
+				models.UpdateTaskLastOperationAt(task.ID)
+				if counter >= regionWindowRestartEvery {
+					// A fresh window every 50 files keeps the page's memory in check. It counts
+					// files, not steps: walking past the years done after the restart must not
+					// bring the next restart (a region with 50+ years done would never get on).
+					if !restartWindow() {
+						// The rerun reloads the region and goes on after the years done
+						return fmt.Errorf("restarting the window for %s: %w", region, errPageNotReady)
+					}
+					counter = 0
+					seen = map[string]bool{}
+				}
+
+				if err := utils.WaitElementWithTimeout(page, fmt.Sprintf("%s, %s", START_MARKER_SELECTOR, END_MARKER_SELECTOR), time.Second*5); err != nil {
+					fmt.Println("ERROR waiting for EITHER START_MARKER_SELECTOR or END_MARKER_SELECTOR for region: ", region)
+					return fmt.Errorf("timeline of %s: %w", region, errPageNotReady)
+				}
+				startMarker, endMarker = timelineMarkers(page)
+				if startMarker == nil && endMarker == nil {
+					return fmt.Errorf("timeline of %s: %w", region, errPageNotReady)
+				}
+
+				currentYear := timelineValue(startMarker, endMarker)
+				year := currentYear
+				if seen[year] {
+					return fmt.Errorf("the timeline of %s shows %q again instead of moving on: %w", region, year, errPageNotReady)
+				}
+				seen[year] = true
+
+				if items.skip(year) {
+					// Failed after its retry; the rest of the years go on
+					if moved, err := moveToNextYear(page, startMarker, endMarker, currentYear, startYear); err != nil {
+						return err
+					} else if moved {
+						continue
+					}
+					break
+				}
+
+				replaceData := ReplaceVarsData{
+					Url:      data.Url,
+					Title:    title,
+					Region:   regionStr,
+					Year:     currentYear,
+					FileName: GetFileNameFromChartName(chartName),
+					Comment:  "Importing from " + data.Url,
+					Params:   chartParams,
+				}
+
+				if task.DescriptionOverwriteBehaviour == models.DescriptionOverwriteBehaviourSkip && !triedUsingCommonsTemplate {
+					fmt.Println("=============== HAS SKIP BEHAVIOUR")
+					filename, exists := regionExistingData[currentYear]
+					fmt.Println("EXISTS: ", regionStr, currentYear)
+					if exists {
+						startYear, _, _ := getMapStartEndYearTitleFromPage(page)
+						fmt.Println("Start year: ", startYear, filename)
+						if startYear != "" {
+							// Update replacedata year to the startYear
+							err := handleExistingMetadataCommonsFile(replaceData, regionExistingData, startYear, data, downloadPath, user, task, region, token)
+							if err == nil {
+								break
+							} else {
+								fmt.Println("=============== Error reusing commons template: ", err)
+							}
+							triedUsingCommonsTemplate = true
 						}
-						triedUsingCommonsTemplate = true
 					}
 				}
-			}
 
-			var taskProcess *models.TaskProcess
+				var taskProcess *models.TaskProcess
 
-			existingTB, err := models.FindTaskProcessByTaskRegionDate(region, year, task.ID)
-			if existingTB != nil {
-				if existingTB.Status != models.TaskProcessStatusFailed {
-					if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
-						continue
-					} else {
+				existingTB, err := models.FindTaskProcessByTaskRegionDate(region, year, task.ID)
+				if existingTB != nil {
+					// Done, or failed on its own attempt in this run: stepped past
+					if existingTB.Status != models.TaskProcessStatusFailed || !items.retryFailed(year) {
+						if moved, err := moveToNextYear(page, startMarker, endMarker, currentYear, startYear); err != nil {
+							return err
+						} else if moved {
+							continue
+						}
 						break
 					}
-				}
 
-				existingTB.Status = models.TaskProcessStatusProcessing
-				if err := existingTB.Update(); err != nil {
-					fmt.Println("Error updating task process to processing")
-				}
-				taskProcess = existingTB
-			} else {
-				taskProcess, err = models.NewTaskProcess(region, year, "", models.TaskProcessStatusProcessing, models.TaskProcessTypeMap, task.ID)
-				if err != nil {
-					break
-				}
-			}
-
-			mapPath := filepath.Join(downloadPath, currentYear)
-			if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*5); err != nil {
-				fmt.Println("ERROR waiting for DOWNLOAD_BUTTON_SELECTOR for region: ", region, currentYear)
-				FailTaskProcess(taskProcess)
-				break
-			}
-
-			downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
-			downloadBtn.MustFocus()
-			time.Sleep(time.Millisecond * 200)
-			// page.Keyboard.Press(input.Enter)
-			err = page.Keyboard.Press(input.Enter)
-			if err != nil {
-				fmt.Println(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
-				break
-			}
-			wait := page.Browser().WaitDownload(mapPath)
-
-			if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
-				fmt.Println("ERROR waiting for DOWNLOAD_SVG_ICON_SELECTOR for region: ", region, currentYear)
-				FailTaskProcess(taskProcess)
-				CloseDownloadPopup(page)
-				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
-					continue
+					existingTB.Status = models.TaskProcessStatusProcessing
+					if err := existingTB.Update(); err != nil {
+						fmt.Println("Error updating task process to processing")
+					}
+					taskProcess = existingTB
 				} else {
-					break
-				}
-			}
-			time.Sleep(time.Millisecond * 200)
-
-			err = page.MustElements(DOWNLOAD_SVG_BUTTON_SELECTOR)[0].Click(proto.InputMouseButtonLeft, 1)
-			if err != nil {
-				// utils.SendWSProgress(session, taskProcess)
-				fmt.Printf("%s, %s, %v", url, "Error clicking download svg button", err)
-				FailTaskProcess(taskProcess)
-				CloseDownloadPopup(page)
-				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
-					continue
-				} else {
-					break
-				}
-			}
-
-			wait()
-			time.Sleep(time.Millisecond * 100)
-			if _, err = os.Stat(mapPath); os.IsNotExist(err) {
-				FailTaskProcess(taskProcess)
-				CloseDownloadPopup(page)
-				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
-					continue
-				} else {
-					break
-				}
-			}
-
-			// Close download modal
-			CloseDownloadPopup(page)
-
-			fileInfo, err := getFileInfo(mapPath)
-			if err != nil {
-				FailTaskProcess(taskProcess)
-				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
-					continue
-				} else {
-					break
-				}
-			}
-
-			lowerCaseContent := strings.ToLower(string(fileInfo.File))
-			if strings.Contains(lowerCaseContent, "missing map column") {
-				os.Remove(fileInfo.FilePath)
-				fmt.Printf("Missing map column %s %s %s, retrying", regionStr, currentYear, GetFileNameFromChartName(chartName))
-				FailTaskProcess(taskProcess)
-				if moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
-					continue
-				} else {
-					break
-				}
-			}
-
-			// Save the countries fill data
-			countryFlls, err := svgprocessor.ExtractCountryFills(fileInfo.FilePath)
-			if err != nil {
-				fmt.Println("Error extracting country fills ", err)
-			} else {
-				jsonStr, err := svgprocessor.ConvertToJSON(countryFlls)
-				if jsonStr != "" && err == nil {
-					taskProcess.FillData = jsonStr
-					taskProcess.Update()
-				}
-			}
-
-			// Collect metadata and inject it if at last file
-			if didReachStartYear(startMarker, endMarker, startYear) {
-				metadata, err := getRegionFileMetadata(task, region)
-				if err != nil {
-					fmt.Println("Error generating metadata: ", err)
-				} else if metadata != "" {
-					if err := InjectMetadataIntoSVGSameFile(fileInfo.FilePath, metadata); err != nil {
-						fmt.Println("Error injecting metadata into svg: ", err)
-					} else {
-						replaceData.Comment = "Importing from " + data.Url + " with metadata"
+					taskProcess, err = models.NewTaskProcess(region, year, "", models.TaskProcessStatusProcessing, models.TaskProcessTypeMap, task.ID)
+					if err != nil {
+						return fmt.Errorf("recording %s %s: %w", region, year, err)
 					}
 				}
-			}
 
-			Filename, status, err := uploadMapFile(user, *token, replaceData, mapPath, data)
-			//  Retry twice
-			if err != nil {
-				taskProcess.Status = models.TaskProcessStatusRetrying
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
+				items.start(taskProcess)
+				counter = counter + 1
+				mapPath := filepath.Join(downloadPath, currentYear)
+				if err := utils.WaitElementWithTimeout(page, DOWNLOAD_BUTTON_SELECTOR, time.Second*5); err != nil {
+					fmt.Println("ERROR waiting for DOWNLOAD_BUTTON_SELECTOR for region: ", region, currentYear)
+					FailTaskProcess(taskProcess)
+					return fmt.Errorf("download button for %s %s: %w", region, currentYear, errPageNotReady)
+				}
 
-				time.Sleep(time.Second * 2)
-				Filename, status, err = uploadMapFile(user, *token, replaceData, mapPath, data)
+				downloadBtn := page.MustElement(DOWNLOAD_BUTTON_SELECTOR)
+				downloadBtn.MustFocus()
+				time.Sleep(time.Millisecond * 200)
+				// page.Keyboard.Press(input.Enter)
+				err = page.Keyboard.Press(input.Enter)
+				if err != nil {
+					fmt.Println(fmt.Sprintf("%s %s %v", url, "Error clicking download button", err))
+					FailTaskProcess(taskProcess)
+					return fmt.Errorf("opening the download dialog for %s %s: %v: %w", region, currentYear, err, errPageNotReady)
+				}
+
+				if err := utils.WaitElementWithTimeout(page, DOWNLOAD_SVG_ICON_SELECTOR, time.Second*10); err != nil {
+					fmt.Println("ERROR waiting for DOWNLOAD_SVG_ICON_SELECTOR for region: ", region, currentYear)
+					FailTaskProcess(taskProcess)
+					// moveToNextYear closes the download dialog first
+					if moved, err := moveToNextYear(page, startMarker, endMarker, currentYear, startYear); err != nil {
+						return err
+					} else if moved {
+						continue
+					}
+					break
+				}
+				time.Sleep(time.Millisecond * 200)
+
+				svgButton := page.MustElements(DOWNLOAD_SVG_BUTTON_SELECTOR)[0]
+				// A retry must not find an earlier attempt's file next to its own
+				os.RemoveAll(mapPath)
+				_, err = captureOWIDSVGToDir(page, mapPath, svgCaptureTimeout, clickElement(svgButton))
+				if err != nil {
+					// utils.SendWSProgress(session, taskProcess)
+					fmt.Printf("%s, %s, %v", url, "Error downloading svg", err)
+					FailTaskProcess(taskProcess)
+					if !windowResponds(page) {
+						// The window or the browser broke: runWithCrashRetry replaces it and
+						// reruns the pass, which retries this year (years done are skipped)
+						return fmt.Errorf("downloading %s %s: %w", region, currentYear, errWindowStuck)
+					}
+					// moveToNextYear closes the download dialog first
+					if moved, err := moveToNextYear(page, startMarker, endMarker, currentYear, startYear); err != nil {
+						return err
+					} else if moved {
+						continue
+					}
+					break
+				}
+				time.Sleep(time.Millisecond * 100)
+				if _, err = os.Stat(mapPath); os.IsNotExist(err) {
+					FailTaskProcess(taskProcess)
+					// moveToNextYear closes the download dialog first
+					if moved, err := moveToNextYear(page, startMarker, endMarker, currentYear, startYear); err != nil {
+						return err
+					} else if moved {
+						continue
+					}
+					break
+				}
+
+				// Close download modal (checked again by moveToNextYear before the year moves)
+				CloseDownloadPopup(page)
+
+				fileInfo, err := getFileInfo(mapPath)
+				if err != nil {
+					FailTaskProcess(taskProcess)
+					if moved, err := moveToNextYear(page, startMarker, endMarker, currentYear, startYear); err != nil {
+						return err
+					} else if moved {
+						continue
+					}
+					break
+				}
+
+				lowerCaseContent := strings.ToLower(string(fileInfo.File))
+				if strings.Contains(lowerCaseContent, "missing map column") {
+					os.Remove(fileInfo.FilePath)
+					fmt.Printf("Missing map column %s %s %s, retrying", regionStr, currentYear, GetFileNameFromChartName(chartName))
+					FailTaskProcess(taskProcess)
+					if moved, err := moveToNextYear(page, startMarker, endMarker, currentYear, startYear); err != nil {
+						return err
+					} else if moved {
+						continue
+					}
+					break
+				}
+
+				// Save the countries fill data
+				countryFlls, err := svgprocessor.ExtractCountryFills(fileInfo.FilePath)
+				if err != nil {
+					fmt.Println("Error extracting country fills ", err)
+				} else {
+					jsonStr, err := svgprocessor.ConvertToJSON(countryFlls)
+					if jsonStr != "" && err == nil {
+						taskProcess.FillData = jsonStr
+						taskProcess.Update()
+					}
+				}
+
+				// Collect metadata and inject it if at last file
+				if didReachStartYear(startMarker, endMarker, startYear) {
+					metadata, err := getRegionFileMetadata(task, region)
+					if err != nil {
+						fmt.Println("Error generating metadata: ", err)
+					} else if metadata != "" {
+						if err := InjectMetadataIntoSVGSameFile(fileInfo.FilePath, metadata); err != nil {
+							fmt.Println("Error injecting metadata into svg: ", err)
+						} else {
+							replaceData.Comment = "Importing from " + data.Url + " with metadata"
+						}
+					}
+				}
+
+				Filename, status, err := uploadMapFile(user, *token, replaceData, mapPath, data)
+				//  Retry twice
 				if err != nil {
 					taskProcess.Status = models.TaskProcessStatusRetrying
 					taskProcess.Update()
 					utils.SendWSTaskProcess(task.ID, taskProcess)
 
-					time.Sleep(time.Second * 4)
+					time.Sleep(time.Second * 2)
 					Filename, status, err = uploadMapFile(user, *token, replaceData, mapPath, data)
-				}
-			}
+					if err != nil {
+						taskProcess.Status = models.TaskProcessStatusRetrying
+						taskProcess.Update()
+						utils.SendWSTaskProcess(task.ID, taskProcess)
 
-			if err != nil {
-				fmt.Println("Error processing", region, year)
-				FailTaskProcess(taskProcess)
-			} else {
-				taskProcess.FileName = Filename
-
-				switch status {
-				case "skipped":
-					taskProcess.Status = models.TaskProcessStatusSkipped
-				case "description_updated":
-					taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
-				case "overwritten":
-					taskProcess.Status = models.TaskProcessStatusOverwritten
-				case "uploaded":
-					taskProcess.Status = models.TaskProcessStatusUploaded
+						time.Sleep(time.Second * 4)
+						Filename, status, err = uploadMapFile(user, *token, replaceData, mapPath, data)
+					}
 				}
 
-				taskProcess.Update()
-				utils.SendWSTaskProcess(task.ID, taskProcess)
-			}
+				if err != nil {
+					fmt.Println("Error processing", region, year)
+					FailTaskProcess(taskProcess)
+				} else {
+					taskProcess.FileName = Filename
 
-			if !moveToNextYear(page, startMarker, endMarker, currentYear, startYear) {
-				break
+					switch status {
+					case "skipped":
+						taskProcess.Status = models.TaskProcessStatusSkipped
+					case "description_updated":
+						taskProcess.Status = models.TaskProcessStatusDescriptionUpdated
+					case "overwritten":
+						taskProcess.Status = models.TaskProcessStatusOverwritten
+					case "uploaded":
+						taskProcess.Status = models.TaskProcessStatusUploaded
+					}
+
+					taskProcess.Update()
+					utils.SendWSTaskProcess(task.ID, taskProcess)
+					// Only a year done in full resets the window's stuck-retry count: a capture
+					// whose upload then fails must not let a stuck window retry for ever
+					w.itemDone()
+				}
+
+				if moved, err := moveToNextYear(page, startMarker, endMarker, currentYear, startYear); err != nil {
+					return err
+				} else if !moved {
+					break
+				}
 			}
 		}
+		return nil
 	}
+	// Fails the year left "processing" by a crash, a stuck window, an error or an early stop
+	if err := w.runItems("region "+region, regionPass, items.onFail, items.giveUp); err != nil {
+		fmt.Println("ERROR processing region: ", region, err)
+		return fmt.Errorf("region %s: %w", region, err)
+	}
+	return nil
+}
 
-	blankPage.Close()
-	browser.Close()
-	l.Cleanup()
+// waitRegionControls waits for the region page's download button, timeline play button and
+// markers. Missing ones are errPageNotReady: retried in a fresh window, never a silent stop.
+func waitRegionControls(page *rod.Page, region string) error {
+	for _, c := range []struct {
+		sel  string
+		wait time.Duration
+	}{
+		{DOWNLOAD_BUTTON_SELECTOR, 10 * time.Second},
+		{PLAY_TIMELAPSE_BUTTON_SELECTOR, 5 * time.Second},
+		{fmt.Sprintf("%s, %s", START_MARKER_SELECTOR, END_MARKER_SELECTOR), 5 * time.Second},
+	} {
+		if err := utils.WaitElementWithTimeout(page, c.sel, c.wait); err != nil {
+			fmt.Println("ERROR waiting for", c.sel, "for region:", region)
+			return fmt.Errorf("%s not shown for region %s: %w", c.sel, region, errPageNotReady)
+		}
+	}
+	return nil
+}
+
+// timelineMarkers returns the timeline's start and end markers, nil for one that is missing
+// (MustElement would wait for it forever).
+func timelineMarkers(page *rod.Page) (start, end *rod.Element) {
+	if has, el, err := page.Has(START_MARKER_SELECTOR); err == nil && has {
+		start = el
+	}
+	if has, el, err := page.Has(END_MARKER_SELECTOR); err == nil && has {
+		end = el
+	}
+	return start, end
+}
+
+// itemUnfinished is an item a worker may still give up on: neither done nor skipped.
+func itemUnfinished(p *models.TaskProcess) bool {
+	return p.Status == models.TaskProcessStatusProcessing || p.Status == models.TaskProcessStatusFailed ||
+		p.Status == models.TaskProcessStatusRetrying
+}
+
+// passItems is a worker's bookkeeping for runItems over all its passes (reruns in a fresh
+// window, window restarts): the item (year or country row) being worked on, the items tried in
+// this run, the one item a retry redoes, and the items given up after their retry, which later
+// passes skip.
+type passItems struct {
+	what       string
+	key        func(*models.TaskProcess) string
+	inProgress *models.TaskProcess
+	givenUp    map[string]bool
+	// attempted are the items worked on in this run. One that ended failed failed on its own
+	// attempt: a later pass steps past it like an item done, so a reload never retries the same
+	// failing items over and over and never gets to the rest (a failed row from an earlier run
+	// is still retried, once).
+	attempted map[string]bool
+	// redo is the item a rerun after a stuck window or a dead browser works on again (once).
+	redo string
+}
+
+func newPassItems(what string, key func(*models.TaskProcess) string) *passItems {
+	return &passItems{what: what, key: key, givenUp: map[string]bool{}, attempted: map[string]bool{}}
+}
+
+// start records the item now being worked on.
+func (p *passItems) start(tp *models.TaskProcess) {
+	p.inProgress = tp
+	p.attempted[p.key(tp)] = true
+}
+
+// skip reports an item given up earlier in this run.
+func (p *passItems) skip(key string) bool { return p.givenUp[key] }
+
+// retryFailed reports whether a pass works on an item whose row is failed again: one not tried
+// in this run yet, or the item a rerun redoes (once). Any other failed item failed on its own
+// attempt in this run and is stepped past.
+func (p *passItems) retryFailed(key string) bool {
+	if !p.attempted[key] {
+		return true
+	}
+	if p.redo == key {
+		p.redo = ""
+		return true
+	}
+	return false
+}
+
+// onFail fails the item left "processing" by a crash, a stuck window, an error or an early stop,
+// and marks the item being worked on for the rerun (if any) to redo.
+func (p *passItems) onFail() {
+	if p.inProgress == nil {
+		return
+	}
+	if p.inProgress.Status == models.TaskProcessStatusProcessing {
+		FailTaskProcess(p.inProgress)
+	}
+	p.redo = p.key(p.inProgress)
+}
+
+// giveUp leaves the item that got stuck again failed, for the next pass to go on after it.
+// False when no unfinished item is in progress or it was given up already.
+func (p *passItems) giveUp() bool {
+	if p.inProgress == nil || p.givenUp[p.key(p.inProgress)] || !itemUnfinished(p.inProgress) {
+		return false
+	}
+	k := p.key(p.inProgress)
+	fmt.Println("ERROR giving up on", p.what, k, "after its retry; going on with the rest")
+	if p.inProgress.Status != models.TaskProcessStatusFailed {
+		FailTaskProcess(p.inProgress)
+	}
+	p.givenUp[k] = true
+	p.inProgress = nil
+	return true
+}
+
+// loadChartPage opens url in a worker's window, bounded by windowLoadTimeout.
+func loadChartPage(page *rod.Page, url string) error {
+	return withoutTryStack(rod.Try(func() {
+		p := page.Timeout(windowLoadTimeout)
+		defer p.CancelTimeout()
+		p.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: env.GetEnv().OWID_UA})
+		p.MustSetViewport(constants.VIEWPORT_WIDTH, constants.VIEWPORT_HEIGHT, 1, false)
+		p.MustNavigate(url)
+		p.MustWaitLoad()
+		p.MustWaitIdle()
+	}))
+}
+
+// withoutTryStack turns a rod.Try error from a failed Must call (a load timeout, a navigation
+// error) into that one-line error. rod.TryError's message carries the goroutine stack, which
+// made such logs look like panics. Real panics (runtime errors, non-error values) keep it.
+func withoutTryStack(err error) error {
+	var tryErr *rod.TryError
+	if !errors.As(err, &tryErr) {
+		return err
+	}
+	cause, ok := tryErr.Value.(error)
+	if !ok {
+		return err
+	}
+	var runtimeErr runtime.Error
+	if errors.As(cause, &runtimeErr) {
+		return err
+	}
+	return cause
 }
 
 func handleExistingMetadataCommonsFile(replaceData ReplaceVarsData, regionExistingData map[string]string, startYear string, data StartData, downloadPath string, user *models.User, task *models.Task, region string, token *string) error {
@@ -1262,30 +1495,93 @@ func didReachStartYear(startMarker, endMarker *rod.Element, startYear string) bo
 	return false
 }
 
-func moveToNextYear(page *rod.Page, startMarker, endMarker *rod.Element, currentYear, startYear string) bool {
+// regionWindowRestartEvery is how many files a region worker downloads in one window before
+// it moves to a fresh one (a var so tests can shorten it).
+var regionWindowRestartEvery = 50
+
+// yearMoveTimeout bounds waiting for the timeline to show another value after a step (a var
+// so tests can shorten it).
+var yearMoveTimeout = 5 * time.Second
+
+// moveToNextYear steps the timeline back one value. It returns false when the timeline already
+// shows startYear (nothing left). It closes the download dialog first (an open dialog keeps the
+// focus, so the timeline never gets the key) and checks the timeline moved: one that stays put
+// is an errPageNotReady error, retried in a fresh window, never a loop that reads the same
+// year again. Values are compared as text: OWID's timeline need not show years.
+func moveToNextYear(page *rod.Page, startMarker, endMarker *rod.Element, currentYear, startYear string) (bool, error) {
 	if didReachStartYear(startMarker, endMarker, startYear) {
-		return false
+		return false, nil
 	}
 
-	if startMarker != nil {
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := CloseDownloadPopup(page); err != nil {
+			return false, err
+		}
+		if attempt > 0 {
+			// A step that landed late counts: never step twice
+			if v := readTimelineValue(page); v != "" && v != currentYear {
+				return true, nil
+			}
+			startMarker, endMarker = timelineMarkers(page)
+		}
+		pressTimelineLeft(page, startMarker, endMarker)
+		if waitTimelineMoved(page, currentYear, yearMoveTimeout) {
+			return true, nil
+		}
+		fmt.Println("ERROR the timeline did not move from", currentYear, "attempt", attempt+1)
+	}
+	return false, fmt.Errorf("the timeline stayed at %q after stepping back: %w", currentYear, errPageNotReady)
+}
+
+// pressTimelineLeft focuses each timeline marker and presses ArrowLeft on it.
+func pressTimelineLeft(page *rod.Page, startMarker, endMarker *rod.Element) {
+	for _, marker := range []*rod.Element{startMarker, endMarker} {
+		if marker == nil {
+			continue
+		}
 		time.Sleep(time.Millisecond * 100)
-		startMarker.Focus()
+		marker.Focus()
 		time.Sleep(time.Millisecond * 100)
 		page.Keyboard.Press(input.ArrowLeft)
 		time.Sleep(time.Millisecond * 100)
-		startMarker.Blur()
+		marker.Blur()
 	}
+}
 
-	if endMarker != nil {
-		time.Sleep(time.Millisecond * 100)
-		endMarker.Focus()
-		time.Sleep(time.Millisecond * 100)
-		page.Keyboard.Press(input.ArrowLeft)
-		time.Sleep(time.Millisecond * 100)
-		endMarker.Blur()
+// timelineValue is the value the timeline markers show (aria-valuenow, the end marker's when
+// both have one), as text.
+func timelineValue(startMarker, endMarker *rod.Element) string {
+	value := ""
+	for _, marker := range []*rod.Element{startMarker, endMarker} {
+		if marker == nil {
+			continue
+		}
+		if attr, err := marker.Attribute("aria-valuenow"); err == nil && attr != nil && *attr != "" {
+			value = *attr
+		}
 	}
+	return value
+}
 
-	return true
+// readTimelineValue reads the timeline's value from page now, "" when it can't (bounded).
+func readTimelineValue(page *rod.Page) string {
+	p := page.Timeout(2 * time.Second)
+	defer p.CancelTimeout()
+	return timelineValue(timelineMarkers(p))
+}
+
+// waitTimelineMoved waits up to d for the timeline to show a value other than from.
+func waitTimelineMoved(page *rod.Page, from string, d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for {
+		if v := readTimelineValue(page); v != "" && v != from {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func getMapHasCountriesFromPage(page *rod.Page) (bool, []string, map[string]string, error) {
@@ -1444,10 +1740,10 @@ func processRegion(user *models.User, task *models.Task, chartName string, regio
 	url = utils.AttachQueryParamToUrl(url, "time=latest")
 	// url = utils.AttachQueryParamToUrl(url, "time=2023")
 
-	traverseDownloadRegion(task, data, user, chartParamsMap, &token, chartName, title, region, url, downloadPath)
+	err := traverseDownloadRegion(task, data, user, chartParamsMap, &token, chartName, title, region, url, downloadPath)
 	task.Reload()
 
-	return nil
+	return err
 }
 
 type CountryFillWithYear struct {

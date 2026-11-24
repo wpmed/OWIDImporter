@@ -65,6 +65,18 @@ func initTaskProcessTable() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Every task_process query filters by task_id; the task list counts failed rows per task
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_task_process_task_status ON task_process(task_id, status);`)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+// CountFailedTaskProcesses returns how many items of the task failed.
+func CountFailedTaskProcesses(taskId string) (int, error) {
+	count := 0
+	err := db.QueryRow("SELECT COUNT(*) FROM task_process WHERE task_id=? AND status=?", taskId, TaskProcessStatusFailed).Scan(&count)
+	return count, err
 }
 
 func NewTaskProcess(region string, date string, filename string, status TaskProcessStatus, taskProcessType TaskProcessType, taskId string) (*TaskProcess, error) {

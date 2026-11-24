@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"sync"
 
-	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/wpmed-videowiki/OWIDImporter/env"
 )
@@ -77,18 +76,6 @@ func findOrInstallBrave() string {
 	})
 
 	return bravePath
-}
-
-func GetBrowser() (*launcher.Launcher, *rod.Browser) {
-	l := newBrowserLauncher()
-
-	control := l.MustLaunch()
-
-	browser := rod.New().
-		ControlURL(control).
-		MustConnect()
-
-	return l, browser
 }
 
 // newBrowserLauncher finds the browser binary (Brave, else Rod-managed Chromium) and returns a

@@ -1,5 +1,6 @@
 import { Box, Button, FormControl, Grid, InputAdornment, InputLabel, MenuItem, Pagination, Select, Stack, TextField, ToggleButton, ToggleButtonGroup } from "@mui/material"
 import { Task, TaskStatusEnum, TaskTypeEnum } from "../types"
+import { isTaskRetryableFromList } from "../utils"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { archiveTask, fetchTasks, retryFailedTasks } from "../request/request"
 import { TaskListItem } from "./TaskListItem"
@@ -78,7 +79,7 @@ export function TaskList({ taskType, onTaskClick, onNew }: TaskListProps) {
   }
 
   const hasFailedTasks = useMemo(() => {
-    return tasks.some(t => t.status == TaskStatusEnum.Failed);
+    return tasks.some(isTaskRetryableFromList);
   }, [tasks])
 
   const onRetryFailedTasks = () => {

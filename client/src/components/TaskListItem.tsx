@@ -1,7 +1,7 @@
 import { Box, Button, Card, CardContent, Divider, Link, Stack, Typography } from "@mui/material"
 import { ReactNode, useEffect, useState } from "react"
 import { Task, TaskStatusEnum, TaskTypeEnum } from "../types"
-import { formatDate, getStatusKind } from "../utils"
+import { formatDate, getTaskListStatusChip } from "../utils"
 import { CopyButton } from "./CopyButton"
 import { StatusChip } from "./ui/StatusChip"
 import { COMMONS_TEMPLATE_PREFIX } from "../constants"
@@ -87,6 +87,7 @@ export function TaskListItem({ task, onClick, onToggleArchive }: TaskListItemPro
   const href = isIframe ? iframeChartUrl(task.url) : task.url;
   const finalFileName = useIframeFinalFileName(task);
   const fileName = finalFileName ?? task.filename;
+  const statusChip = getTaskListStatusChip(task);
 
   return (
     <Card sx={{ cursor: "pointer", height: '100%', display: 'flex' }} onClick={() => onClick()}>
@@ -104,8 +105,8 @@ export function TaskListItem({ task, onClick, onToggleArchive }: TaskListItemPro
             {task.chartName || task.url.split("/").pop()?.split("?")[0]}
           </Typography>
           <StatusChip
-            kind={getStatusKind(task.status)}
-            label={task.status}
+            kind={statusChip.kind}
+            label={statusChip.label}
             size="small"
             showSpinner={task.status === TaskStatusEnum.Processing}
           />

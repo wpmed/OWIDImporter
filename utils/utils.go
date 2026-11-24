@@ -188,6 +188,12 @@ func SendWSTaskProcess(taskId string, taskProcess *models.TaskProcess) error {
 }
 
 func SendWSTask(task *models.Task) error {
+	// The task list shows the failed item count of done tasks; keep it in live updates
+	if task.Status == models.TaskStatusDone {
+		if count, err := models.CountFailedTaskProcesses(task.ID); err == nil {
+			task.FailedCount = count
+		}
+	}
 	msgJson, err := json.Marshal(task)
 	if err != nil {
 		fmt.Println("Error marshling json", err, task)
@@ -532,8 +538,10 @@ func CleanupTaskURLQueryParams(url string) string {
 }
 
 func WaitElementWithTimeout(page *rod.Page, selector string, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(page.GetContext(), timeout)
 	defer cancel()
+	// Each check is bounded too: on a page stuck in a script it would never return
+	bounded := page.Context(ctx)
 
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
@@ -544,7 +552,11 @@ func WaitElementWithTimeout(page *rod.Page, selector string, timeout time.Durati
 			fmt.Println("timeout waiting for element after ", selector, timeout)
 			return fmt.Errorf("timeout waiting for element %q after %s", selector, timeout)
 		case <-ticker.C:
-			has, _, err := page.Has(selector)
+			has, _, err := bounded.Has(selector)
+			if err != nil && ctx.Err() != nil {
+				fmt.Println("timeout waiting for element after ", selector, timeout)
+				return fmt.Errorf("timeout waiting for element %q after %s", selector, timeout)
+			}
 			if err != nil {
 				fmt.Println("error checking for element : ", selector, err)
 				return fmt.Errorf("error checking for element %s: %w", selector, err)

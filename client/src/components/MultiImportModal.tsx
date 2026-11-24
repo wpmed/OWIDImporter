@@ -10,6 +10,7 @@ import { useToast } from "../hooks/useToast";
 import { OverwriteBehaviourField } from "./OverwriteBehaviourField";
 import { monoStack } from "../theme";
 import { applyChartSourceToDescription } from "../utils";
+import { applyMapSource } from "../mapImporterItem";
 import { effectiveIframeUrl, normalizeIframeChartPath } from "../iframe";
 
 interface ProcessingLink {
@@ -226,8 +227,7 @@ export function MultiImportModal({ variant = "map", onAdd = () => { }, onAddIfra
 
 
 
-          imp.description = applyChartSourceToDescription(imp.description, result?.info?.source);
-          imp.countryDescription = applyChartSourceToDescription(imp.countryDescription, result?.info?.source);
+          Object.assign(imp, applyMapSource(imp, result?.info?.source));
 
           if (!result.error) {
             imp.canImport = true;

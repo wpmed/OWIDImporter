@@ -1,4 +1,4 @@
-import { OperationItemStatusEnum, OperationStatusEnum, TaskProcessStatusEnum, TaskStatusEnum } from "./types";
+import { OperationItemStatusEnum, OperationStatusEnum, Task, TaskProcessStatusEnum, TaskStatusEnum } from "./types";
 import { StatusKind } from "./theme";
 
 export function getStatusKind(status: TaskStatusEnum): StatusKind {
@@ -17,6 +17,25 @@ export function getStatusKind(status: TaskStatusEnum): StatusKind {
     default:
       return "queued"
   }
+}
+
+/** Failed items of a done task: a broken year or country fails only that item, so the task still ends done. */
+export function getTaskFailedItemsCount(task: Task): number {
+  return task.status === TaskStatusEnum.Done ? (task.failedCount ?? 0) : 0;
+}
+
+/** Tasks the list's "Retry failed tasks" re-queues: failed tasks and done tasks with failed items. */
+export function isTaskRetryableFromList(task: Task): boolean {
+  return task.status === TaskStatusEnum.Failed || getTaskFailedItemsCount(task) > 0;
+}
+
+/** The task list card's status chip; a done task with failed items gets a warning chip with the count. */
+export function getTaskListStatusChip(task: Task): { kind: StatusKind, label: string } {
+  const failedCount = getTaskFailedItemsCount(task);
+  if (failedCount > 0) {
+    return { kind: "retrying", label: `${task.status} · ${failedCount} failed` };
+  }
+  return { kind: getStatusKind(task.status), label: task.status };
 }
 
 export function getTaskProcessStatusKind(status: TaskProcessStatusEnum): StatusKind {

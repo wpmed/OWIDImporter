@@ -63,6 +63,9 @@ type Task struct {
 	ChartParameters                      string                        `json:"chartParameters"`
 	LastOperationAt                      int64                         `json:"lastOperationAt"`
 	CreatedAt                            int64                         `json:"createdAt"`
+	// FailedCount is the number of failed task_process rows. Filled by the task list and the
+	// websocket update of a done task; 0 elsewhere.
+	FailedCount int `json:"failedCount"`
 }
 
 func (t *Task) Scan(value interface{}) error {
@@ -220,8 +223,10 @@ func FindTaskById(id string) (*Task, error) {
 
 func FindFailedTasksByUserId(id string) (*[]Task, error) {
 	tasks := make([]Task, 0)
-	condition := "user_id=? AND status=? AND archived=0"
-	rows, err := db.Query(fmt.Sprintf("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, archived, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at FROM task WHERE %s ORDER BY created_at DESC", condition), id, TaskStatusFailed)
+	// Failed tasks, and done tasks that still have failed items (a broken year or country fails only
+	// that item, so the task ends done)
+	condition := "user_id=? AND archived=0 AND (status=? OR (status=? AND EXISTS (SELECT 1 FROM task_process tp WHERE tp.task_id=task.id AND tp.status=?)))"
+	rows, err := db.Query(fmt.Sprintf("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, archived, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at FROM task WHERE %s ORDER BY created_at DESC", condition), id, TaskStatusFailed, TaskStatusDone, TaskProcessStatusFailed)
 	if err != nil {
 		fmt.Println("Error scaning for id ", id, err)
 		return nil, fmt.Errorf("Cannot find requested record")
@@ -275,7 +280,7 @@ func FindTaskByUserId(id, taskType string, archived, skip, limit int, search, st
 	}
 
 	queryArgs := append(args, limit, skip)
-	rows, err := db.Query(fmt.Sprintf("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, archived, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at FROM task WHERE %s ORDER BY created_at DESC LIMIT ? OFFSET ?", condition), queryArgs...)
+	rows, err := db.Query(fmt.Sprintf("SELECT id, user_id, url, file_name, description, description_overwrite_behaviour, chart_name, status, type, import_countries, archived, country_file_name, country_description, country_description_overwrite_behaviour, generate_template_commons, commons_template_name, commons_template_name_format, chart_parameters, last_operation_at, created_at, (SELECT COUNT(*) FROM task_process tp WHERE tp.task_id=task.id AND tp.status=?) FROM task WHERE %s ORDER BY created_at DESC LIMIT ? OFFSET ?", condition), append([]interface{}{TaskProcessStatusFailed}, queryArgs...)...)
 	if err != nil {
 		fmt.Println("Error scaning for id ", id, err)
 		return nil, 0, fmt.Errorf("Cannot find requested record")
@@ -305,6 +310,7 @@ func FindTaskByUserId(id, taskType string, archived, skip, limit int, search, st
 			&task.ChartParameters,
 			&task.LastOperationAt,
 			&task.CreatedAt,
+			&task.FailedCount,
 		)
 		tasks = append(tasks, task)
 	}
