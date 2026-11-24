@@ -768,6 +768,10 @@ func getFileInfo(fileDirectory string) (*FileInfo, error) {
 	re := regexp.MustCompile(`<style>@impo[^<]*</style>`)
 	fileContents = re.ReplaceAll(fileContents, []byte(""))
 
+	// Commons' SVG upload filter rejects <a> links that are not http(s)/#/data:
+	// (OWID's "dod:" definition links); unwrap those into plain <tspan> text.
+	fileContents = svgtranslations.UnwrapDisallowedLinks(fileContents)
+
 	// Commons' SVG Translate rejects "$" followed by a digit in <text>; every upload
 	// path (map, country chart, iframe, translation-merged) reads its file here.
 	fileContents = svgtranslations.InsertDollarJoiner(fileContents)
